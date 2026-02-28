@@ -1,0 +1,23 @@
+# Include top-level documentation
+include README.md
+include LICENSE
+
+# Include everything in docs/ for GitHub Pages and local builds
+recursive-include docs *
+
+# Include example projects (e.g., waveflow)
+recursive-include examples *
+
+# Include non-Python files inside the pysilicon package
+recursive-include pysilicon *.json
+recursive-include pysilicon *.yaml
+recursive-include pysilicon *.yml
+recursive-include pysilicon *.txt
+recursive-include pysilicon *.md
+recursive-include pysilicon/templates *
+recursive-include pysilicon/assets *
+
+# Exclude Python cache and build artifacts
+global-exclude __pycache__/
+global-exclude *.pyc
+global-exclude *.pyo

@@ -1,0 +1,39 @@
+[project]
+name = "pysilicon"
+version = "0.1.0"
+description = "A Python-first hardware modeling and synthesis framework"
+authors = [
+    { name = "Sundeep Rangan" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "numpy>=1.24",
+]
+
+# Optional developer dependencies
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+    "mypy",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Automatically find the pysilicon package
+[tool.setuptools.packages.find]
+include = ["pysilicon*"]
+
+# Include non-Python files (schemas, templates, docs assets)
+[tool.setuptools]
+include-package-data = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-q"
