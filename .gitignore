@@ -1,0 +1,105 @@
+# Vivado project artifacts
+*.xpr
+*.jou
+*.log
+*.str
+*.cache/
+*.runs/
+*.sim/
+*.hw/
+*.ip_user_files/
+*.webtalk/
+*.gen/
+*.restore/
+*.wcfg
+*.wdb
+*.dcp
+*.ltx
+*.srcs/
+hls/
+*_ide/
+
+# Vitis build artifacts
+*.xo
+*.xclbin
+*.log
+*.jou
+*.xml
+*.json
+*.o
+*.obj
+*.exe
+*.elf
+*.bin
+*.map
+*.vitis/
+_build/
+_build.hw/
+_build.sw/
+build/
+*.db
+*.pb
+**/dfx_runtime.txt
+*summary*
+*.rpt
+.autopilot/
+*.aps
+*.directive
+syn/
+impl/
+.debug/
+*.app
+*.xdc
+
+
+
+
+# General
+*.backup
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store 
+*.ini
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Distribution artifacts
+*.egg-info/
+dist/
+build/
+
+# IDE/editor settings
+.idea/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook checkpoints
+**/.ipynb_checkpoints/
+**/.ipynb_checkpoints/* 
+
+# VS Code workspace (track only shared settings/recommendations)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# VS Code extension artifacts
+pysilicon-extension/node_modules/
+pysilicon-extension/out/
+pysilicon-extension/.vscode-test/
+pysilicon-extension/*.vsix

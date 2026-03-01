@@ -1,8 +1,27 @@
-# Eliminating DSLs with Auto‑Generated Python Firmware and AI‑Grounded Tooling
+# Overcoming Custom Hardware Barriers with Auto‑Generated AI Assistants
 
-The firmware layer in PySilicon eliminates the traditional barriers that make reconfigurable hardware difficult to use. Instead of requiring designers or consumers to learn custom DSLs, microcode formats, or device‑specific register maps, PySilicon generates a complete, Python‑native runtime interface for every hardware object. This interface is packaged as an installable Python module *and* as a fully auto‑generated VS Code Extension that provides documentation, examples, and AI‑assisted usage.
+Custom micro‑code, ad‑hoc DSLs, and device‑specific command encodings have been the primary barrier to adoption for most custom silicon. Every accelerator family invents its own control language, its own register map, and its own firmware conventions. This fragmentation makes hardware powerful but inaccessible, especially for small teams and software‑first users.
 
-## Python as the Single Firmware Interface
+PySilicon addresses this problem through two tightly linked capabilities. First, it co‑synthesizes a **domain‑specific AI assistant**  in parallel with the hardware, generating a Python‑native firmware layer and a hardware‑aware Copilot extension that understands the device’s semantics, parameters, and usage patterns. Second, it automatically produces a **fully accurate Python golden model** that exposes the exact same API as the real hardware, allowing both users and the AI assistant to simulate, test, and develop against the design without hardware access. Together, these features create a software‑native consumption model: users interact with accelerators through Python and natural language, not through micro‑code or custom DSLs.
+
+
+## Co‑Synthesizing a Domain‑Specific AI Agent
+Traditional hardware flows require consumers to learn custom DSLs, microcode formats, register maps, or device‑specific command encodings. PySilicon replaces this with a different model:
+
+- The hardware designer writes a Python specification.
+- PySilicon synthesizes hardware, firmware, and documentation from that specification.
+- PySilicon also generates a Copilot‑grounded instruction set and example corpus that teaches an AI assistant how to use the hardware correctly.
+The result is not the absence of a DSL, but a co‑synthesized, AI‑readable DSL expressed through:
+
+- typed Python APIs
+- structured metadata
+- example scripts
+- instruction files describing semantics and usage patterns
+
+This DSL is never exposed directly to the user. Instead, it is consumed by the AI assistant, which then guides the user through natural language.
+
+
+## Python as the Unified Firmware Interface
 
 All hardware control and data movement APIs are expressed directly in Python. For each `HwObj`, PySilicon generates:
 
@@ -10,79 +29,75 @@ All hardware control and data movement APIs are expressed directly in Python. Fo
 - methods corresponding to control actions on slave ports  
 - typed parameters and validation rules  
 - blocking and asynchronous execution models  
-- data movement helpers for AXI‑Stream and memory‑mapped interfaces  
+- helpers for AXI‑Stream and memory‑mapped data movement  
 
-This removes the need for:
+This Python API becomes the **single source of truth** for:
 
-- custom DSLs  
-- hand‑written register maps  
-- device‑specific firmware protocols  
-- microcode or command encodings  
+- hardware control  
+- simulation  
+- documentation  
+- AI grounding  
+- firmware generation  
 
-The Python API becomes the *only* interface the hardware consumer needs.
+The user never interacts with register maps, bitfields, or microcode encodings. Those exist internally, but they are abstracted behind the Python interface and the AI agent that understands it.
 
 ## Auto‑Generated Documentation and Examples
 
-Because the firmware API is derived from the same Python specification used for synthesis, PySilicon can automatically generate:
+Because the firmware API is derived from the same Python specification used for synthesis, PySilicon can deterministically generate:
 
 - API documentation  
 - usage examples  
 - parameter descriptions  
 - timing notes  
-- diagrams of interfaces and dataflow  
+- interface diagrams  
+- simulation stubs  
 
-These artifacts are always consistent with the hardware because they are regenerated deterministically from the same source.
+These artifacts are always consistent with the hardware because they are regenerated from the same source specification.
 
-## VS Code Extension as the Hardware Consumer’s Assistant
+## Auto‑Generated Copilot Chat Assistant
 
-The most powerful part of the firmware system is the auto‑generated VS Code Extension. For each synthesized hardware design, PySilicon produces a complete extension that includes:
+The most important part of the firmware layer is the **auto‑generated VS Code extension** that acts as a domain‑specific AI assistant for the hardware consumer.
+
+For each synthesized design, PySilicon produces an extension containing:
 
 - the Python runtime API  
 - documentation pages  
 - example scripts and notebooks  
 - simulator‑compatible stubs  
-- metadata for code completion and inline help  
+- structured metadata for code completion and inline help  
+- **instruction files** that teach Copilot Chat how to use the hardware  
+- **example corpora** that Copilot can retrieve during planning and usage  
 
-This extension is installed by the *consumer* of the hardware — not the designer. It transforms the hardware into a first‑class software package.
+This extension is installed by the *consumer* of the hardware — not the designer. It turns the hardware into a first‑class software package with an embedded AI tutor.
 
-### Why the VS Code Extension Matters
+### Why the Auto‑Generated AI Assistant Matters
 
-The extension is not just a packaging mechanism. It fundamentally changes how hardware is consumed:
+The extension fundamentally changes how hardware is consumed:
 
-- The consumer immediately gets a **well‑grounded AI assistant** that understands the hardware’s API, documentation, and examples.
-- The assistant can generate correct usage code because the extension provides structured metadata describing every method, parameter, and interface.
-- The consumer never sees register maps, bitfields, or firmware protocols.
-- The hardware becomes as easy to use as a Python library.
+- The consumer immediately gets a **well‑grounded AI assistant** that understands the hardware’s API, semantics, and examples.  
+- The assistant can generate correct usage code because it is grounded in structured metadata and curated examples.  
+- The consumer interacts with the hardware through Python and natural language, not through firmware protocols.  
+- The hardware becomes as easy to use as a Python library, even for non‑hardware experts.  
 
-This is the key innovation: **the VS Code Extension becomes the bridge between hardware and AI**, allowing the consumer to interact with the hardware through natural language and Python, without ever touching low‑level firmware.
+This is the key innovation: **PySilicon co‑synthesizes a domain‑specific AI agent alongside the hardware**, ensuring that every accelerator ships with its own usage guide, examples, and semantic model.
 
 ## Unified Firmware and Simulation
 
-The generated Python API is compatible with both:
+The generated Python API works with both:
 
-- the real FPGA hardware, and  
+- the real FPGA hardware  
 - the Python‑native simulation environment  
 
-This allows the consumer to:
+This unified interface allows users to:
 
-- test algorithms against the simulated hardware  
+- test algorithms against simulated hardware  
 - validate correctness before deployment  
 - debug without flashing bitstreams  
 - switch between simulation and hardware with no code changes  
 
-The firmware layer therefore unifies development, testing, and deployment.
+The firmware layer therefore unifies development, testing, and deployment under a single, Python‑native interface.
 
-## Summary
+## Python‑Native Simulation as the Golden Model
 
-The firmware system eliminates the traditional barriers to reconfigurable hardware by:
+Every PySilicon design includes a Python simulation model generated from the same specification that synthesizes the hardware. Unlike traditional hand‑written Python models, this simulation is the authoritative golden model: it defines the hardware’s semantics, drives the firmware layer, and powers the AI assistant’s understanding of the device. Both users and the AI can execute and test kernels entirely in Python, enabling full development and debugging without hardware access.
 
-- using Python as the single control interface  
-- auto‑generating APIs, documentation, and examples  
-- packaging everything into a VS Code Extension  
-- enabling AI‑assisted hardware usage  
-- unifying simulation and real hardware under the same API  
-
-This turns hardware consumption into a software‑native experience and removes the need for DSLs, microcode, or device‑specific firmware expertise.
-
----
-Go to [Optional High‑Performance C/C++ APIs Auto‑Generated from Python Semantics](./cpp.md)

@@ -5,9 +5,9 @@ nav_order: 1
 
 # PySilicon
 
-A Python‑native hardware design platform that unifies architecture, simulation, synthesis, and AI‑guided tooling into a single, coherent workflow.
+*PySilicon is a Python‑native hardware design platform that unifies architecture, simulation, synthesis, and AI‑grounded tooling into a single coherent workflow*. 
 
-PySilicon provides a disciplined substrate for hardware development: a consistent object model, deterministic simulation, structured data schemas, and code generation paths that allow AI to operate as a reliable engineering assistant rather than a loose code generator. The goal is to make hardware design reproducible, inspectable, and architecturally coherent from end to end.
+It provides a disciplined substrate for hardware development: a consistent object model, deterministic simulation, structured data schemas, and reproducible code‑generation paths that allow AI to operate as a reliable engineering assistant rather than a loose code generator. The result is a workflow where hardware design becomes reproducible, inspectable, and architecturally coherent from end to end.
 
 ---
 

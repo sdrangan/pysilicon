@@ -13,16 +13,11 @@ LLMs can generate individual modules, but they have **no persistent notion of sy
 
 This leads to the familiar outcome: **AI‑generated hardware quickly becomes unmaintainable soup**. What is missing is a *human‑defined architectural workflow* that constrains AI into predictable, incremental steps. No existing tool provides this global structure.
 
-## 2. The DSL and Microcode Barrier
+## 2. The Control‑Language and Microcode Barrier
 
-Reconfigurable hardware today requires:
+Reconfigurable hardware still forces both designers and consumers to work through **device‑specific control languages**: custom DSLs, bespoke microcode formats, hand‑written register maps, and ad‑hoc firmware protocols. Even if AI can generate RTL, these control layers remain opaque, inconsistent, and fragile. They are the real bottleneck to adoption, because every accelerator family invents its own way of being programmed.
 
-- custom DSLs  
-- bespoke microcode  
-- hand‑written register maps  
-- device‑specific firmware protocols  
-
-Even if AI can write RTL, designers and consumers still face opaque control interfaces, inconsistent firmware, and fragile integration. This is the **true bottleneck** for adoption. PySilicon eliminates DSLs entirely by generating hardware, firmware, runtime APIs, and documentation from the **same Python specification**, removing the need for domain‑specific microcode.
+PySilicon removes this barrier through two complementary innovations. It co‑synthesizes a **domain‑specific AI assistant** that ships with the hardware and understands the device’s semantics, enabling new teams to control the accelerator through natural language rather than learning a custom protocol. In parallel, it generates a **Python golden model** that exposes the exact same interface as the real hardware, allowing both users and the AI assistant to simulate, test, and develop against the design without hardware access.
 
 ## 3. Lack of Fast, Unified Functional Simulation
 
