@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 import math
+from pathlib import Path
 from enum import IntEnum
 from typing import Any, List, Optional, Literal, Tuple, Type
 import numpy as np
+from numpy.typing import NDArray
 
 class DataSchema(ABC):  
     """
@@ -105,10 +107,12 @@ class DataSchema(ABC):
         return final_iword + (1 if final_ipos > 0 else 0)
     
     def gen_write(
-        self, 
-        word_bw: int, 
+        self,
+        word_bw: Optional[int] = None,
         dst_type: Literal["array", "stream", "axi4_stream"] = "array",
-        params : Any = None
+        params: Any = None,
+        word_bw_supported: Optional[List[int]] = None,
+        indent_level: int = 0,
     ) -> str:
         """
         Generates the Vitis HLS C++ function for writing the data structure 
@@ -160,48 +164,100 @@ class DataSchema(ABC):
             for the generated code.  Then, the write function can add the additional parameters
             to the function signature and use them in the body to handle dynamic sizes.
         """
-        class_name = self.cpp_class_name()
-        
-        # 1. Generate the Header based on interface type
-        # Get the parameter specific string
-        param_str = self.get_param_str(params,write=True)
+        if word_bw_supported is None:
+            if word_bw is None:
+                raise ValueError("Either word_bw or word_bw_supported must be provided.")
+            word_bw_supported = [word_bw]
+
+        if not word_bw_supported:
+            raise ValueError("word_bw_supported must contain at least one value.")
+
+        for bw in word_bw_supported:
+            if bw <= 0:
+                raise ValueError(f"word_bw values must be positive. Got {bw}.")
+
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+        i2 = self._get_indent(indent_level + 2)
+        i3 = self._get_indent(indent_level + 3)
+
+        param_str = self.get_param_str(params, write=True)
+
         if dst_type == "array":
-            header = [f"template<>", f"void {class_name}::write_array<{word_bw}>(ap_uint<{word_bw}> x[], {param_str}) {{"]
+            signature = f"{indent}void write_array(ap_uint<word_bw> x[]"
+            if param_str:
+                signature += f", {param_str}"
+            signature += ") const {"
             target = "x"
+            unsupported_msg = "Unsupported word_bw for write_array"
         elif dst_type == "stream":
-            header = [f"template<>", f"void {class_name}::write_stream<{word_bw}>(hls::stream<ap_uint<{word_bw}>> &s, {param_str}) {{"]
+            signature = f"{indent}void write_stream(hls::stream<ap_uint<word_bw>> &s"
+            if param_str:
+                signature += f", {param_str}"
+            signature += ") const {"
             target = "s"
-        else: # axi4_stream
-            header = [f"template<>", 
-                      f"void {class_name}::write_axi4_stream<{word_bw}>(hls::stream<hls::axis<ap_uint<{word_bw}>, 0, 0, 0>> &s, bool tlast = true, {param_str}) {{"]
+            unsupported_msg = "Unsupported word_bw for write_stream"
+        else:
+            signature = (
+                f"{indent}void write_axi4_stream("
+                f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true"
+            )
+            if param_str:
+                signature += f", {param_str}"
+            signature += ") const {"
             target = "s"
+            unsupported_msg = "Unsupported word_bw for write_axi4_stream"
 
-        body_lines = []
-        # Initialize the word buffer if we are streaming
-        if dst_type != "array":
-            body_lines.append(f"    ap_uint<{word_bw}> w = 0;")
-        
-        # 2. Call the recursive engine
-        # ipos: bit position in current word, iword: current word index
-        final_lines, final_ipos, final_iword = self._gen_write_recursive(
-            word_bw=word_bw, 
-            dst_type=dst_type, 
-            target=target, 
-            ipos0=0, 
-            iword0=0,
-            prefix="this->",
-            params=params
-        )
-        body_lines.extend(final_lines)
+        lines: List[str] = [
+            f"{indent}template<int word_bw>",
+            signature,
+        ]
 
-        # 3. Final Flush for streams if bits are left in the buffer
-        if dst_type != "array" and final_ipos > 0:
-            if dst_type == "stream":
-                body_lines.append(f"    {target}.write(w);")
-            else:
-                body_lines.append(f"    streamutils::write_axi4_word<{word_bw}>({target}, w, tlast);")
+        for idx, bw in enumerate(word_bw_supported):
+            cond = "if constexpr" if idx == 0 else "else if constexpr"
+            lines.append(f"{i1}{cond} (word_bw == {bw}) {{")
 
-        return "\n".join(header + body_lines + ["}"])
+            if dst_type != "array":
+                lines.append(f"{i2}ap_uint<{bw}> w = 0;")
+
+            final_lines, final_ipos, _ = self._gen_write_recursive(
+                word_bw=bw,
+                dst_type=dst_type,
+                target=target,
+                ipos0=0,
+                iword0=0,
+                prefix="this->",
+                params=params,
+            )
+
+            if dst_type == "axi4_stream" and final_ipos == 0:
+                marker = f"streamutils::write_axi4_word<{bw}>({target}, w, "
+                for i in range(len(final_lines) - 1, -1, -1):
+                    if marker in final_lines[i]:
+                        final_lines[i] = final_lines[i].replace(", false);", ", tlast);")
+                        break
+
+            for line in final_lines:
+                if line.startswith("    "):
+                    line = line[4:]
+                lines.append(f"{i2}{line}" if line else "")
+
+            if dst_type != "array" and final_ipos > 0:
+                if dst_type == "stream":
+                    lines.append(f"{i2}{target}.write(w);")
+                else:
+                    lines.append(f"{i2}streamutils::write_axi4_word<{bw}>({target}, w, tlast);")
+
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"{unsupported_msg}\");",
+            f"{i1}}}",
+            f"{indent}}}",
+        ])
+
+        return "\n".join(lines)
 
     def get_param_str(
             self, 
@@ -490,6 +546,304 @@ class DataSchema(ABC):
         raise NotImplementedError("gen_cpp_class must be implemented by subclasses of DataSchema.")
     
 
+    def serialize(self, word_bw: int = 32) -> NDArray[np.unsignedinteger]:
+        """
+        Serializes the Python-side value (`self.val`) into a packed bit representation
+        compatible with HLS memory-mapped interfaces.
+
+        The packing logic must match the hardware's `gen_write()` implementation,
+        aligning `self.val` to the LSB of the hardware word.
+
+        Logic:
+        1. If word_bw <= 32:
+           Returns a 1D array of `np.uint32`. Each element is one hardware word.
+           Padding: If the schema size < 32, the upper bits of the uint32 are zeroed.
+        
+        2. If 32 < word_bw <= 64:
+           Returns a 1D array of `np.uint64`. Each element is one hardware word.
+           Padding: If the schema size < 64, the upper bits of the uint64 are zeroed.
+
+        3. If word_bw > 64:
+           Returns a 2D array of `np.uint64` with shape (n_words, d), where 
+           d = ceil(word_bw / 64). 
+           Each row [i, :] represents a single hardware word of `word_bw` bits.
+           - The word is split into 64-bit chunks: row[i, 0] contains bits [63:0], 
+             row[i, 1] contains bits [127:64], and so on.
+           - If `word_bw` is not a multiple of 64, the highest index `d-1` in each 
+             row contains the remaining MSBs, with the rest of that uint64 zeroed.
+
+        Parameters
+        ----------
+        word_bw : int
+            The bitwidth of the target HLS interface (e.g., 32, 64, 128, 512).
+            Determines the "container" size for each serialized data element.
+
+        Returns
+        -------
+        NDArray[np.unsignedinteger]
+            The serialized data packed into the appropriate NumPy uint format.
+        """
+        if word_bw <= 0:
+            raise ValueError("word_bw must be positive.")
+
+        words: List[int] = [0]
+        final_ipos, final_iword = self._serialize_recursive(
+            word_bw=word_bw,
+            words=words,
+            ipos0=0,
+            iword0=0,
+        )
+
+        n_words = final_iword + (1 if final_ipos > 0 else 0)
+        if n_words == 0:
+            n_words = 1
+
+        words = words[:n_words]
+
+        if word_bw <= 32:
+            return np.array([np.uint32(w & ((1 << min(word_bw, 32)) - 1)) for w in words], dtype=np.uint32)
+
+        if word_bw <= 64:
+            return np.array([np.uint64(w & ((1 << word_bw) - 1)) for w in words], dtype=np.uint64)
+
+        chunks_per_word = math.ceil(word_bw / 64)
+        out = np.zeros((n_words, chunks_per_word), dtype=np.uint64)
+        mask64 = (1 << 64) - 1
+        for i, w in enumerate(words):
+            for j in range(chunks_per_word):
+                out[i, j] = np.uint64((w >> (64 * j)) & mask64)
+        return out
+
+    def _serialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        raise NotImplementedError("Subclasses must implement _serialize_recursive.")
+
+    def deserialize(
+        self,
+        packed: NDArray[np.unsignedinteger],
+        word_bw: int = 32,
+    ) -> "DataSchema":
+        """
+        Deserializes packed hardware-word data into this instance's Python-side values.
+
+        Requirements
+        ------------
+        - `word_bw` must be positive.
+        - The input layout must match the exact output format produced by
+          :meth:`serialize` for the same `word_bw`:
+            1. `word_bw <= 32`:
+               `packed` is a 1D array-like of `uint32` words.
+            2. `32 < word_bw <= 64`:
+               `packed` is a 1D array-like of `uint64` words.
+            3. `word_bw > 64`:
+               `packed` is a 2D array-like of shape `(n_words, ceil(word_bw/64))`,
+               with chunk order `[63:0], [127:64], ...` per row.
+        - Field packing state follows the same recursive boundaries as
+          :meth:`serialize` / :meth:`gen_write` (no single field split across words).
+
+        Parameters
+        ----------
+        packed : NDArray[np.unsignedinteger]
+            Packed word data in the format described above.
+        word_bw : int, optional
+            Bitwidth of each hardware word.
+
+        Returns
+        -------
+        DataSchema
+            Returns `self` after in-place population of field values.
+        """
+        if word_bw <= 0:
+            raise ValueError("word_bw must be positive.")
+
+        arr = np.asarray(packed)
+        words: List[int] = []
+
+        if word_bw <= 64:
+            if arr.ndim == 0:
+                arr = arr.reshape(1)
+            elif arr.ndim != 1:
+                raise ValueError("For word_bw <= 64, packed must be a 1D array-like.")
+
+            mask = (1 << word_bw) - 1
+            words = [int(v) & mask for v in arr]
+        else:
+            chunks_per_word = math.ceil(word_bw / 64)
+            if arr.ndim != 2:
+                raise ValueError("For word_bw > 64, packed must be a 2D array-like.")
+            if arr.shape[1] != chunks_per_word:
+                raise ValueError(
+                    f"For word_bw={word_bw}, packed must have shape (n_words, {chunks_per_word})."
+                )
+
+            mask = (1 << word_bw) - 1
+            for row in arr:
+                word = 0
+                for j, chunk in enumerate(row):
+                    word |= int(np.uint64(chunk)) << (64 * j)
+                words.append(word & mask)
+
+        if not words:
+            words = [0]
+
+        self._deserialize_recursive(
+            word_bw=word_bw,
+            words=words,
+            ipos0=0,
+            iword0=0,
+        )
+        return self
+
+    def _deserialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        raise NotImplementedError("Subclasses must implement _deserialize_recursive.")
+
+    def is_close(
+            self, 
+            other: DataSchema, 
+            rel_tol : float | None =  None, 
+            abs_tol : float | None = 1e-8) -> bool:
+        """
+        Compares this schema's values with another. 
+        Default implementation uses standard equality.
+
+        Parameters
+        ----------
+        other : DataSchema
+            The other DataSchema instance to compare against.
+        rel_tol : float, optional
+            Relative tolerance for comparison (used for floating-point fields).
+            If None the check is skipped.
+        abs_tol : float, optional
+            Absolute tolerance for comparison (used for floating-point fields).
+            If None the check is skipped.
+
+        Returns
+        -------
+        bool
+            True if the values are considered close/equal, False otherwise.
+        """
+        if not isinstance(other, self.__class__):
+            return False
+        return self.val == other.val
+
+    def gen_include(
+            self,
+            include_dir: Optional[str] = None,
+            file_name: Optional[str] = None,
+            word_bw_supported : List[int] = None) -> str:
+        """
+        Generates and writes an include file for the DataSchema.
+
+        The file will have the following structure:
+
+        #ifndef {GUARD_NAME}
+        #define {GUARD_NAME}
+
+        // C++ class definition for this DataSchema
+        {CPP_CLASS_DEFINITION}
+
+        // Additional helper functions (e.g., pack_to_uint, unpack_from_uint) if needed
+
+        #endif // {GUARD_NAME}
+
+        Parameters
+        ----------
+        include_dir : Optional[str]
+            Directory to place the include file. If None, uses current directory.
+        file_name : Optional[str]
+            Name of the include file. If None, uses "{self.name}.h"
+        word_bw_supported : Optional[List[int]]
+            List of word bitwidths to generate write_mult functions for. 
+            If None, defaults to [].  For each word_bw in the list, it writes the code
+            for C::write_array, C::write_stream, and C::write_axi4_stream_mult functions.
+
+        Returns
+        -------
+        str
+            Path to the written include file.
+        """
+        if word_bw_supported is None:
+            word_bw_supported = []
+
+        for bw in word_bw_supported:
+            if bw <= 0:
+                raise ValueError(f"word_bw values must be positive. Got {bw}.")
+
+        if file_name is None:
+            base_name = self.name if self.name else self.cpp_class_name()
+            file_name = f"{base_name}.h"
+
+        guard_base = file_name.replace(".", "_").replace("-", "_").replace("/", "_").replace("\\", "_")
+        guard_name = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in guard_base).upper()
+
+        lines: List[str] = [
+            f"#ifndef {guard_name}",
+            f"#define {guard_name}",
+            "",
+            "#include <ap_int.h>",
+            "#include <hls_stream.h>",
+            "#include <hls_axi_stream.h>",
+            "#include \"streamutils.h\"",
+            "",
+        ]
+
+        class_name = self.cpp_class_name()
+        elements = getattr(self, "elements", None)
+        if elements is None:
+            raise TypeError("gen_include currently supports only class-like schemas with an 'elements' attribute.")
+
+        lines.extend([
+            f"class {class_name} {{",
+            "public:",
+        ])
+
+        for element in elements:
+            lines.append(f"    {element.cpp_class_name()} {element.name};")
+
+        lines.append("")
+        lines.append(f"    static constexpr int bitwidth = {self.get_bitwidth()};")
+        lines.append("")
+
+        pack_impl = self.gen_pack(indent_level=1)
+        if pack_impl:
+            lines.append(pack_impl)
+            lines.append("")
+
+        unpack_impl = self.gen_unpack(indent_level=1)
+        if unpack_impl:
+            lines.append(unpack_impl)
+            lines.append("")
+
+        for dst_type in ("array", "stream", "axi4_stream"):
+            lines.append(
+                self.gen_write(
+                    dst_type=dst_type,
+                    params=None,
+                    word_bw_supported=word_bw_supported,
+                    indent_level=1,
+                )
+            )
+            lines.append("")
+
+
+        lines.append(f"#endif // {guard_name}")
+        out_dir = Path(include_dir) if include_dir is not None else Path.cwd()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / file_name
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        return str(out_path)
+
 class DataField(DataSchema):
     """
     Represents a basic data field with a specific C++ type and bitwidth.
@@ -630,7 +984,122 @@ class DataField(DataSchema):
 
     def from_uint_expr(self, uint_expr: str) -> str:
         return f"({self.cpp_type})({uint_expr})"
-   
+
+    def is_close(
+        self,
+        other: DataSchema,
+        rel_tol: float | None = None,
+        abs_tol: float | None = 1e-8,
+    ) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
+
+        v1 = self.val
+        v2 = other.val
+
+        if isinstance(v1, np.ndarray) or isinstance(v2, np.ndarray):
+            return np.array_equal(np.asarray(v1), np.asarray(v2))
+
+        return v1 == v2
+
+    def _serialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        if self.bitwidth > word_bw:
+            raise ValueError(
+                f"Field '{self.name}' with bitwidth {self.bitwidth} cannot fit into word_bw={word_bw}."
+            )
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        if curr_ipos + self.bitwidth > word_bw:
+            curr_iword += 1
+            curr_ipos = 0
+
+        while len(words) <= curr_iword:
+            words.append(0)
+
+        current_val = self.val if self.val is not None else self.default_value()
+        mask = (1 << self.bitwidth) - 1
+
+        if isinstance(self, FloatField):
+            if self.bitwidth == 32:
+                field_bits = int(np.asarray(np.float32(current_val), dtype=np.float32).view(np.uint32))
+            elif self.bitwidth == 64:
+                field_bits = int(np.asarray(np.float64(current_val), dtype=np.float64).view(np.uint64))
+            else:
+                raise ValueError(f"Unsupported FloatField bitwidth={self.bitwidth} for serialization.")
+        elif isinstance(self, EnumField):
+            field_bits = int(current_val)
+        elif isinstance(self, IntField) and self.bitwidth > 64 and isinstance(current_val, np.ndarray):
+            field_bits = 0
+            for idx, word in enumerate(current_val.astype(np.uint64)):
+                field_bits |= int(word) << (64 * idx)
+        else:
+            field_bits = int(current_val)
+
+        field_bits &= mask
+        words[curr_iword] |= (field_bits << curr_ipos)
+
+        curr_ipos += self.bitwidth
+        if curr_ipos == word_bw:
+            curr_iword += 1
+            curr_ipos = 0
+
+        return curr_ipos, curr_iword
+
+    def _deserialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        if self.bitwidth > word_bw:
+            raise ValueError(
+                f"Field '{self.name}' with bitwidth {self.bitwidth} cannot fit into word_bw={word_bw}."
+            )
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        if curr_ipos + self.bitwidth > word_bw:
+            curr_iword += 1
+            curr_ipos = 0
+
+        if curr_iword >= len(words):
+            word = 0
+        else:
+            word = words[curr_iword]
+
+        mask = (1 << self.bitwidth) - 1
+        field_bits = (word >> curr_ipos) & mask
+
+        if isinstance(self, FloatField):
+            if self.bitwidth == 32:
+                value = np.asarray(np.uint32(field_bits), dtype=np.uint32).view(np.float32).item()
+            elif self.bitwidth == 64:
+                value = np.asarray(np.uint64(field_bits), dtype=np.uint64).view(np.float64).item()
+            else:
+                raise ValueError(f"Unsupported FloatField bitwidth={self.bitwidth} for deserialization.")
+            self.val = value
+        elif isinstance(self, EnumField):
+            self.val = int(field_bits)
+        else:
+            self.val = int(field_bits)
+
+        curr_ipos += self.bitwidth
+        if curr_ipos == word_bw:
+            curr_iword += 1
+            curr_ipos = 0
+
+        return curr_ipos, curr_iword
+
 class IntField(DataField):
     """
     Represents an integer field with a specified bitwidth and signedness.
@@ -716,6 +1185,8 @@ class IntField(DataField):
 
         return np.uint32(0) if self.bitwidth <= 32 else np.uint64(0)
 
+   
+
 class FloatField(DataField):
     def __init__(
             self, 
@@ -745,6 +1216,31 @@ class FloatField(DataField):
         if self.bitwidth != 32:
             raise ValueError("FloatField unpack currently supports only bitwidth=32.")
         return f"streamutils::uint_to_float((uint32_t)({uint_expr}))"
+
+    def is_close(
+        self,
+        other: DataSchema,
+        rel_tol: float | None = None,
+        abs_tol: float | None = 1e-8,
+    ) -> bool:
+        if not isinstance(other, FloatField):
+            return False
+
+        if self.bitwidth != other.bitwidth:
+            return False
+
+        v1 = float(self.val)
+        v2 = float(other.val)
+
+        if rel_tol is None and abs_tol is None:
+            return v1 == v2
+
+        kwargs = {}
+        if rel_tol is not None:
+            kwargs["rtol"] = rel_tol
+        if abs_tol is not None:
+            kwargs["atol"] = abs_tol
+        return bool(np.isclose(v1, v2, **kwargs))
 
 
 class EnumField(DataField):
@@ -814,6 +1310,20 @@ class EnumField(DataField):
             enum_lines.append(f"    {member.name} = {member.value},")
         enum_lines.append("};")
         return "\n".join(enum_lines)
+
+    def is_close(
+        self,
+        other: DataSchema,
+        rel_tol: float | None = None,
+        abs_tol: float | None = 1e-8,
+    ) -> bool:
+        if not isinstance(other, EnumField):
+            return False
+
+        if self.enum_type is not other.enum_type:
+            return False
+
+        return self.val == other.val
 
     
 
@@ -951,9 +1461,8 @@ class DataList(DataSchema):
         inner_indent = self._get_indent(indent_level + 1)
 
         lines = [
-            f"{indent}static constexpr int {cls_name}::bitwidth = {total_bits};",
-            f"{indent}static ap_uint<{total_bits}> {cls_name}::pack_to_uint(const {cls_name}& data) {{",
-            f"{inner_indent}ap_uint<{total_bits}> res = 0;"
+            f"{indent}static ap_uint<bitwidth> pack_to_uint(const {cls_name}& data) {{",
+            f"{inner_indent}ap_uint<bitwidth> res = 0;"
         ]
 
         current_lsb = 0
@@ -983,7 +1492,7 @@ class DataList(DataSchema):
         inner_indent = self._get_indent(indent_level + 1)
 
         lines = [
-            f"{indent}{cls_name} {cls_name}::unpack_from_uint(const ap_uint<{total_bits}>& packed) {{",
+            f"{indent}static {cls_name} unpack_from_uint(const ap_uint<bitwidth>& packed) {{",
             f"{inner_indent}{cls_name} data;"
         ]
 
@@ -1028,8 +1537,6 @@ class DataList(DataSchema):
         lines.extend([
             "",
             f"    static constexpr int bitwidth = {self.get_bitwidth()};",
-            f"    static ap_uint<bitwidth> pack_to_uint(const {class_name}& data);",
-            f"    static {class_name} unpack_from_uint(const ap_uint<bitwidth>& packed);",
             "",
             "};",
         ])
@@ -1090,6 +1597,67 @@ class DataList(DataSchema):
             )
 
         return curr_ipos, curr_iword
+
+    def _serialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        for element in self.elements:
+            curr_ipos, curr_iword = element._serialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+
+        return curr_ipos, curr_iword
+
+    def _deserialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        for element in self.elements:
+            curr_ipos, curr_iword = element._deserialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+
+        return curr_ipos, curr_iword
+
+    def is_close(
+        self,
+        other: DataSchema,
+        rel_tol: float | None = None,
+        abs_tol: float | None = 1e-8,
+    ) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
+
+        if len(self.elements) != len(other.elements):
+            return False
+
+        for element in self.elements:
+            if element.name not in other._element_map:
+                return False
+
+            if not element.is_close(other._element_map[element.name], rel_tol=rel_tol, abs_tol=abs_tol):
+                return False
+
+        return True
     
 class DataArray(DataSchema):
     """
