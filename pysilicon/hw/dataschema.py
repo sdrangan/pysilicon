@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import math
+import re
 from pathlib import Path
 from enum import IntEnum
 from typing import Any, List, Optional, Literal, Tuple, Type
@@ -259,6 +260,114 @@ class DataSchema(ABC):
 
         return "\n".join(lines)
 
+    def gen_read(
+        self,
+        word_bw: Optional[int] = None,
+        src_type: Literal["array", "stream", "axi4_stream"] = "array",
+        params: Any = None,
+        word_bw_supported: Optional[List[int]] = None,
+        indent_level: int = 0,
+    ) -> str:
+        """
+        Generates the Vitis HLS C++ function for reading the data structure
+        from a specific hardware interface. This is the inverse of ``gen_write``.
+
+        Parameters
+        ----------
+        word_bw : int
+            Bitwidth of the source interface word.
+        src_type : Literal["array", "stream", "axi4_stream"]
+            Source interface type.
+        params : Any
+            Optional parameter metadata for schema-specific generation.
+        word_bw_supported : Optional[List[int]]
+            Set of supported compile-time word widths.
+        indent_level : int
+            Base indentation level for generated code.
+        """
+        if word_bw_supported is None:
+            if word_bw is None:
+                raise ValueError("Either word_bw or word_bw_supported must be provided.")
+            word_bw_supported = [word_bw]
+
+        if not word_bw_supported:
+            raise ValueError("word_bw_supported must contain at least one value.")
+
+        for bw in word_bw_supported:
+            if bw <= 0:
+                raise ValueError(f"word_bw values must be positive. Got {bw}.")
+
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+        i2 = self._get_indent(indent_level + 2)
+
+        param_str = self.get_param_str(params, write=False)
+
+        if src_type == "array":
+            signature = f"{indent}void read_array(const ap_uint<word_bw> x[]"
+            if param_str:
+                signature += f", {param_str}"
+            signature += ") {"
+            source = "x"
+            unsupported_msg = "Unsupported word_bw for read_array"
+        elif src_type == "stream":
+            signature = f"{indent}void read_stream(hls::stream<ap_uint<word_bw>> &s"
+            if param_str:
+                signature += f", {param_str}"
+            signature += ") {"
+            source = "s"
+            unsupported_msg = "Unsupported word_bw for read_stream"
+        else:
+            signature = (
+                f"{indent}void read_axi4_stream("
+                f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s"
+            )
+            if param_str:
+                signature += f", {param_str}"
+            signature += ") {"
+            source = "s"
+            unsupported_msg = "Unsupported word_bw for read_axi4_stream"
+
+        lines: List[str] = [
+            f"{indent}template<int word_bw>",
+            signature,
+        ]
+
+        for idx, bw in enumerate(word_bw_supported):
+            cond = "if constexpr" if idx == 0 else "else if constexpr"
+            lines.append(f"{i1}{cond} (word_bw == {bw}) {{")
+
+            if src_type == "stream":
+                lines.append(f"{i2}ap_uint<{bw}> w = 0;")
+            elif src_type == "axi4_stream":
+                lines.append(f"{i2}ap_uint<{bw}> w = 0;")
+
+            final_lines, _, _ = self._gen_read_recursive(
+                word_bw=bw,
+                src_type=src_type,
+                source=source,
+                ipos0=0,
+                iword0=0,
+                prefix="this->",
+                params=params,
+            )
+
+            for line in final_lines:
+                if line.startswith("    "):
+                    line = line[4:]
+                lines.append(f"{i2}{line}" if line else "")
+
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"{unsupported_msg}\");",
+            f"{i1}}}",
+            f"{indent}}}",
+        ])
+
+        return "\n".join(lines)
+
     def get_param_str(
             self, 
             params: Any,
@@ -494,6 +603,27 @@ class DataSchema(ABC):
         applied only once at the top level.
         """
         raise NotImplementedError("Subclasses must implement _gen_write_recursive")
+
+    @abstractmethod
+    def _gen_read_recursive(
+        self,
+        word_bw: int,
+        src_type: Literal["array", "stream", "axi4_stream"] = "array",
+        source: Literal["x", "s"] = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        params: Any = None,
+    ) -> Tuple[List[str], int, int]:
+        """
+        Recursive helper for ``gen_read``.
+
+        Returns
+        -------
+        Tuple[List[str], int, int]
+            ``(lines, final_bit_pos, final_word_index)`` for this subtree.
+        """
+        raise NotImplementedError("Subclasses must implement _gen_read_recursive")
 
     @abstractmethod
     def _nwords_per_inst_recursive(
@@ -762,7 +892,7 @@ class DataSchema(ABC):
         include_dir : Optional[str]
             Directory to place the include file. If None, uses current directory.
         file_name : Optional[str]
-            Name of the include file. If None, uses "{self.name}.h"
+            Name of the include file. If None, uses "{self.name}.h" but in snake case.
         word_bw_supported : Optional[List[int]]
             List of word bitwidths to generate write_mult functions for. 
             If None, defaults to [].  For each word_bw in the list, it writes the code
@@ -782,7 +912,8 @@ class DataSchema(ABC):
 
         if file_name is None:
             base_name = self.name if self.name else self.cpp_class_name()
-            file_name = f"{base_name}.h"
+            snake_name = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).lower()
+            file_name = f"{snake_name}.h"
 
         guard_base = file_name.replace(".", "_").replace("-", "_").replace("/", "_").replace("\\", "_")
         guard_name = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in guard_base).upper()
@@ -836,6 +967,19 @@ class DataSchema(ABC):
             )
             lines.append("")
 
+        for src_type in ("array", "stream", "axi4_stream"):
+            lines.append(
+                self.gen_read(
+                    src_type=src_type,
+                    params=None,
+                    word_bw_supported=word_bw_supported,
+                    indent_level=1,
+                )
+            )
+            lines.append("")
+
+        lines.append("};")
+        lines.append("")
 
         lines.append(f"#endif // {guard_name}")
         out_dir = Path(include_dir) if include_dir is not None else Path.cwd()
@@ -935,6 +1079,57 @@ class DataField(DataSchema):
                 lines.append(f"    streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
                 lines.append("    w = 0;")
 
+            curr_iword += 1
+            curr_ipos = 0
+
+        return lines, curr_ipos, curr_iword
+
+    def _gen_read_recursive(
+        self,
+        word_bw: int,
+        src_type: Literal["array", "stream", "axi4_stream"] = "array",
+        source: Literal["x", "s"] = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        params: Any = None,
+    ) -> Tuple[List[str], int, int]:
+        """Inverse of _gen_write_recursive: extract field bits from source words."""
+        if self.bitwidth > word_bw:
+            raise ValueError(
+                f"Field '{self.name}' with bitwidth {self.bitwidth} cannot fit into word_bw={word_bw}."
+            )
+
+        lines: List[str] = []
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        if curr_ipos + self.bitwidth > word_bw:
+            curr_iword += 1
+            curr_ipos = 0
+
+        if src_type == "stream" and curr_ipos == 0:
+            lines.append(f"    w = {source}.read();")
+        elif src_type == "axi4_stream" and curr_ipos == 0:
+            lines.append(f"    w = {source}.read().data;")
+
+        if src_type == "array":
+            word_expr = f"{source}[{curr_iword}]"
+        else:
+            word_expr = "w"
+
+        if curr_ipos == 0 and self.bitwidth == word_bw:
+            rhs_expr = word_expr
+        else:
+            high = curr_ipos + self.bitwidth - 1
+            low = curr_ipos
+            rhs_expr = f"{word_expr}.range({high}, {low})"
+
+        assign_expr = self.from_uint_expr(rhs_expr)
+        lines.append(f"    {prefix}{self.name} = {assign_expr};")
+
+        curr_ipos += self.bitwidth
+        if curr_ipos == word_bw:
             curr_iword += 1
             curr_ipos = 0
 
@@ -1575,6 +1770,39 @@ class DataList(DataSchema):
                 iword0=curr_iword,
                 prefix=child_prefix,
                 params=params
+            )
+            lines.extend(elem_lines)
+
+        return lines, curr_ipos, curr_iword
+
+    def _gen_read_recursive(
+        self,
+        word_bw: int,
+        src_type: Literal["array", "stream", "axi4_stream"] = "array",
+        source: Literal["x", "s"] = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        params: Any = None,
+    ) -> Tuple[List[str], int, int]:
+        """Recursive inverse read generation for all child elements."""
+        lines: List[str] = []
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        child_prefix = prefix
+        if prefix != "this->" and self.name:
+            child_prefix = f"{prefix}{self.name}."
+
+        for element in self.elements:
+            elem_lines, curr_ipos, curr_iword = element._gen_read_recursive(
+                word_bw=word_bw,
+                src_type=src_type,
+                source=source,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+                prefix=child_prefix,
+                params=params,
             )
             lines.extend(elem_lines)
 
