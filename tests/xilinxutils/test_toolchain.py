@@ -71,6 +71,7 @@ def test_find_vitis_path_linux_uses_env_root(tmp_path, monkeypatch):
 TEST_DIR = Path(__file__).parent
 RESOURCE_DIR = TEST_DIR / "resources"
 
+@pytest.mark.vitis
 def test_vitis_smoke_with_resources(tmp_path):
     vitis_path = toolchain.find_vitis_path()
     if not vitis_path:

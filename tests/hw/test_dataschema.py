@@ -91,12 +91,14 @@ def test_gen_include_closes_class_brace(tmp_path):
 	content = (tmp_path / "complex_sample.h").read_text(encoding="utf-8")
 
 	assert "\n};\n" in content
-	assert "void dump_json(std::ostream& os, int indent = 2) const" in content
+	assert "void dump_json(std::ostream& os, int indent = 2, int level = 0) const" in content
 	assert "void load_json(std::istream& is)" in content
 	assert "void dump_json_file(const char* file_path, int indent = 2) const" in content
 	assert "void load_json_file(const char* file_path)" in content
-	assert "static std::string _json_parse_string(const std::string& s, size_t& pos)" in content
-	assert "static double _json_parse_number(const std::string& s, size_t& pos)" in content
+	assert "streamutils::json_parse_string" in content
+	assert "streamutils::json_parse_number" in content
+	assert "static std::string _json_parse_string" not in content
+	assert "static double _json_parse_number" not in content
 	assert "NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE" not in content
 	assert "\n#endif // COMPLEX_SAMPLE_H" in content
 	assert str((tmp_path / "complex_sample.h")) == out_path
@@ -133,3 +135,12 @@ def test_dataschema_to_json_from_json_roundtrip(tmp_path):
 	restored2 = OuterPacket(name="outer")
 	restored2.from_json(json_path)
 	assert restored2.is_close(packet)
+
+
+def test_gen_include_dump_json_nested_calls(tmp_path):
+	schema = OuterPacket(name="outer")
+	schema.gen_include(include_dir=tmp_path, word_bw_supported=[32])
+	content = (tmp_path / "outer.h").read_text(encoding="utf-8")
+
+	assert "this->sample.dump_json(os, step, level + 1);" in content
+	assert "this->sample.load_json(json_text, pos);" in content

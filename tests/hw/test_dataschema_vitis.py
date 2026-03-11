@@ -67,7 +67,7 @@ def _extra_includes(packet_type):
 		return '#include "demo_packet.h"\n'
 	raise ValueError(f"Unsupported packet_type: {packet_type}")
 
-
+@pytest.mark.vitis
 @pytest.mark.parametrize("packet_type", [DemoPacket, NestedPacket])
 @pytest.mark.parametrize("word_bw", [32, 64])
 def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
@@ -137,6 +137,80 @@ def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
 
 	ref_packet = packet_type(name=packet_name)
 	ref_packet.from_json(input_json_path)
+
+	assert got_packet.is_close(ref_packet, rel_tol=1e-6, abs_tol=1e-6)
+
+@pytest.mark.vitis
+@pytest.mark.parametrize("packet_type", [DemoPacket, NestedPacket])
+@pytest.mark.parametrize("word_bw", [32, 64])
+def test_vitis_to_python_serialization(tmp_path, packet_type, word_bw):
+	vitis_path = toolchain.find_vitis_path()
+	if not vitis_path:
+		pytest.skip("Vitis installation not found; skipping integration test.")
+
+	input_json_path = tmp_path / "packet_src.json"
+	words_path = tmp_path / "packet_from_vitis_words.txt"
+
+	packet_name = _packet_name(packet_type)
+	payload = _packet_payload(packet_type)
+
+	# Python side: create packet, populate values, and export JSON.
+	ref_packet = packet_type(name=packet_name)
+	ref_packet.from_dict(payload)
+	exported = ref_packet.to_dict()
+	if packet_name in exported:
+		exported = exported[packet_name]
+	exported = ref_packet._to_jsonable(exported)
+	input_json_path.write_text(json.dumps(exported, indent=2), encoding="utf-8")
+
+	include_path = ref_packet.gen_include(word_bw_supported=[word_bw], include_dir=tmp_path)
+	assert Path(include_path).name == f"{packet_name}.h"
+
+	if packet_type is NestedPacket:
+		demo_include = DemoPacket(name="demo_packet").gen_include(
+			word_bw_supported=[word_bw],
+			include_dir=tmp_path,
+		)
+		assert Path(demo_include).name == "demo_packet.h"
+
+	copy_streamutils(dst_path=tmp_path)
+
+	nwords = ref_packet.nwords_per_inst(word_bw=word_bw)
+	cpp_template = (RESOURCE_DIR / "deserialize_test.cpp").read_text(encoding="utf-8")
+	cpp_src = (
+		cpp_template
+		.replace("__HEADER__", f"{packet_name}.h")
+		.replace("__EXTRA_INCLUDES__", _extra_includes(packet_type))
+		.replace("__PACKET_CLASS__", packet_type.__name__)
+		.replace("__WORD_BW__", str(word_bw))
+		.replace("__NWORDS__", str(nwords))
+	)
+	(tmp_path / "deserialize_test.cpp").write_text(cpp_src, encoding="utf-8")
+
+	shutil.copy(RESOURCE_DIR / "deserialize_run.tcl", tmp_path / "deserialize_run.tcl")
+	tcl_src = tmp_path / "deserialize_run.tcl"
+
+	try:
+		toolchain.run_vitis_hls(tcl_src, work_dir=tmp_path)
+	except RuntimeError as exc:
+		pytest.skip(f"Vitis execution unavailable in current setup: {exc}")
+	except subprocess.CalledProcessError as exc:
+		pytest.fail(
+			"Vitis execution failed for reverse serialization integration test.\n"
+			f"Command: {exc.cmd}\n"
+			f"Return code: {exc.returncode}\n"
+			f"Stdout:\n{exc.stdout}\n"
+			f"Stderr:\n{exc.stderr}"
+		)
+
+	load_dtype = np.uint32 if word_bw <= 32 else np.uint64
+	packed = np.loadtxt(words_path, dtype=load_dtype)
+	packed = np.asarray(packed)
+	if packed.ndim == 0:
+		packed = packed.reshape(1)
+
+	got_packet = packet_type(name=packet_name)
+	got_packet.deserialize(packed, word_bw=word_bw)
 
 	assert got_packet.is_close(ref_packet, rel_tol=1e-6, abs_tol=1e-6)
 

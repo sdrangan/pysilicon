@@ -37,3 +37,6 @@ include-package-data = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+    "vitis: marks tests as requiring Vitis HLS installation (slow integration tests)"
+]

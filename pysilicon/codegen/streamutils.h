@@ -2,12 +2,16 @@
 #define STREAMUTILS_H
 
 #include <ap_int.h>
+#include <cctype>
+#include <cstdlib>
 #include <hls_stream.h>
 #if __has_include(<hls_axi_stream.h>)
 #include <hls_axi_stream.h>
 #else
 #include <ap_axi_sdata.h>
 #endif
+#include <stdexcept>
+#include <string>
 
 namespace streamutils {
 
@@ -49,6 +53,73 @@ namespace streamutils {
         pkt.keep = -1; // -1 in ap_uint sets all bits to 1
         pkt.strb = -1;
         s.write(pkt);
+    }
+
+    inline void json_skip_ws(const std::string& s, size_t& pos) {
+        while (pos < s.size() && std::isspace(static_cast<unsigned char>(s[pos]))) {
+            ++pos;
+        }
+    }
+
+    inline void json_expect_char(const std::string& s, size_t& pos, char ch) {
+        json_skip_ws(s, pos);
+        if (pos >= s.size() || s[pos] != ch) {
+            throw std::runtime_error("Malformed JSON: unexpected delimiter.");
+        }
+        ++pos;
+    }
+
+    inline std::string json_parse_string(const std::string& s, size_t& pos) {
+        json_skip_ws(s, pos);
+        if (pos >= s.size() || s[pos] != '"') {
+            throw std::runtime_error("Malformed JSON: expected string key.");
+        }
+        ++pos;
+
+        std::string out;
+        while (pos < s.size()) {
+            char c = s[pos++];
+            if (c == '"') {
+                return out;
+            }
+            if (c == '\\') {
+                if (pos >= s.size()) {
+                    throw std::runtime_error("Malformed JSON: invalid escape sequence.");
+                }
+                char esc = s[pos++];
+                switch (esc) {
+                case '"': out.push_back('"'); break;
+                case '\\': out.push_back('\\'); break;
+                case '/': out.push_back('/'); break;
+                case 'b': out.push_back('\b'); break;
+                case 'f': out.push_back('\f'); break;
+                case 'n': out.push_back('\n'); break;
+                case 'r': out.push_back('\r'); break;
+                case 't': out.push_back('\t'); break;
+                default:
+                    throw std::runtime_error("Malformed JSON: unsupported escape sequence.");
+                }
+            } else {
+                out.push_back(c);
+            }
+        }
+        throw std::runtime_error("Malformed JSON: unterminated string.");
+    }
+
+    inline double json_parse_number(const std::string& s, size_t& pos) {
+        json_skip_ws(s, pos);
+        if (pos >= s.size()) {
+            throw std::runtime_error("Malformed JSON: expected number.");
+        }
+
+        const char* begin = s.c_str() + pos;
+        char* end = nullptr;
+        double value = std::strtod(begin, &end);
+        if (end == begin) {
+            throw std::runtime_error("Malformed JSON: invalid numeric value.");
+        }
+        pos += static_cast<size_t>(end - begin);
+        return value;
     }
 
 } // namespace streamutils
