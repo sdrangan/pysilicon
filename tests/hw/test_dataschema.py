@@ -90,5 +90,46 @@ def test_gen_include_closes_class_brace(tmp_path):
 	out_path = schema.gen_include(include_dir=tmp_path, word_bw_supported=[32])
 	content = (tmp_path / "complex_sample.h").read_text(encoding="utf-8")
 
-	assert "\n};\n\n#endif // COMPLEX_SAMPLE_H" in content
+	assert "\n};\n" in content
+	assert "void dump_json(std::ostream& os, int indent = 2) const" in content
+	assert "void load_json(std::istream& is)" in content
+	assert "void dump_json_file(const char* file_path, int indent = 2) const" in content
+	assert "void load_json_file(const char* file_path)" in content
+	assert "static std::string _json_parse_string(const std::string& s, size_t& pos)" in content
+	assert "static double _json_parse_number(const std::string& s, size_t& pos)" in content
+	assert "NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE" not in content
+	assert "\n#endif // COMPLEX_SAMPLE_H" in content
 	assert str((tmp_path / "complex_sample.h")) == out_path
+
+
+def test_dataschema_from_dict_roundtrip():
+	packet = SimplePacket(name="pkt")
+	packet.count = -11
+	packet.gain = 2.25
+	packet.mode = Mode.ON
+
+	payload = packet.to_dict()
+
+	restored = SimplePacket(name="pkt")
+	restored.from_dict(payload)
+
+	assert restored.is_close(packet)
+
+
+def test_dataschema_to_json_from_json_roundtrip(tmp_path):
+	packet = OuterPacket(name="outer")
+	packet.seq = 31
+	packet.sample.i = -17
+	packet.sample.q = 0.5
+	packet.mode = Mode.AUTO
+
+	json_path = tmp_path / "outer_packet.json"
+	json_str = packet.to_json(file_path=json_path)
+
+	restored = OuterPacket(name="outer")
+	restored.from_json(json_str)
+	assert restored.is_close(packet)
+
+	restored2 = OuterPacket(name="outer")
+	restored2.from_json(json_path)
+	assert restored2.is_close(packet)

@@ -3,7 +3,11 @@
 
 #include <ap_int.h>
 #include <hls_stream.h>
+#if __has_include(<hls_axi_stream.h>)
 #include <hls_axi_stream.h>
+#else
+#include <ap_axi_sdata.h>
+#endif
 
 namespace streamutils {
 

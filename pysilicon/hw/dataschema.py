@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import json
 import math
 import re
 from pathlib import Path
@@ -43,6 +44,90 @@ class DataSchema(ABC):
         If this is not possible, it raises an Exception
         """
         return new_val
+
+    def to_dict(self) -> dict:
+        """
+        Converts the current value of this DataSchema node into a JSON-serializable dictionary.
+        The function simply returns a dictionary with a single key-value pair of `{name: val}`.
+
+        DataList nodes will naturally create a nested dictionary structure.
+        """
+        return {self.name : self.val}
+
+    def from_dict(self, data: dict) -> "DataSchema":
+        """
+        Populates this DataSchema node from a dictionary representation.
+
+        The input can be either:
+        - a wrapped dictionary from :meth:`to_dict`, e.g. ``{"pkt": {...}}``
+        - a direct payload for this node, e.g. ``{"field": 1, ...}``
+        """
+        if not isinstance(data, dict):
+            raise TypeError("from_dict expects a dictionary input.")
+
+        if self.name in data:
+            payload = data[self.name]
+        else:
+            payload = data
+
+        self.val = payload
+        return self
+
+    @staticmethod
+    def _to_jsonable(value: Any) -> Any:
+        """Convert nested values to types supported by json.dumps."""
+        if isinstance(value, dict):
+            return {k: DataSchema._to_jsonable(v) for k, v in value.items()}
+
+        if isinstance(value, (list, tuple)):
+            return [DataSchema._to_jsonable(v) for v in value]
+
+        if isinstance(value, np.ndarray):
+            return [DataSchema._to_jsonable(v) for v in value.tolist()]
+
+        if isinstance(value, np.generic):
+            return value.item()
+
+        return value
+
+    def to_json(
+        self,
+        file_path: Optional[str | Path] = None,
+        indent: Optional[int] = 2,
+    ) -> str:
+        """
+        Serializes :meth:`to_dict` output to a JSON string.
+
+        If ``file_path`` is provided, the JSON content is also written to disk.
+        """
+        payload = self._to_jsonable(self.to_dict())
+        json_str = json.dumps(payload, indent=indent)
+
+        if file_path is not None:
+            out_path = Path(file_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json_str, encoding="utf-8")
+
+        return json_str
+
+    def from_json(self, json_input: str | Path) -> "DataSchema":
+        """
+        Loads this DataSchema from JSON.
+
+        ``json_input`` can be either a JSON string or a path to a JSON file.
+        """
+        if isinstance(json_input, Path):
+            raw = json_input.read_text(encoding="utf-8")
+        elif isinstance(json_input, str):
+            path_candidate = Path(json_input)
+            if path_candidate.exists() and path_candidate.is_file():
+                raw = path_candidate.read_text(encoding="utf-8")
+            else:
+                raw = json_input
+        else:
+            raise TypeError("from_json expects a JSON string or a pathlib.Path.")
+
+        return self.from_dict(json.loads(raw))
 
     @abstractmethod
     def get_bitwidth(self) -> int:
@@ -368,6 +453,137 @@ class DataSchema(ABC):
 
         return "\n".join(lines)
 
+    def gen_dump_json(self, indent_level: int = 0) -> str:
+        """Generate C++ code that writes this schema instance as JSON to an output stream."""
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+
+        lines: List[str] = [
+            f"{indent}void dump_json(std::ostream& os, int indent = 2) const {{",
+            f"{i1}const int step = (indent < 0) ? 0 : indent;",
+        ]
+
+        body = self._gen_dump_json_recursive(
+            prefix="this->",
+            os_name="os",
+            depth_expr="0",
+            indent_var="step",
+        )
+        for line in body:
+            if line.startswith("    "):
+                line = line[4:]
+            lines.append(f"{i1}{line}" if line else "")
+
+        lines.append(f"{indent}}}")
+        return "\n".join(lines)
+
+    def gen_load_json(self, indent_level: int = 0) -> str:
+        """Generate C++ code that reads this schema instance from a JSON input stream."""
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+
+        lines: List[str] = [
+            f"{indent}void load_json(std::istream& is) {{",
+            f"{i1}std::string json_text((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());",
+            f"{i1}size_t pos = 0;",
+            f"{i1}_json_skip_ws(json_text, pos);",
+        ]
+
+        body = self._gen_load_json_recursive(
+            prefix="this->",
+            json_var="json_text",
+            pos_var="pos",
+            ctx="root",
+        )
+        for line in body:
+            if line.startswith("    "):
+                line = line[4:]
+            lines.append(f"{i1}{line}" if line else "")
+
+        lines.extend([
+            f"{i1}_json_skip_ws(json_text, pos);",
+            f"{i1}if (pos != json_text.size()) {{",
+            f"{i1}    throw std::runtime_error(\"Trailing characters after JSON object.\");",
+            f"{i1}}}",
+            f"{indent}}}",
+        ])
+        return "\n".join(lines)
+
+    def gen_json_helpers(self, indent_level: int = 0) -> str:
+        """Generate small JSON tokenizer/parser helpers used by generated load_json."""
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+        i2 = self._get_indent(indent_level + 2)
+
+        lines: List[str] = [
+            f"{indent}static void _json_skip_ws(const std::string& s, size_t& pos) {{",
+            f"{i1}while (pos < s.size() && std::isspace(static_cast<unsigned char>(s[pos]))) {{",
+            f"{i2}++pos;",
+            f"{i1}}}",
+            f"{indent}}}",
+            "",
+            f"{indent}static void _json_expect_char(const std::string& s, size_t& pos, char ch) {{",
+            f"{i1}_json_skip_ws(s, pos);",
+            f"{i1}if (pos >= s.size() || s[pos] != ch) {{",
+            f"{i2}throw std::runtime_error(\"Malformed JSON: unexpected delimiter.\");",
+            f"{i1}}}",
+            f"{i1}++pos;",
+            f"{indent}}}",
+            "",
+            f"{indent}static std::string _json_parse_string(const std::string& s, size_t& pos) {{",
+            f"{i1}_json_skip_ws(s, pos);",
+            f"{i1}if (pos >= s.size() || s[pos] != '\"') {{",
+            f"{i2}throw std::runtime_error(\"Malformed JSON: expected string key.\");",
+            f"{i1}}}",
+            f"{i1}++pos;",
+            f"{i1}std::string out;",
+            f"{i1}while (pos < s.size()) {{",
+            f"{i2}char c = s[pos++];",
+            f"{i2}if (c == '\\\"') {{",
+            f"{i2}    return out;",
+            f"{i2}}}",
+            f"{i2}if (c == '\\\\') {{",
+            f"{i2}    if (pos >= s.size()) {{",
+            f"{i2}        throw std::runtime_error(\"Malformed JSON: invalid escape sequence.\");",
+            f"{i2}    }}",
+            f"{i2}    char esc = s[pos++];",
+            f"{i2}    switch (esc) {{",
+            f"{i2}    case '\\\"': out.push_back('\\\"'); break;",
+            f"{i2}    case '\\\\': out.push_back('\\\\'); break;",
+            f"{i2}    case '/': out.push_back('/'); break;",
+            f"{i2}    case 'b': out.push_back('\\b'); break;",
+            f"{i2}    case 'f': out.push_back('\\f'); break;",
+            f"{i2}    case 'n': out.push_back('\\n'); break;",
+            f"{i2}    case 'r': out.push_back('\\r'); break;",
+            f"{i2}    case 't': out.push_back('\\t'); break;",
+            f"{i2}    default:",
+            f"{i2}        throw std::runtime_error(\"Malformed JSON: unsupported escape sequence.\");",
+            f"{i2}    }}",
+            f"{i2}}} else {{",
+            f"{i2}    out.push_back(c);",
+            f"{i2}}}",
+            f"{i1}}}",
+            f"{i1}throw std::runtime_error(\"Malformed JSON: unterminated string.\");",
+            f"{indent}}}",
+            "",
+            f"{indent}static double _json_parse_number(const std::string& s, size_t& pos) {{",
+            f"{i1}_json_skip_ws(s, pos);",
+            f"{i1}if (pos >= s.size()) {{",
+            f"{i2}throw std::runtime_error(\"Malformed JSON: expected number.\");",
+            f"{i1}}}",
+            f"{i1}const char* begin = s.c_str() + pos;",
+            f"{i1}char* end = nullptr;",
+            f"{i1}double value = std::strtod(begin, &end);",
+            f"{i1}if (end == begin) {{",
+            f"{i2}throw std::runtime_error(\"Malformed JSON: invalid numeric value.\");",
+            f"{i1}}}",
+            f"{i1}pos += static_cast<size_t>(end - begin);",
+            f"{i1}return value;",
+            f"{indent}}}",
+        ]
+
+        return "\n".join(lines)
+
     def get_param_str(
             self, 
             params: Any,
@@ -624,6 +840,28 @@ class DataSchema(ABC):
             ``(lines, final_bit_pos, final_word_index)`` for this subtree.
         """
         raise NotImplementedError("Subclasses must implement _gen_read_recursive")
+
+    @abstractmethod
+    def _gen_dump_json_recursive(
+        self,
+        prefix: str,
+        os_name: str,
+        depth_expr: str,
+        indent_var: str,
+    ) -> List[str]:
+        """Recursive helper for ``gen_dump_json``."""
+        raise NotImplementedError("Subclasses must implement _gen_dump_json_recursive")
+
+    @abstractmethod
+    def _gen_load_json_recursive(
+        self,
+        prefix: str,
+        json_var: str,
+        pos_var: str,
+        ctx: str,
+    ) -> List[str]:
+        """Recursive helper for ``gen_load_json``."""
+        raise NotImplementedError("Subclasses must implement _gen_load_json_recursive")
 
     @abstractmethod
     def _nwords_per_inst_recursive(
@@ -923,8 +1161,19 @@ class DataSchema(ABC):
             f"#define {guard_name}",
             "",
             "#include <ap_int.h>",
+            "#include <cctype>",
+            "#include <cstdlib>",
+            "#include <fstream>",
             "#include <hls_stream.h>",
+            "#include <iterator>",
+            "#include <stdexcept>",
+            "#include <string>",
+            "#if __has_include(<hls_axi_stream.h>)",
             "#include <hls_axi_stream.h>",
+            "#else",
+            "#include <ap_axi_sdata.h>",
+            "#endif",
+            "#include <iostream>",
             "#include \"streamutils.h\"",
             "",
         ]
@@ -977,6 +1226,35 @@ class DataSchema(ABC):
                 )
             )
             lines.append("")
+
+        lines.append(self.gen_dump_json(indent_level=1))
+        lines.append("")
+        lines.append(self.gen_load_json(indent_level=1))
+        lines.append("")
+
+        lines.extend([
+            "#ifndef __SYNTHESIS__",
+            "    void dump_json_file(const char* file_path, int indent = 2) const {",
+            "        std::ofstream ofs(file_path);",
+            "        if (!ofs) {",
+            "            throw std::runtime_error(\"Failed to open output JSON file.\");",
+            "        }",
+            "        this->dump_json(ofs, indent);",
+            "    }",
+            "",
+            "    void load_json_file(const char* file_path) {",
+            "        std::ifstream ifs(file_path);",
+            "        if (!ifs) {",
+            "            throw std::runtime_error(\"Failed to open input JSON file.\");",
+            "        }",
+            "        this->load_json(ifs);",
+            "    }",
+            "#endif",
+            "",
+        ])
+
+        lines.append(self.gen_json_helpers(indent_level=1))
+        lines.append("")
 
         lines.append("};")
         lines.append("")
@@ -1164,6 +1442,51 @@ class DataField(DataSchema):
             curr_ipos = 0
 
         return curr_ipos, curr_iword
+
+    def _gen_dump_json_recursive(
+        self,
+        prefix: str,
+        os_name: str,
+        depth_expr: str,
+        indent_var: str,
+    ) -> List[str]:
+        val_expr = f"{prefix}{self.name}"
+        if isinstance(self, EnumField):
+            val_expr = f"static_cast<int>({val_expr})"
+        elif self.cpp_type.startswith("ap_uint"):
+            val_expr = f"static_cast<unsigned long long>({val_expr})"
+        elif self.cpp_type.startswith("ap_int"):
+            val_expr = f"static_cast<long long>({val_expr})"
+
+        return [f"{os_name} << {val_expr};"]
+
+    def _gen_load_json_recursive(
+        self,
+        prefix: str,
+        json_var: str,
+        pos_var: str,
+        ctx: str,
+    ) -> List[str]:
+        target = f"{prefix}{self.name}"
+
+        if isinstance(self, FloatField):
+            return [f"{target} = static_cast<{self.cpp_class_name()}>(_json_parse_number({json_var}, {pos_var}));"]
+
+        if isinstance(self, EnumField):
+            return [
+                f"{target} = static_cast<{self.cpp_class_name()}>(static_cast<long long>(_json_parse_number({json_var}, {pos_var})));"
+            ]
+
+        if isinstance(self, IntField):
+            if self.signed:
+                return [
+                    f"{target} = static_cast<{self.cpp_class_name()}>(static_cast<long long>(_json_parse_number({json_var}, {pos_var})));"
+                ]
+            return [
+                f"{target} = static_cast<{self.cpp_class_name()}>(static_cast<unsigned long long>(_json_parse_number({json_var}, {pos_var})));"
+            ]
+
+        return [f"{target} = static_cast<{self.cpp_class_name()}>(_json_parse_number({json_var}, {pos_var}));"]
 
 
     def default_value(self) -> Any:
@@ -1757,18 +2080,18 @@ class DataList(DataSchema):
         curr_ipos = ipos0
         curr_iword = iword0
 
-        child_prefix = prefix
-        if prefix != "this->" and self.name:
-            child_prefix = f"{prefix}{self.name}."
-
         for element in self.elements:
+            elem_prefix = prefix
+            if isinstance(element, DataList) and element.name:
+                elem_prefix = f"{prefix}{element.name}."
+
             elem_lines, curr_ipos, curr_iword = element._gen_write_recursive(
                 word_bw=word_bw,
                 dst_type=dst_type,
                 target=target,
                 ipos0=curr_ipos,
                 iword0=curr_iword,
-                prefix=child_prefix,
+                prefix=elem_prefix,
                 params=params
             )
             lines.extend(elem_lines)
@@ -1790,18 +2113,18 @@ class DataList(DataSchema):
         curr_ipos = ipos0
         curr_iword = iword0
 
-        child_prefix = prefix
-        if prefix != "this->" and self.name:
-            child_prefix = f"{prefix}{self.name}."
-
         for element in self.elements:
+            elem_prefix = prefix
+            if isinstance(element, DataList) and element.name:
+                elem_prefix = f"{prefix}{element.name}."
+
             elem_lines, curr_ipos, curr_iword = element._gen_read_recursive(
                 word_bw=word_bw,
                 src_type=src_type,
                 source=source,
                 ipos0=curr_ipos,
                 iword0=curr_iword,
-                prefix=child_prefix,
+                prefix=elem_prefix,
                 params=params,
             )
             lines.extend(elem_lines)
@@ -1825,6 +2148,113 @@ class DataList(DataSchema):
             )
 
         return curr_ipos, curr_iword
+
+    def _gen_dump_json_recursive(
+        self,
+        prefix: str,
+        os_name: str,
+        depth_expr: str,
+        indent_var: str,
+    ) -> List[str]:
+        lines: List[str] = [f"{os_name} << \"{{\";"]
+
+        if self.elements:
+            lines.append(f"{os_name} << \"\\n\";")
+
+        for idx, element in enumerate(self.elements):
+            lines.append(f"for (int i = 0; i < ({depth_expr} + 1) * {indent_var}; ++i) {{ {os_name} << ' '; }}")
+            lines.append(f"{os_name} << \"\\\"{element.name}\\\": \";")
+
+            elem_prefix = prefix
+            if isinstance(element, DataList) and element.name:
+                elem_prefix = f"{prefix}{element.name}."
+
+            lines.extend(
+                element._gen_dump_json_recursive(
+                    prefix=elem_prefix,
+                    os_name=os_name,
+                    depth_expr=f"{depth_expr} + 1",
+                    indent_var=indent_var,
+                )
+            )
+
+            if idx < len(self.elements) - 1:
+                lines.append(f"{os_name} << \",\";")
+            lines.append(f"{os_name} << \"\\n\";")
+
+        if self.elements:
+            lines.append(f"for (int i = 0; i < ({depth_expr}) * {indent_var}; ++i) {{ {os_name} << ' '; }}")
+
+        lines.append(f"{os_name} << \"}}\";")
+        return lines
+
+    def _gen_load_json_recursive(
+        self,
+        prefix: str,
+        json_var: str,
+        pos_var: str,
+        ctx: str,
+    ) -> List[str]:
+        lines: List[str] = [
+            f"_json_expect_char({json_var}, {pos_var}, '{{');",
+        ]
+
+        seen_flags = [f"seen_{ctx}_{element.name}" for element in self.elements]
+        for flag in seen_flags:
+            lines.append(f"bool {flag} = false;")
+
+        lines.extend([
+            "bool first = true;",
+            "while (true) {",
+            f"    _json_skip_ws({json_var}, {pos_var});",
+            f"    if ({pos_var} < {json_var}.size() && {json_var}[{pos_var}] == '}}') {{",
+            f"        ++{pos_var};",
+            "        break;",
+            "    }",
+            "    if (!first) {",
+            f"        _json_expect_char({json_var}, {pos_var}, ',');",
+            "    }",
+            "    first = false;",
+            f"    std::string key = _json_parse_string({json_var}, {pos_var});",
+            f"    _json_expect_char({json_var}, {pos_var}, ':');",
+        ])
+
+        for idx, element in enumerate(self.elements):
+            cond = "if" if idx == 0 else "else if"
+            elem_prefix = prefix
+            if isinstance(element, DataList) and element.name:
+                elem_prefix = f"{prefix}{element.name}."
+
+            lines.append(f"    {cond} (key == \"{element.name}\") {{")
+            lines.append(f"        seen_{ctx}_{element.name} = true;")
+
+            child_ctx = f"{ctx}_{element.name}"
+            child_lines = element._gen_load_json_recursive(
+                prefix=elem_prefix,
+                json_var=json_var,
+                pos_var=pos_var,
+                ctx=child_ctx,
+            )
+            for child_line in child_lines:
+                lines.append(f"        {child_line}")
+
+            lines.append("    }")
+
+        lines.extend([
+            "    else {",
+            "        throw std::runtime_error(\"Malformed JSON: unexpected key for schema.\");",
+            "    }",
+            "}",
+        ])
+
+        for element in self.elements:
+            lines.extend([
+                f"if (!seen_{ctx}_{element.name}) {{",
+                f"    throw std::runtime_error(\"Malformed JSON: missing required key '{element.name}'.\");",
+                "}",
+            ])
+
+        return lines
 
     def _serialize_recursive(
         self,
