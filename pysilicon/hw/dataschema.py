@@ -845,6 +845,18 @@ class DataSchema(ABC):
     def gen_class_elems(self, indent_level: int = 1) -> List[str]:
         """Generate C++ class member declarations for this schema."""
         raise NotImplementedError("gen_class_elems must be implemented by subclasses that support class generation.")
+
+    def gen_word_helpers(
+            self,
+            indent_level: int = 1,
+            word_bw_supported: Optional[List[int]] = None) -> str:
+        """Generate optional single-word read/write helper methods for this schema."""
+        _ = indent_level, word_bw_supported
+        return ""
+
+    def to_uint_value_expr(self, value_expr: str) -> str:
+        """C++ expression that packs a value expression to unsigned bits."""
+        return f"{self.cpp_class_name()}::pack_to_uint({value_expr})"
     
 
     def serialize(self, word_bw: int = 32) -> NDArray[np.unsignedinteger]:
@@ -1134,6 +1146,14 @@ class DataSchema(ABC):
             lines.append(unpack_impl)
             lines.append("")
 
+        word_helpers = self.gen_word_helpers(
+            indent_level=1,
+            word_bw_supported=word_bw_supported,
+        )
+        if word_helpers:
+            lines.append(word_helpers)
+            lines.append("")
+
         for dst_type in ("array", "stream", "axi4_stream"):
             lines.append(
                 self.gen_write(
@@ -1224,6 +1244,9 @@ class DataField(DataSchema):
         # DataFields don't generate their own unpack function;
         # they are unpacked by their parent StructNode.
         return ""
+
+    def to_uint_value_expr(self, value_expr: str) -> str:
+        return f"(ap_uint<{self.bitwidth}>)({value_expr})"
     
     def _gen_write_recursive(
         self, 
@@ -1544,6 +1567,9 @@ class IntField(DataField):
             prefix = ""
         return f"{prefix}{self.name}"
 
+    def to_uint_value_expr(self, value_expr: str) -> str:
+        return value_expr
+
     def _convert(self, new_val):
         if isinstance(new_val, (float, np.floating)) and not float(new_val).is_integer():
             raise ValueError(
@@ -1636,6 +1662,9 @@ class FloatField(DataField):
         if prefix is None:
             prefix = ""
         return f"streamutils::float_to_uint({prefix}{self.name})"
+
+    def to_uint_value_expr(self, value_expr: str) -> str:
+        return f"streamutils::float_to_uint({value_expr})"
 
     def _convert(self, new_val):
         return np.float64(new_val) if self.bitwidth == 64 else np.float32(new_val)
@@ -1735,6 +1764,9 @@ class EnumField(DataField):
         if prefix is None:
             prefix = ""
         return f"(ap_uint<{self.bitwidth}>)({prefix}{self.name})"
+
+    def to_uint_value_expr(self, value_expr: str) -> str:
+        return f"(ap_uint<{self.bitwidth}>)({value_expr})"
 
     def default_value(self) -> Any:
         return self._default_member
@@ -2409,6 +2441,98 @@ class DataArray(DataSchema):
 
         lines.extend([
             f"{i1}return res;",
+            f"{indent}}}",
+        ])
+
+        return "\n".join(lines)
+
+    def gen_word_helpers(
+        self,
+        indent_level: int = 1,
+        word_bw_supported: Optional[List[int]] = None,
+    ) -> str:
+        """
+        Generate single-word helpers for streaming use cases where callers pack
+        or unpack only one word at a time.
+
+        The generated C++ methods are:
+        - template<int word_bw> static constexpr int pf();
+        - template<int word_bw> static void write_word(...);
+        - template<int word_bw> static void read_word(...);
+        """
+        elem_bw = self.element_type.get_bitwidth()
+        elem_cpp = self.element_type.cpp_class_name()
+
+        supported = sorted(set(int(bw) for bw in (word_bw_supported or [])))
+
+        # Only generate helpers when compile-time widths are explicitly provided.
+        if not supported:
+            return ""
+
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+        i2 = self._get_indent(indent_level + 2)
+        i3 = self._get_indent(indent_level + 3)
+
+        lines: List[str] = [
+            f"{indent}template<int word_bw>",
+            f"{indent}static constexpr int pf() {{",
+            f"{i1}return word_bw / {elem_bw};",
+            f"{indent}}}",
+            "",
+            f"{indent}template<int word_bw>",
+            f"{indent}static void write_word(const {elem_cpp} in[pf<word_bw>()], ap_uint<word_bw>& w, int n = pf<word_bw>()) {{",
+            f"{i1}#pragma HLS INLINE",
+        ]
+
+        for idx, bw in enumerate(supported):
+            pfv = bw // elem_bw
+            kw = "if" if idx == 0 else "else if"
+            lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+            if pfv <= 0:
+                lines.append(f"{i2}static_assert(word_bw > 0, \"word_bw is too small to fit one array element.\");")
+                lines.append(f"{i1}}}")
+                continue
+            lines.append(f"{i2}w = 0;")
+            for j in range(pfv):
+                lo = j * elem_bw
+                hi = lo + elem_bw - 1
+                lines.append(f"{i2}if (n > {j}) {{")
+                lines.append(f"{i3}w.range({hi}, {lo}) = {self.element_type.to_uint_value_expr(f'in[{j}]')};")
+                lines.append(f"{i2}}}")
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for write_word\");",
+            f"{i1}}}",
+            f"{indent}}}",
+            "",
+            f"{indent}template<int word_bw>",
+            f"{indent}static void read_word({elem_cpp} out[pf<word_bw>()], const ap_uint<word_bw>& w, int n = pf<word_bw>()) {{",
+            f"{i1}#pragma HLS INLINE",
+        ])
+
+        for idx, bw in enumerate(supported):
+            pfv = bw // elem_bw
+            kw = "if" if idx == 0 else "else if"
+            lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+            if pfv <= 0:
+                lines.append(f"{i2}static_assert(word_bw > 0, \"word_bw is too small to fit one array element.\");")
+                lines.append(f"{i1}}}")
+                continue
+            for j in range(pfv):
+                lo = j * elem_bw
+                hi = lo + elem_bw - 1
+                lines.append(f"{i2}if (n > {j}) {{")
+                lines.append(f"{i3}out[{j}] = {self.element_type.from_uint_expr(f'w.range({hi}, {lo})')};")
+                lines.append(f"{i2}}}")
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for read_word\");",
+            f"{i1}}}",
             f"{indent}}}",
         ])
 
