@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     }
 
     __PACKET_CLASS__ pkt;
-    pkt.read_array<__WORD_BW__>(words.data());
+    pkt.read_array<__WORD_BW__>(words.data()__RW_ARGS__);
 
     try {
         pkt.dump_json_file(out_json_path, 4);

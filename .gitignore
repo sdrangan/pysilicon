@@ -103,3 +103,7 @@ pysilicon-extension/node_modules/
 pysilicon-extension/out/
 pysilicon-extension/.vscode-test/
 pysilicon-extension/*.vsix
+
+# Temporary working directory
+examples/dataschema
+examples/vecunit

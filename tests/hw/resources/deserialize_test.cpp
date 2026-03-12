@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     }
 
     ap_uint<__WORD_BW__> words[__NWORDS__];
-    pkt.write_array<__WORD_BW__>(words);
+    pkt.write_array<__WORD_BW__>(words__RW_ARGS__);
 
     std::ofstream out_words(out_words_path);
     if (!out_words) {

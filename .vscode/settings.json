@@ -1,3 +1,4 @@
 {
-    "pysilicon.pythonPath": "c:\\Users\\sdran\\Documents\\repos\\pysilicon-venv\\Scripts\\python.exe"
+    "pysilicon.pythonPath": "c:\\Users\\sdran\\Documents\\repos\\pysilicon-venv\\Scripts\\python.exe",
+    "python-envs.defaultEnvManager": "ms-python.python:system"
 }

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from pysilicon.codegen.streamutils import copy_streamutils
-from pysilicon.hw.dataschema import DataList, FloatField, IntField
+from pysilicon.hw.dataschema import DataArray, DataList, FloatField, IntField
 from pysilicon.xilinxutils import toolchain
 
 TEST_DIR = Path(__file__).parent
@@ -30,7 +30,25 @@ class NestedPacket(DataList):
 		self.add_elem(IntField(name="tag", bitwidth=8, signed=False))
 
 
+class SampData(DataArray):
+	def __init__(self, name=None, length=16):
+		super().__init__(
+			name=name,
+			element_type=IntField(name="samp", bitwidth=13, signed=True),
+			max_shape=(length,),
+			static=True,
+		)
+
+
 def _packet_payload(packet_type):
+	if packet_type is SampData:
+		return [
+			-2048, -1024, -17, -1,
+			0, 1, 7, 63,
+			127, 255, 511, 1023,
+			1535, 1792, 2046, 2047,
+		]
+
 	if packet_type is DemoPacket:
 		return {
 			"count": -21,
@@ -53,6 +71,8 @@ def _packet_payload(packet_type):
 
 
 def _packet_name(packet_type):
+	if packet_type is SampData:
+		return "samp_data"
 	if packet_type is DemoPacket:
 		return "demo_packet"
 	if packet_type is NestedPacket:
@@ -61,14 +81,23 @@ def _packet_name(packet_type):
 
 
 def _extra_includes(packet_type):
+	if packet_type is SampData:
+		return ""
 	if packet_type is DemoPacket:
 		return ""
 	if packet_type is NestedPacket:
 		return '#include "demo_packet.h"\n'
 	raise ValueError(f"Unsupported packet_type: {packet_type}")
 
+
+def _rw_args(packet):
+	if isinstance(packet, DataArray):
+		shape_args = ", ".join(str(int(dim)) for dim in tuple(packet.max_shape))
+		return f", {shape_args}" if shape_args else ""
+	return ""
+
 @pytest.mark.vitis
-@pytest.mark.parametrize("packet_type", [DemoPacket, NestedPacket])
+@pytest.mark.parametrize("packet_type", [SampData, DemoPacket, NestedPacket])
 @pytest.mark.parametrize("word_bw", [32, 64])
 def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
 	vitis_path = toolchain.find_vitis_path()
@@ -86,7 +115,12 @@ def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
 
 	# Python side: create packet, load fields from JSON, serialize to words, and emit include.
 	packet = packet_type(name=packet_name)
-	packet.from_json(input_json_path)
+	if isinstance(packet, DataArray):
+		assert _rw_args(packet), "DataArray packets must pass explicit runtime shape arguments."
+	if packet_type is SampData:
+		packet.val = input_payload
+	else:
+		packet.from_json(input_json_path)
 
 	packed = packet.serialize(word_bw=word_bw)
 	if word_bw <= 32:
@@ -113,6 +147,7 @@ def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
 		.replace("__EXTRA_INCLUDES__", _extra_includes(packet_type))
 		.replace("__PACKET_CLASS__", packet_type.__name__)
 		.replace("__WORD_BW__", str(word_bw))
+		.replace("__RW_ARGS__", _rw_args(packet))
 	)
 	(tmp_path / "serialize_test.cpp").write_text(cpp_src, encoding="utf-8")
 
@@ -133,15 +168,21 @@ def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
 		)
 
 	got_packet = packet_type(name=packet_name)
-	got_packet.from_json(output_json_path)
+	if packet_type is SampData:
+		got_packet.val = json.loads(output_json_path.read_text(encoding="utf-8"))
+	else:
+		got_packet.from_json(output_json_path)
 
 	ref_packet = packet_type(name=packet_name)
-	ref_packet.from_json(input_json_path)
+	if packet_type is SampData:
+		ref_packet.val = input_payload
+	else:
+		ref_packet.from_json(input_json_path)
 
 	assert got_packet.is_close(ref_packet, rel_tol=1e-6, abs_tol=1e-6)
 
 @pytest.mark.vitis
-@pytest.mark.parametrize("packet_type", [DemoPacket, NestedPacket])
+@pytest.mark.parametrize("packet_type", [SampData, DemoPacket, NestedPacket])
 @pytest.mark.parametrize("word_bw", [32, 64])
 def test_vitis_to_python_serialization(tmp_path, packet_type, word_bw):
 	vitis_path = toolchain.find_vitis_path()
@@ -156,11 +197,17 @@ def test_vitis_to_python_serialization(tmp_path, packet_type, word_bw):
 
 	# Python side: create packet, populate values, and export JSON.
 	ref_packet = packet_type(name=packet_name)
-	ref_packet.from_dict(payload)
-	exported = ref_packet.to_dict()
-	if packet_name in exported:
-		exported = exported[packet_name]
-	exported = ref_packet._to_jsonable(exported)
+	if isinstance(ref_packet, DataArray):
+		assert _rw_args(ref_packet), "DataArray packets must pass explicit runtime shape arguments."
+	if packet_type is SampData:
+		ref_packet.val = payload
+		exported = ref_packet._to_jsonable(payload)
+	else:
+		ref_packet.from_dict(payload)
+		exported = ref_packet.to_dict()
+		if packet_name in exported:
+			exported = exported[packet_name]
+		exported = ref_packet._to_jsonable(exported)
 	input_json_path.write_text(json.dumps(exported, indent=2), encoding="utf-8")
 
 	include_path = ref_packet.gen_include(word_bw_supported=[word_bw], include_dir=tmp_path)
@@ -184,6 +231,7 @@ def test_vitis_to_python_serialization(tmp_path, packet_type, word_bw):
 		.replace("__PACKET_CLASS__", packet_type.__name__)
 		.replace("__WORD_BW__", str(word_bw))
 		.replace("__NWORDS__", str(nwords))
+		.replace("__RW_ARGS__", _rw_args(ref_packet))
 	)
 	(tmp_path / "deserialize_test.cpp").write_text(cpp_src, encoding="utf-8")
 

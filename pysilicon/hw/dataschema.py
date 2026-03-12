@@ -841,6 +841,10 @@ class DataSchema(ABC):
         For DataList, this is a class with fields corresponding to the elements.
         """
         raise NotImplementedError("gen_cpp_class must be implemented by subclasses of DataSchema.")
+
+    def gen_class_elems(self, indent_level: int = 1) -> List[str]:
+        """Generate C++ class member declarations for this schema."""
+        raise NotImplementedError("gen_class_elems must be implemented by subclasses that support class generation.")
     
 
     def serialize(self, word_bw: int = 32) -> NDArray[np.unsignedinteger]:
@@ -1108,17 +1112,13 @@ class DataSchema(ABC):
         ]
 
         class_name = self.cpp_class_name()
-        elements = getattr(self, "elements", None)
-        if elements is None:
-            raise TypeError("gen_include currently supports only class-like schemas with an 'elements' attribute.")
 
         lines.extend([
             f"class {class_name} {{",
             "public:",
         ])
 
-        for element in elements:
-            lines.append(f"    {element.cpp_class_name()} {element.name};")
+        lines.extend(self.gen_class_elems(indent_level=1))
 
         lines.append("")
         lines.append(f"    static constexpr int bitwidth = {self.get_bitwidth()};")
@@ -1394,25 +1394,20 @@ class DataField(DataSchema):
         ctx: str,
     ) -> List[str]:
         target = f"{prefix}{self.name}"
+        rhs_expr = self._json_load_expr(json_var=json_var, pos_var=pos_var)
+        return [f"{target} = {rhs_expr};"]
 
-        if isinstance(self, FloatField):
-            return [f"{target} = static_cast<{self.cpp_class_name()}>(streamutils::json_parse_number({json_var}, {pos_var}));"]
+    def _json_load_expr(self, json_var: str, pos_var: str) -> str:
+        """C++ expression used by _gen_load_json_recursive for this field type."""
+        return f"static_cast<{self.cpp_class_name()}>(streamutils::json_parse_number({json_var}, {pos_var}))"
 
-        if isinstance(self, EnumField):
-            return [
-                f"{target} = static_cast<{self.cpp_class_name()}>(static_cast<long long>(streamutils::json_parse_number({json_var}, {pos_var})));"
-            ]
+    def _value_to_field_bits(self, current_val: Any) -> int:
+        """Convert Python-side value to raw integer bit pattern for serialization."""
+        return int(current_val)
 
-        if isinstance(self, IntField):
-            if self.signed:
-                return [
-                    f"{target} = static_cast<{self.cpp_class_name()}>(static_cast<long long>(streamutils::json_parse_number({json_var}, {pos_var})));"
-                ]
-            return [
-                f"{target} = static_cast<{self.cpp_class_name()}>(static_cast<unsigned long long>(streamutils::json_parse_number({json_var}, {pos_var})));"
-            ]
-
-        return [f"{target} = static_cast<{self.cpp_class_name()}>(streamutils::json_parse_number({json_var}, {pos_var}));"]
+    def _field_bits_to_value(self, field_bits: int) -> Any:
+        """Convert raw integer bit pattern to Python-side value for deserialization."""
+        return int(field_bits)
 
 
     def default_value(self) -> Any:
@@ -1470,22 +1465,7 @@ class DataField(DataSchema):
 
         current_val = self.val if self.val is not None else self.default_value()
         mask = (1 << self.bitwidth) - 1
-
-        if isinstance(self, FloatField):
-            if self.bitwidth == 32:
-                field_bits = int(np.asarray(np.float32(current_val), dtype=np.float32).view(np.uint32))
-            elif self.bitwidth == 64:
-                field_bits = int(np.asarray(np.float64(current_val), dtype=np.float64).view(np.uint64))
-            else:
-                raise ValueError(f"Unsupported FloatField bitwidth={self.bitwidth} for serialization.")
-        elif isinstance(self, EnumField):
-            field_bits = int(current_val)
-        elif isinstance(self, IntField) and self.bitwidth > 64 and isinstance(current_val, np.ndarray):
-            field_bits = 0
-            for idx, word in enumerate(current_val.astype(np.uint64)):
-                field_bits |= int(word) << (64 * idx)
-        else:
-            field_bits = int(current_val)
+        field_bits = self._value_to_field_bits(current_val)
 
         field_bits &= mask
         words[curr_iword] |= (field_bits << curr_ipos)
@@ -1523,19 +1503,7 @@ class DataField(DataSchema):
 
         mask = (1 << self.bitwidth) - 1
         field_bits = (word >> curr_ipos) & mask
-
-        if isinstance(self, FloatField):
-            if self.bitwidth == 32:
-                value = np.asarray(np.uint32(field_bits), dtype=np.uint32).view(np.float32).item()
-            elif self.bitwidth == 64:
-                value = np.asarray(np.uint64(field_bits), dtype=np.uint64).view(np.float64).item()
-            else:
-                raise ValueError(f"Unsupported FloatField bitwidth={self.bitwidth} for deserialization.")
-            self.val = value
-        elif isinstance(self, EnumField):
-            self.val = int(field_bits)
-        else:
-            self.val = int(field_bits)
+        self.val = self._field_bits_to_value(field_bits)
 
         curr_ipos += self.bitwidth
         if curr_ipos == word_bw:
@@ -1629,6 +1597,25 @@ class IntField(DataField):
 
         return np.uint32(0) if self.bitwidth <= 32 else np.uint64(0)
 
+    def _json_load_expr(self, json_var: str, pos_var: str) -> str:
+        if self.signed:
+            return (
+                f"static_cast<{self.cpp_class_name()}>("
+                f"static_cast<long long>(streamutils::json_parse_number({json_var}, {pos_var})))"
+            )
+        return (
+            f"static_cast<{self.cpp_class_name()}>("
+            f"static_cast<unsigned long long>(streamutils::json_parse_number({json_var}, {pos_var})))"
+        )
+
+    def _value_to_field_bits(self, current_val: Any) -> int:
+        if self.bitwidth > 64 and isinstance(current_val, np.ndarray):
+            field_bits = 0
+            for idx, word in enumerate(current_val.astype(np.uint64)):
+                field_bits |= int(word) << (64 * idx)
+            return field_bits
+        return int(current_val)
+
    
 
 class FloatField(DataField):
@@ -1660,6 +1647,23 @@ class FloatField(DataField):
         if self.bitwidth != 32:
             raise ValueError("FloatField unpack currently supports only bitwidth=32.")
         return f"streamutils::uint_to_float((uint32_t)({uint_expr}))"
+
+    def _json_load_expr(self, json_var: str, pos_var: str) -> str:
+        return f"static_cast<{self.cpp_class_name()}>(streamutils::json_parse_number({json_var}, {pos_var}))"
+
+    def _value_to_field_bits(self, current_val: Any) -> int:
+        if self.bitwidth == 32:
+            return int(np.asarray(np.float32(current_val), dtype=np.float32).view(np.uint32))
+        if self.bitwidth == 64:
+            return int(np.asarray(np.float64(current_val), dtype=np.float64).view(np.uint64))
+        raise ValueError(f"Unsupported FloatField bitwidth={self.bitwidth} for serialization.")
+
+    def _field_bits_to_value(self, field_bits: int) -> Any:
+        if self.bitwidth == 32:
+            return np.asarray(np.uint32(field_bits), dtype=np.uint32).view(np.float32).item()
+        if self.bitwidth == 64:
+            return np.asarray(np.uint64(field_bits), dtype=np.uint64).view(np.float64).item()
+        raise ValueError(f"Unsupported FloatField bitwidth={self.bitwidth} for deserialization.")
 
     def is_close(
         self,
@@ -1737,6 +1741,12 @@ class EnumField(DataField):
 
     def from_uint_expr(self, uint_expr: str) -> str:
         return f"({self.enum_type.__name__})({uint_expr})"
+
+    def _json_load_expr(self, json_var: str, pos_var: str) -> str:
+        return (
+            f"static_cast<{self.cpp_class_name()}>("
+            f"static_cast<long long>(streamutils::json_parse_number({json_var}, {pos_var})))"
+        )
 
     def gen_cpp_class(self) -> str:
         """
@@ -1974,9 +1984,7 @@ class DataList(DataSchema):
             "public:",
         ]
 
-        for element in self.elements:
-            elem_class = element.cpp_class_name()
-            lines.append(f"    {elem_class} {element.name};")
+        lines.extend(self.gen_class_elems(indent_level=1))
 
         lines.extend([
             "",
@@ -1986,6 +1994,10 @@ class DataList(DataSchema):
         ])
 
         return "\n".join(lines)
+
+    def gen_class_elems(self, indent_level: int = 1) -> List[str]:
+        indent = self._get_indent(indent_level)
+        return [f"{indent}{element.cpp_class_name()} {element.name};" for element in self.elements]
 
     def _gen_write_recursive(
         self, 
@@ -2276,5 +2288,808 @@ class DataArray(DataSchema):
         """
         super().__init__(name, description)
         self.element_type = element_type
+        if max_shape is None:
+            max_shape = (1,)
         self.max_shape = max_shape
         self.static = static
+        self._val = self.default_value()
+
+    def default_value(self) -> Any:
+        """
+        Returns the default value for the DataArray.
+
+        The def_shape = max_shape if self.static else (0,) + max_shape[1:] to 
+        allow for dynamic length in the first dimension if static is False.
+
+        The default_value is then follows:
+        - If element_type.val is a numpy scalar with dtype, 
+          default_value will return a numpy array shape=def_shape and the same dtype.
+        - If element_type.val is a numpy array of shape elem_shape and dtype, 
+        numpy array of shape def_shape + elem_shape and the same dtype.
+        - Otherwise, default_value will be 
+        a list of element_type.default_value of the element_type
+
+        Also sets 
+        """
+        if self.max_shape is None:
+            raise ValueError("Cannot determine default value for DataArray without max_shape.")
+
+        max_shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in max_shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        def_shape = max_shape if self.static else (0,) + max_shape[1:]
+
+        elem_val = self.element_type.val
+        if elem_val is None:
+            elem_val = self.element_type.default_value()
+
+        if isinstance(elem_val, np.generic):
+            return np.zeros(def_shape, dtype=elem_val.dtype)
+
+        if isinstance(elem_val, np.ndarray):
+            return np.zeros(def_shape + tuple(elem_val.shape), dtype=elem_val.dtype)
+
+        def _build_default_list(shape: Tuple[int, ...]) -> Any:
+            if not shape:
+                return self.element_type.default_value()
+            return [_build_default_list(shape[1:]) for _ in range(shape[0])]
+
+        return _build_default_list(def_shape)
+
+    def get_bitwidth(self) -> int:
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        n_elem = 1
+        for dim in shape:
+            n_elem *= dim
+
+        return n_elem * self.element_type.get_bitwidth()
+
+    def _member_name(self) -> str:
+        """C++ field name used for the array member inside this class."""
+        elem_name = getattr(self.element_type, "name", None)
+        if elem_name:
+            return elem_name
+        if self.name:
+            return self.name
+        raise ValueError("DataArray requires either element_type.name or array name for member generation.")
+
+    def gen_class_elems(self, indent_level: int = 1) -> List[str]:
+        indent = self._get_indent(indent_level)
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+        suffix = "".join([f"[{dim}]" for dim in shape])
+        member_name = self._member_name()
+        return [f"{indent}{self.element_type.cpp_class_name()} {member_name}{suffix};"]
+
+    def gen_pack(self, indent_level: int = 0) -> str:
+        """Generate pack_to_uint using max_shape as compile-time extents."""
+        cls_name = self.cpp_class_name()
+        elem_bw = self.element_type.get_bitwidth()
+        shape = tuple(int(dim) for dim in self.max_shape)
+
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+        i2 = self._get_indent(indent_level + 2)
+
+        idx_names = [f"i{i}" for i in range(len(shape))]
+        member_name = self._member_name()
+        elem_expr = f"data.{member_name}" + "".join([f"[{idx}]" for idx in idx_names])
+
+        if isinstance(self.element_type, FloatField):
+            elem_uint_expr = f"streamutils::float_to_uint({elem_expr})"
+        elif isinstance(self.element_type, EnumField):
+            elem_uint_expr = f"(ap_uint<{elem_bw}>)({elem_expr})"
+        elif isinstance(self.element_type, IntField):
+            elem_uint_expr = elem_expr
+        elif isinstance(self.element_type, DataField):
+            elem_uint_expr = f"(ap_uint<{elem_bw}>)({elem_expr})"
+        else:
+            elem_uint_expr = f"{self.element_type.cpp_class_name()}::pack_to_uint({elem_expr})"
+
+        lines: List[str] = [
+            f"{indent}static ap_uint<bitwidth> pack_to_uint(const {cls_name}& data) {{",
+            f"{i1}ap_uint<bitwidth> res = 0;",
+            f"{i1}int bitpos = 0;",
+        ]
+
+        for level, dim in enumerate(shape):
+            lines.append(f"{self._get_indent(indent_level + 1 + level)}for (int {idx_names[level]} = 0; {idx_names[level]} < {dim}; ++{idx_names[level]}) {{")
+
+        body_indent = self._get_indent(indent_level + 1 + len(shape))
+        lines.append(f"{body_indent}res.range(bitpos + {elem_bw} - 1, bitpos) = {elem_uint_expr};")
+        lines.append(f"{body_indent}bitpos += {elem_bw};")
+
+        for level in range(len(shape) - 1, -1, -1):
+            lines.append(f"{self._get_indent(indent_level + 1 + level)}}}")
+
+        lines.extend([
+            f"{i1}return res;",
+            f"{indent}}}",
+        ])
+
+        return "\n".join(lines)
+
+    def gen_unpack(self, indent_level: int = 0) -> str:
+        """Generate unpack_from_uint using max_shape as compile-time extents."""
+        cls_name = self.cpp_class_name()
+        elem_bw = self.element_type.get_bitwidth()
+        shape = tuple(int(dim) for dim in self.max_shape)
+
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+
+        idx_names = [f"i{i}" for i in range(len(shape))]
+        member_name = self._member_name()
+        elem_lhs = f"data.{member_name}" + "".join([f"[{idx}]" for idx in idx_names])
+
+        lines: List[str] = [
+            f"{indent}static {cls_name} unpack_from_uint(const ap_uint<bitwidth>& packed) {{",
+            f"{i1}{cls_name} data;",
+            f"{i1}int bitpos = 0;",
+        ]
+
+        for level, dim in enumerate(shape):
+            lines.append(f"{self._get_indent(indent_level + 1 + level)}for (int {idx_names[level]} = 0; {idx_names[level]} < {dim}; ++{idx_names[level]}) {{")
+
+        body_indent = self._get_indent(indent_level + 1 + len(shape))
+        slice_expr = f"packed.range(bitpos + {elem_bw} - 1, bitpos)"
+        rhs_expr = self.element_type.from_uint_expr(slice_expr)
+        lines.append(f"{body_indent}{elem_lhs} = {rhs_expr};")
+        lines.append(f"{body_indent}bitpos += {elem_bw};")
+
+        for level in range(len(shape) - 1, -1, -1):
+            lines.append(f"{self._get_indent(indent_level + 1 + level)}}}")
+
+        lines.extend([
+            f"{i1}return data;",
+            f"{indent}}}",
+        ])
+
+        return "\n".join(lines)
+
+    def get_param_str(self, params: Any, write: bool) -> str:
+        """
+        Add runtime shape controls so generated read/write methods can transfer
+        a programmable number of elements.
+        """
+        _ = params, write
+        ndims = len(tuple(self.max_shape))
+        if ndims == 0:
+            return ""
+        return ", ".join([f"int n{i}=1" for i in range(ndims)])
+
+    def _gen_write_recursive(
+        self,
+        word_bw: int,
+        dst_type: Literal["array", "stream", "axi4_stream"] = "array",
+        target: Literal["x", "s"] = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        params: Any = None,
+    ) -> Tuple[List[str], int, int]:
+        """
+        Generate array write code with runtime transfer lengths n0..nk.
+
+        The generated code clamps each runtime length to [0, max_shape[d]] and
+        then writes elements in row-major order using packing-factor logic:
+        - pf >= 2: pack multiple elements per word
+        - pf == 1: one element per word
+        - pf == 0: delegate to element write_* for multi-word elements
+        """
+        _ = params
+
+        if ipos0 != 0:
+            raise ValueError("DataArray _gen_write_recursive currently requires word-aligned entry (ipos0 == 0).")
+
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        ndims = len(shape)
+        if ndims == 0:
+            return [], ipos0, iword0
+
+        elem_bw = self.element_type.get_bitwidth()
+        pf = word_bw // elem_bw if elem_bw > 0 else 0
+        words_per_elem = self.element_type.nwords_per_inst(word_bw)
+
+        idx_names = [f"i{i}" for i in range(ndims)]
+        n_eff_names = [f"n{i}_eff" for i in range(ndims)]
+
+        # Build element access expression: prefix + name[i0][i1]...
+        member_name = self._member_name()
+        elem_expr = f"{prefix}{member_name}"
+        for idx in idx_names:
+            elem_expr += f"[{idx}]"
+
+        def _elem_to_uint_expr(expr: str) -> str:
+            if isinstance(self.element_type, FloatField):
+                return f"streamutils::float_to_uint({expr})"
+            if isinstance(self.element_type, EnumField):
+                return f"(ap_uint<{elem_bw}>)({expr})"
+            if isinstance(self.element_type, IntField):
+                return expr
+            if isinstance(self.element_type, DataField):
+                return f"(ap_uint<{elem_bw}>)({expr})"
+            return f"{self.element_type.cpp_class_name()}::pack_to_uint({expr})"
+
+        elem_uint_expr = _elem_to_uint_expr(elem_expr)
+
+        lines: List[str] = []
+
+        for d in range(ndims):
+            lines.append(
+                f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});"
+            )
+
+        n_total_expr = " * ".join(n_eff_names) if n_eff_names else "1"
+
+        if pf >= 2:
+            if ndims == 1:
+                n0_eff = n_eff_names[0]
+                lines.insert(len(n_eff_names), "    int out_idx = 0;")
+                if dst_type == "axi4_stream":
+                    lines.insert(len(n_eff_names) + 1, f"    const int total_words = ({n0_eff} + {pf} - 1) / {pf};")
+
+                lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
+                lines.append("        #pragma HLS PIPELINE II=1")
+                lines.append(f"        ap_uint<{word_bw}> w = 0;")
+                for j in range(pf):
+                    lo = j * elem_bw
+                    hi = lo + elem_bw - 1
+                    lane_expr = _elem_to_uint_expr(f"{prefix}{member_name}[i + {j}]")
+                    lines.append(f"        if (i + {j} < {n0_eff}) {{")
+                    lines.append(f"            w.range({hi}, {lo}) = {lane_expr};")
+                    lines.append("        }")
+
+                if dst_type == "array":
+                    lines.append(f"        {target}[out_idx++] = w;")
+                elif dst_type == "stream":
+                    lines.append(f"        {target}.write(w);")
+                    lines.append("        out_idx++;")
+                else:
+                    lines.append("        const bool last = (out_idx == total_words - 1) ? tlast : false;")
+                    lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                    lines.append("        out_idx++;")
+
+                lines.append("    }")
+                return lines, 0, iword0
+
+            for d in range(ndims):
+                lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+
+            body_indent = "    " * (ndims + 1)
+
+            lines.insert(len(n_eff_names), "    int elem_idx = 0;")
+            lines.insert(len(n_eff_names) + 1, "    int out_idx = 0;")
+            if dst_type == "axi4_stream":
+                lines.insert(len(n_eff_names) + 2, f"    const int total_words = ({n_total_expr} + {pf} - 1) / {pf};")
+            if dst_type != "array":
+                lines.insert(len(n_eff_names) + (3 if dst_type == "axi4_stream" else 2), f"    ap_uint<{word_bw}> w = 0;")
+
+            slot_expr = f"(elem_idx % {pf})"
+            lines.append(f"{body_indent}const int slot = {slot_expr};")
+            for j in range(pf):
+                lo = j * elem_bw
+                hi = lo + elem_bw - 1
+                cond = "if" if j == 0 else "else if"
+                lines.append(f"{body_indent}{cond} (slot == {j}) {{")
+                assign_lhs = "w" if dst_type != "array" else f"{target}[out_idx]"
+                if dst_type == "array" and j == 0:
+                    lines.append(f"{body_indent}    {assign_lhs} = 0;")
+                lines.append(f"{body_indent}    {assign_lhs}.range({hi}, {lo}) = {elem_uint_expr};")
+                lines.append(f"{body_indent}}}")
+
+            lines.append(f"{body_indent}elem_idx++;")
+            lines.append(f"{body_indent}if (slot == {pf - 1}) {{")
+            if dst_type == "array":
+                lines.append(f"{body_indent}    out_idx++;")
+            elif dst_type == "stream":
+                lines.append(f"{body_indent}    {target}.write(w);")
+                lines.append(f"{body_indent}    w = 0;")
+                lines.append(f"{body_indent}    out_idx++;")
+            else:
+                lines.append(f"{body_indent}    const bool last = (out_idx == total_words - 1) ? tlast : false;")
+                lines.append(f"{body_indent}    streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                lines.append(f"{body_indent}    w = 0;")
+                lines.append(f"{body_indent}    out_idx++;")
+            lines.append(f"{body_indent}}}")
+
+            for d in range(ndims):
+                lines.append(f"{'    ' * (ndims - d)}}}")
+
+            lines.append(f"    if ((elem_idx % {pf}) != 0) {{")
+            if dst_type == "array":
+                lines.append(f"        out_idx++;")
+            elif dst_type == "stream":
+                lines.append(f"        {target}.write(w);")
+            else:
+                lines.append(f"        const bool last = (out_idx == total_words - 1) ? tlast : false;")
+                lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+            lines.append("    }")
+
+            return lines, 0, iword0
+
+        if pf == 1:
+            for d in range(ndims):
+                lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+
+            body_indent = "    " * (ndims + 1)
+            lines.insert(len(n_eff_names), "    int out_idx = 0;")
+            if dst_type != "array":
+                lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
+
+            if dst_type == "array":
+                lines.append(f"{body_indent}{target}[out_idx++] = {elem_uint_expr};")
+            elif dst_type == "stream":
+                lines.append(f"{body_indent}w = {elem_uint_expr};")
+                lines.append(f"{body_indent}{target}.write(w);")
+                lines.append(f"{body_indent}out_idx++;")
+            else:
+                lines.append(f"{body_indent}w = {elem_uint_expr};")
+                lines.append(f"{body_indent}const bool last = (out_idx == ({n_total_expr}) - 1) ? tlast : false;")
+                lines.append(f"{body_indent}streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                lines.append(f"{body_indent}out_idx++;")
+
+            for d in range(ndims):
+                lines.append(f"{'    ' * (ndims - d)}}}")
+
+            return lines, 0, iword0
+
+        # pf == 0: element bitwidth is larger than word_bw.
+        # Delegate to element write methods for each element.
+        for d in range(ndims):
+            lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+
+        body_indent = "    " * (ndims + 1)
+        lines.insert(len(n_eff_names), "    int out_idx = 0;")
+
+        if isinstance(self.element_type, DataField):
+            raise ValueError(
+                f"Array element '{self.element_type.name}' has bitwidth {elem_bw} > word_bw={word_bw}; "
+                "DataField elements cannot be split across words."
+            )
+
+        if dst_type == "array":
+            lines.append(f"{body_indent}{elem_expr}.template write_array<{word_bw}>(&{target}[out_idx]);")
+            lines.append(f"{body_indent}out_idx += {words_per_elem};")
+        elif dst_type == "stream":
+            lines.append(f"{body_indent}{elem_expr}.template write_stream<{word_bw}>({target});")
+            lines.append(f"{body_indent}out_idx += {words_per_elem};")
+        else:
+            lines.append(f"{body_indent}const bool last = (out_idx + {words_per_elem} >= ({n_total_expr}) * {words_per_elem}) ? tlast : false;")
+            lines.append(f"{body_indent}{elem_expr}.template write_axi4_stream<{word_bw}>({target}, last);")
+            lines.append(f"{body_indent}out_idx += {words_per_elem};")
+
+        for d in range(ndims):
+            lines.append(f"{'    ' * (ndims - d)}}}")
+
+        return lines, 0, iword0
+
+    def _nwords_per_inst_recursive(
+        self,
+        word_bw: int,
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        n_elem = 1
+        for dim in shape:
+            n_elem *= dim
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        for _ in range(n_elem):
+            curr_ipos, curr_iword = self.element_type._nwords_per_inst_recursive(
+                word_bw=word_bw,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+
+        return curr_ipos, curr_iword
+
+    def _gen_dump_json_recursive(
+        self,
+        prefix: str,
+        os_name: str,
+        depth_expr: str,
+        indent_var: str,
+    ) -> List[str]:
+        """Emit this array as nested JSON lists by dimension."""
+        _ = depth_expr, indent_var
+
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        ndims = len(shape)
+        idx_names = [f"i{i}" for i in range(ndims)]
+        member_name = self._member_name()
+        elem_expr = f"{prefix}{member_name}" + "".join([f"[{i}]" for i in idx_names])
+
+        lines: List[str] = []
+
+        def emit_value(indent: str):
+            if isinstance(self.element_type, DataList):
+                lines.append(f"{indent}{elem_expr}.dump_json({os_name}, indent, level + 1);")
+                return
+
+            if isinstance(self.element_type, DataField):
+                val_expr = elem_expr
+                if isinstance(self.element_type, EnumField):
+                    val_expr = f"static_cast<int>({val_expr})"
+                elif self.element_type.cpp_type.startswith("ap_uint"):
+                    val_expr = f"static_cast<unsigned long long>({val_expr})"
+                elif self.element_type.cpp_type.startswith("ap_int"):
+                    val_expr = f"static_cast<long long>({val_expr})"
+                lines.append(f"{indent}{os_name} << {val_expr};")
+                return
+
+            lines.append(f"{indent}{os_name} << {self.element_type.to_uint_expr(prefix=elem_expr + '.')};")
+
+        def emit_level(level: int, indent: str):
+            if level == ndims:
+                emit_value(indent)
+                return
+
+            idx = idx_names[level]
+            dim = shape[level]
+            lines.append(f"{indent}{os_name} << \"[\";")
+            lines.append(f"{indent}for (int {idx} = 0; {idx} < {dim}; ++{idx}) {{")
+            lines.append(f"{indent}    if ({idx} > 0) {{ {os_name} << \",\"; }}")
+            emit_level(level + 1, indent + "    ")
+            lines.append(f"{indent}}}")
+            lines.append(f"{indent}{os_name} << \"]\";")
+
+        emit_level(0, "")
+        return lines
+
+    def _gen_load_json_recursive(
+        self,
+        prefix: str,
+        json_var: str,
+        pos_var: str,
+        ctx: str,
+    ) -> List[str]:
+        """Parse this array from nested JSON lists by dimension."""
+        _ = ctx
+
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        ndims = len(shape)
+        idx_names = [f"i{i}" for i in range(ndims)]
+        member_name = self._member_name()
+        elem_expr = f"{prefix}{member_name}" + "".join([f"[{i}]" for i in idx_names])
+
+        lines: List[str] = []
+
+        def emit_value(indent: str):
+            if isinstance(self.element_type, DataList):
+                lines.append(f"{indent}{elem_expr}.load_json({json_var}, {pos_var});")
+                return
+
+            if isinstance(self.element_type, DataField):
+                rhs_expr = self.element_type._json_load_expr(json_var=json_var, pos_var=pos_var)
+                lines.append(f"{indent}{elem_expr} = {rhs_expr};")
+                return
+
+            lines.append(f"{indent}throw std::runtime_error(\"Unsupported array element type for JSON load.\");")
+
+        def emit_level(level: int, indent: str):
+            if level == ndims:
+                emit_value(indent)
+                return
+
+            idx = idx_names[level]
+            dim = shape[level]
+            lines.append(f"{indent}streamutils::json_expect_char({json_var}, {pos_var}, '[');")
+            lines.append(f"{indent}for (int {idx} = 0; {idx} < {dim}; ++{idx}) {{")
+            lines.append(f"{indent}    if ({idx} > 0) {{")
+            lines.append(f"{indent}        streamutils::json_expect_char({json_var}, {pos_var}, ',');")
+            lines.append(f"{indent}    }}")
+            emit_level(level + 1, indent + "    ")
+            lines.append(f"{indent}}}")
+            lines.append(f"{indent}streamutils::json_expect_char({json_var}, {pos_var}, ']');")
+
+        emit_level(0, "")
+        return lines
+
+    def _gen_read_recursive(
+        self,
+        word_bw: int,
+        src_type: Literal["array", "stream", "axi4_stream"] = "array",
+        source: Literal["x", "s"] = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        params: Any = None,
+    ) -> Tuple[List[str], int, int]:
+        """
+        Generate array read code with runtime transfer lengths n0..nk.
+
+        This is the inverse of _gen_write_recursive and uses the same packing
+        factor split:
+        - pf >= 2: unpack multiple elements from each source word
+        - pf == 1: one element per word
+        - pf == 0: delegate to element read_* for multi-word elements
+        """
+        _ = params
+
+        if ipos0 != 0:
+            raise ValueError("DataArray _gen_read_recursive currently requires word-aligned entry (ipos0 == 0).")
+
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        ndims = len(shape)
+        if ndims == 0:
+            return [], ipos0, iword0
+
+        elem_bw = self.element_type.get_bitwidth()
+        pf = word_bw // elem_bw if elem_bw > 0 else 0
+        words_per_elem = self.element_type.nwords_per_inst(word_bw)
+
+        idx_names = [f"i{i}" for i in range(ndims)]
+        n_eff_names = [f"n{i}_eff" for i in range(ndims)]
+
+        member_name = self._member_name()
+        elem_expr = f"{prefix}{member_name}"
+        for idx in idx_names:
+            elem_expr += f"[{idx}]"
+
+        def _assign_from_uint(uint_expr: str) -> str:
+            rhs = self.element_type.from_uint_expr(uint_expr)
+            return f"{elem_expr} = {rhs};"
+
+        lines: List[str] = []
+
+        for d in range(ndims):
+            lines.append(
+                f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});"
+            )
+
+        n_total_expr = " * ".join(n_eff_names) if n_eff_names else "1"
+        lines.insert(len(n_eff_names), "    int in_idx = 0;")
+
+        if pf >= 2:
+            if ndims == 1:
+                n0_eff = n_eff_names[0]
+                lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
+                lines.append("        #pragma HLS PIPELINE II=1")
+
+                if src_type == "array":
+                    lines.append(f"        ap_uint<{word_bw}> w = {source}[in_idx++];")
+                elif src_type == "stream":
+                    lines.append(f"        ap_uint<{word_bw}> w = {source}.read();")
+                    lines.append("        in_idx++;")
+                else:
+                    lines.append(f"        ap_uint<{word_bw}> w = {source}.read().data;")
+                    lines.append("        in_idx++;")
+
+                for j in range(pf):
+                    lo = j * elem_bw
+                    hi = lo + elem_bw - 1
+                    rhs_expr = self.element_type.from_uint_expr(f"w.range({hi}, {lo})")
+                    lines.append(f"        if (i + {j} < {n0_eff}) {{")
+                    lines.append(f"            {prefix}{member_name}[i + {j}] = {rhs_expr};")
+                    lines.append("        }")
+                lines.append("    }")
+
+                return lines, 0, iword0
+
+            for d in range(ndims):
+                lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+
+            body_indent = "    " * (ndims + 1)
+            if src_type != "array":
+                lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
+
+            lines.insert(len(n_eff_names) + (2 if src_type != "array" else 1), "    int elem_idx = 0;")
+            slot_expr = f"(elem_idx % {pf})"
+
+            lines.append(f"{body_indent}const int slot = {slot_expr};")
+
+            if src_type == "stream":
+                lines.append(f"{body_indent}if (slot == 0) {{ w = {source}.read(); }}")
+            elif src_type == "axi4_stream":
+                lines.append(f"{body_indent}if (slot == 0) {{ w = {source}.read().data; }}")
+
+            for j in range(pf):
+                lo = j * elem_bw
+                hi = lo + elem_bw - 1
+                cond = "if" if j == 0 else "else if"
+                word_expr = f"{source}[in_idx]" if src_type == "array" else "w"
+                lines.append(f"{body_indent}{cond} (slot == {j}) {{")
+                lines.append(f"{body_indent}    {_assign_from_uint(f'{word_expr}.range({hi}, {lo})')}")
+                lines.append(f"{body_indent}}}")
+
+            lines.append(f"{body_indent}elem_idx++;")
+            lines.append(f"{body_indent}if (slot == {pf - 1}) {{ in_idx++; }}")
+
+            for d in range(ndims):
+                lines.append(f"{'    ' * (ndims - d)}}}")
+
+            lines.append(f"    if (({n_total_expr}) > 0 && (({n_total_expr}) % {pf}) != 0) {{")
+            lines.append("        in_idx++;")
+            lines.append("    }")
+
+            return lines, 0, iword0
+
+        if pf == 1:
+            for d in range(ndims):
+                lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+
+            body_indent = "    " * (ndims + 1)
+            if src_type != "array":
+                lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
+            if src_type == "array":
+                lines.append(f"{body_indent}{_assign_from_uint(f'{source}[in_idx]')}")
+                lines.append(f"{body_indent}in_idx++;")
+            elif src_type == "stream":
+                lines.append(f"{body_indent}w = {source}.read();")
+                lines.append(f"{body_indent}{_assign_from_uint('w')}")
+                lines.append(f"{body_indent}in_idx++;")
+            else:
+                lines.append(f"{body_indent}w = {source}.read().data;")
+                lines.append(f"{body_indent}{_assign_from_uint('w')}")
+                lines.append(f"{body_indent}in_idx++;")
+
+            for d in range(ndims):
+                lines.append(f"{'    ' * (ndims - d)}}}")
+
+            return lines, 0, iword0
+
+        # pf == 0: element bitwidth is larger than word_bw.
+        # Delegate to element read methods for each element.
+        for d in range(ndims):
+            lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+
+        body_indent = "    " * (ndims + 1)
+        if isinstance(self.element_type, DataField):
+            raise ValueError(
+                f"Array element '{self.element_type.name}' has bitwidth {elem_bw} > word_bw={word_bw}; "
+                "DataField elements cannot be split across words."
+            )
+
+        if src_type == "array":
+            lines.append(f"{body_indent}{elem_expr}.template read_array<{word_bw}>(&{source}[in_idx]);")
+            lines.append(f"{body_indent}in_idx += {words_per_elem};")
+        elif src_type == "stream":
+            lines.append(f"{body_indent}{elem_expr}.template read_stream<{word_bw}>({source});")
+            lines.append(f"{body_indent}in_idx += {words_per_elem};")
+        else:
+            lines.append(f"{body_indent}{elem_expr}.template read_axi4_stream<{word_bw}>({source});")
+            lines.append(f"{body_indent}in_idx += {words_per_elem};")
+
+        for d in range(ndims):
+            lines.append(f"{'    ' * (ndims - d)}}}")
+
+        return lines, 0, iword0
+
+    def _serialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        data = self.val if self.val is not None else self.default_value()
+
+        def _get_elem(container: Any, idxs: Tuple[int, ...]) -> Any:
+            ref = container
+            for idx in idxs:
+                ref = ref[idx]
+            return ref
+
+        if len(shape) == 0:
+            self.element_type.val = data
+            return self.element_type._serialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+
+        for idxs in np.ndindex(shape):
+            self.element_type.val = _get_elem(data, idxs)
+            curr_ipos, curr_iword = self.element_type._serialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+
+        return curr_ipos, curr_iword
+
+    def _deserialize_recursive(
+        self,
+        word_bw: int,
+        words: List[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> Tuple[int, int]:
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+
+        data = self.val if self.val is not None else self.default_value()
+
+        def _set_elem(container: Any, idxs: Tuple[int, ...], value: Any) -> None:
+            ref = container
+            for idx in idxs[:-1]:
+                ref = ref[idx]
+            if len(idxs) == 0:
+                return
+            ref[idxs[-1]] = value
+
+        if len(shape) == 0:
+            curr_ipos, curr_iword = self.element_type._deserialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+            self._val = self.element_type.val
+            return curr_ipos, curr_iword
+
+        for idxs in np.ndindex(shape):
+            curr_ipos, curr_iword = self.element_type._deserialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+            _set_elem(data, idxs, self.element_type.val)
+
+        self._val = data
+        return curr_ipos, curr_iword
+
+    def is_close(
+        self,
+        other: DataSchema,
+        rel_tol: float | None = None,
+        abs_tol: float | None = 1e-8,
+    ) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
+
+        v1 = np.asarray(self.val)
+        v2 = np.asarray(other.val)
+
+        if v1.shape != v2.shape:
+            return False
+
+        if np.issubdtype(v1.dtype, np.floating) or np.issubdtype(v2.dtype, np.floating):
+            kwargs = {}
+            if rel_tol is not None:
+                kwargs["rtol"] = rel_tol
+            if abs_tol is not None:
+                kwargs["atol"] = abs_tol
+            return bool(np.all(np.isclose(v1.astype(float), v2.astype(float), **kwargs)))
+
+        return bool(np.array_equal(v1, v2))
+
+    
