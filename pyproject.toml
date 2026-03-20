@@ -14,11 +14,15 @@ dependencies = [
 
 # Optional developer dependencies
 [project.optional-dependencies]
+ai = [
+    "mcp>=1.26.0",
+]
 dev = [
     "pytest",
     "black",
     "ruff",
     "mypy",
+    "mcp>=1.26.0",
 ]
 
 [build-system]
