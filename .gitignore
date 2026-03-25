@@ -107,3 +107,4 @@ pysilicon-extension/*.vsix
 # Temporary working directory
 examples/dataschema
 examples/vecunit
+examples/test

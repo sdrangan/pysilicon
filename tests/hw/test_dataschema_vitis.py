@@ -91,7 +91,7 @@ def _extra_includes(packet_type):
 
 
 def _rw_args(packet):
-	if isinstance(packet, DataArray):
+	if isinstance(packet, DataArray) and not packet.static:
 		shape_args = ", ".join(str(int(dim)) for dim in tuple(packet.max_shape))
 		return f", {shape_args}" if shape_args else ""
 	return ""
@@ -115,7 +115,7 @@ def test_python_to_vitis_serialization(tmp_path, packet_type, word_bw):
 
 	# Python side: create packet, load fields from JSON, serialize to words, and emit include.
 	packet = packet_type(name=packet_name)
-	if isinstance(packet, DataArray):
+	if isinstance(packet, DataArray) and not packet.static:
 		assert _rw_args(packet), "DataArray packets must pass explicit runtime shape arguments."
 	if packet_type is SampData:
 		packet.val = input_payload
@@ -197,7 +197,7 @@ def test_vitis_to_python_serialization(tmp_path, packet_type, word_bw):
 
 	# Python side: create packet, populate values, and export JSON.
 	ref_packet = packet_type(name=packet_name)
-	if isinstance(ref_packet, DataArray):
+	if isinstance(ref_packet, DataArray) and not ref_packet.static:
 		assert _rw_args(ref_packet), "DataArray packets must pass explicit runtime shape arguments."
 	if packet_type is SampData:
 		ref_packet.val = payload

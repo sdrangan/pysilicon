@@ -129,6 +129,55 @@ class DataSchema(ABC):
 
         return self.from_dict(json.loads(raw))
 
+    def write_uint32_file(self, file_path: str | Path) -> Path:
+        """
+        Serialize this schema to 32-bit words and write them to a binary file.
+
+        This method uses :meth:`serialize` with ``word_bw=32`` and writes the
+        resulting packed words as raw 32-bit unsigned integers.
+
+        Parameters
+        ----------
+        file_path : str | pathlib.Path
+            Destination path for the output binary file.
+
+        Returns
+        -------
+        pathlib.Path
+            The resolved output path that was written.
+        """
+        out_path = Path(file_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        words = np.asarray(self.serialize(word_bw=32), dtype="<u4")
+        words.tofile(out_path)
+        return out_path
+
+    def read_uint32_file(self, file_path: str | Path) -> "DataSchema":
+        """
+        Read 32-bit packed words from a binary file and deserialize this schema.
+
+        The file is interpreted as a raw sequence of little-endian unsigned
+        32-bit words, matching the output format of :meth:`write_uint32_file`.
+
+        Parameters
+        ----------
+        file_path : str | pathlib.Path
+            Path to a binary file containing packed 32-bit words.
+
+        Returns
+        -------
+        DataSchema
+            Returns ``self`` after in-place deserialization.
+        """
+        in_path = Path(file_path)
+        words = np.fromfile(in_path, dtype="<u4")
+        return self.deserialize(words, word_bw=32)
+
+    def read_uint32_File(self, file_path: str | Path) -> "DataSchema":
+        """Compatibility alias for :meth:`read_uint32_file`."""
+        return self.read_uint32_file(file_path)
+
     @abstractmethod
     def get_bitwidth(self) -> int:
         """Returns the total number of bits this node occupies in hardware."""
@@ -846,13 +895,35 @@ class DataSchema(ABC):
         """Generate C++ class member declarations for this schema."""
         raise NotImplementedError("gen_class_elems must be implemented by subclasses that support class generation.")
 
+    def gen_stream_helpers(
+            self,
+            indent_level: int = 1,
+            word_bw_supported: Optional[List[int]] = None) -> str:
+        """Generate optional stream-element helper methods for this schema."""
+        _ = indent_level, word_bw_supported
+        return ""
+
+    def gen_nwords_len_helpers(
+            self,
+            indent_level: int = 1,
+            word_bw_supported: Optional[List[int]] = None) -> str:
+        """Generate optional runtime-length nwords helper methods for this schema."""
+        _ = indent_level, word_bw_supported
+        return ""
+
     def gen_word_helpers(
             self,
             indent_level: int = 1,
             word_bw_supported: Optional[List[int]] = None) -> str:
-        """Generate optional single-word read/write helper methods for this schema."""
-        _ = indent_level, word_bw_supported
-        return ""
+        """Compatibility shim for legacy callers; delegates to gen_stream_helpers."""
+        return self.gen_stream_helpers(
+            indent_level=indent_level,
+            word_bw_supported=word_bw_supported,
+        )
+
+    def can_gen_include(self) -> bool:
+        """Whether this schema represents a standalone C++ type header."""
+        return True
 
     def to_uint_value_expr(self, value_expr: str) -> str:
         """C++ expression that packs a value expression to unsigned bits."""
@@ -1089,13 +1160,18 @@ class DataSchema(ABC):
         if word_bw_supported is None:
             word_bw_supported = []
 
+        if not self.can_gen_include():
+            raise ValueError(
+                f"{self.__class__.__name__} does not support standalone include generation. "
+                "Define a concrete schema subclass that represents a standalone C++ type."
+            )
+
         for bw in word_bw_supported:
             if bw <= 0:
                 raise ValueError(f"word_bw values must be positive. Got {bw}.")
 
         if file_name is None:
-            base_name = self.name if self.name else self.cpp_class_name()
-            snake_name = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).lower()
+            snake_name = re.sub(r"(?<!^)(?=[A-Z])", "_", self.cpp_class_name()).lower()
             file_name = f"{snake_name}.h"
 
         guard_base = file_name.replace(".", "_").replace("-", "_").replace("/", "_").replace("\\", "_")
@@ -1136,6 +1212,29 @@ class DataSchema(ABC):
         lines.append(f"    static constexpr int bitwidth = {self.get_bitwidth()};")
         lines.append("")
 
+        if word_bw_supported:
+            lines.append("    template<int word_bw>")
+            lines.append("    static constexpr int nwords() {")
+            for idx, bw in enumerate(word_bw_supported):
+                cond = "if constexpr" if idx == 0 else "else if constexpr"
+                lines.append(f"        {cond} (word_bw == {bw}) {{")
+                lines.append(f"            return {self.nwords_per_inst(bw)};")
+                lines.append("        }")
+            lines.append("        else {")
+            lines.append("            static_assert(word_bw > 0, \"Unsupported word_bw for nwords\");")
+            lines.append("            return 0;")
+            lines.append("        }")
+            lines.append("    }")
+            lines.append("")
+
+        nwords_len_helpers = self.gen_nwords_len_helpers(
+            indent_level=1,
+            word_bw_supported=word_bw_supported,
+        )
+        if nwords_len_helpers:
+            lines.append(nwords_len_helpers)
+            lines.append("")
+
         pack_impl = self.gen_pack(indent_level=1)
         if pack_impl:
             lines.append(pack_impl)
@@ -1146,12 +1245,12 @@ class DataSchema(ABC):
             lines.append(unpack_impl)
             lines.append("")
 
-        word_helpers = self.gen_word_helpers(
+        stream_helpers = self.gen_stream_helpers(
             indent_level=1,
             word_bw_supported=word_bw_supported,
         )
-        if word_helpers:
-            lines.append(word_helpers)
+        if stream_helpers:
+            lines.append(stream_helpers)
             lines.append("")
 
         for dst_type in ("array", "stream", "axi4_stream"):
@@ -1234,6 +1333,9 @@ class DataField(DataSchema):
     def cpp_class_name(self) -> str:
         """For DataField, the C++ class name is just the cpp_type."""
         return self.cpp_type
+
+    def can_gen_include(self) -> bool:
+        return False
     
     def gen_pack(self, indent_level: int = 0) -> str:
         # DataFields don't generate their own pack function; 
@@ -1780,6 +1882,9 @@ class EnumField(DataField):
             f"static_cast<long long>(streamutils::json_parse_number({json_var}, {pos_var})))"
         )
 
+    def can_gen_include(self) -> bool:
+        return True
+
     def gen_cpp_class(self) -> str:
         """
         Generates a C++ enum definition for this EnumField's enum_type, 
@@ -1796,6 +1901,42 @@ class EnumField(DataField):
             enum_lines.append(f"    {member.name} = {member.value},")
         enum_lines.append("};")
         return "\n".join(enum_lines)
+
+    def gen_include(
+            self,
+            include_dir: Optional[str] = None,
+            file_name: Optional[str] = None,
+            word_bw_supported: List[int] = None) -> str:
+        """
+        Generate a standalone C++ header containing this enum definition.
+
+        For EnumField we intentionally emit the enum type directly (for example
+        ``enum PolyError { ... };``) rather than the generic class-style schema
+        wrapper produced by DataSchema.gen_include.
+        """
+        _ = word_bw_supported
+
+        if file_name is None:
+            snake_name = re.sub(r"(?<!^)(?=[A-Z])", "_", self.enum_type.__name__).lower()
+            file_name = f"{snake_name}.h"
+
+        guard_base = file_name.replace(".", "_").replace("-", "_").replace("/", "_").replace("\\", "_")
+        guard_name = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in guard_base).upper()
+
+        lines: List[str] = [
+            f"#ifndef {guard_name}",
+            f"#define {guard_name}",
+            "",
+            self.gen_cpp_class(),
+            "",
+            f"#endif // {guard_name}",
+        ]
+
+        out_dir = Path(include_dir) if include_dir is not None else Path.cwd()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / file_name
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        return str(out_path)
 
     def is_close(
         self,
@@ -1865,6 +2006,9 @@ class DataList(DataSchema):
             raise ValueError(f"Name '{element.name}' conflicts with internal attribute.")
         self._element_map[element.name] = element
         element.val = element.default_value()
+
+    def can_gen_include(self) -> bool:
+        return self.__class__ is not DataList
        
 
     def __getattr__(self, name):
@@ -2051,6 +2195,15 @@ class DataList(DataSchema):
         curr_iword = iword0
 
         for element in self.elements:
+            # Generic nested-parameter guard: parent DataList currently has no
+            # mechanism to forward child-specific runtime parameters.
+            child_param_str = element.get_param_str(params, write=True)
+            if child_param_str:
+                raise ValueError(
+                    f"Nested schema '{element.name}' requires runtime parameters "
+                    f"('{child_param_str}') that are not supported in DataList codegen yet."
+                )
+
             elem_prefix = prefix
             if isinstance(element, DataList) and element.name:
                 elem_prefix = f"{prefix}{element.name}."
@@ -2084,6 +2237,15 @@ class DataList(DataSchema):
         curr_iword = iword0
 
         for element in self.elements:
+            # Generic nested-parameter guard: parent DataList currently has no
+            # mechanism to forward child-specific runtime parameters.
+            child_param_str = element.get_param_str(params, write=False)
+            if child_param_str:
+                raise ValueError(
+                    f"Nested schema '{element.name}' requires runtime parameters "
+                    f"('{child_param_str}') that are not supported in DataList codegen yet."
+                )
+
             elem_prefix = prefix
             if isinstance(element, DataList) and element.name:
                 elem_prefix = f"{prefix}{element.name}."
@@ -2369,6 +2531,9 @@ class DataArray(DataSchema):
 
         return _build_default_list(def_shape)
 
+    def can_gen_include(self) -> bool:
+        return self.__class__ is not DataArray
+
     def get_bitwidth(self) -> int:
         shape = tuple(int(dim) for dim in self.max_shape)
         if any(dim < 0 for dim in shape):
@@ -2379,6 +2544,109 @@ class DataArray(DataSchema):
             n_elem *= dim
 
         return n_elem * self.element_type.get_bitwidth()
+
+    def write_uint32_file(
+        self,
+        file_path: str | Path,
+        write_slice: Any = None,
+        nwrite: Optional[int] = None,
+    ) -> Path:
+        """
+        Serialize selected rows/elements of this array to a 32-bit binary file.
+
+        This DataArray override supports writing only a subset of the array using
+        either ``write_slice`` or ``nwrite``:
+
+        - ``write_slice`` accepts normal NumPy/Python indexing objects.
+        - ``nwrite`` is a convenience for slicing the first dimension as
+          ``[:nwrite, ...]``.
+
+        If neither is provided, the default is ``[:self.max_shape[0], ...]``.
+
+        Parameters
+        ----------
+        file_path : str | pathlib.Path
+            Destination path for the output binary file.
+        write_slice : Any, optional
+            Slice/index expression used to select data to serialize.
+
+            Examples:
+            - ``np.s_[:4]``
+            - ``np.s_[:4, 2:6, :]``
+            - ``(slice(None, 4), slice(2, 6), slice(None))``
+        nwrite : int, optional
+            Convenience argument equivalent to selecting ``[:nwrite, ...]``.
+            Mutually exclusive with ``write_slice``.
+
+        Returns
+        -------
+        pathlib.Path
+            The resolved output path that was written.
+        """
+        if write_slice is not None and nwrite is not None:
+            raise ValueError("Specify only one of write_slice or nwrite.")
+
+        if nwrite is not None and nwrite < 0:
+            raise ValueError("nwrite must be non-negative.")
+
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        data = self.val if self.val is not None else self.default_value()
+        arr = np.asarray(data)
+
+        if arr.ndim > 0:
+            if write_slice is None and nwrite is None:
+                default_nwrite = int(shape[0]) if len(shape) > 0 else arr.shape[0]
+                write_slice = (slice(0, default_nwrite),) + (slice(None),) * (arr.ndim - 1)
+            elif nwrite is not None:
+                write_slice = (slice(0, int(nwrite)),) + (slice(None),) * (arr.ndim - 1)
+        else:
+            if nwrite is not None:
+                if int(nwrite) == 0:
+                    write_slice = np.s_[:0]
+                elif int(nwrite) == 1:
+                    write_slice = ()
+                else:
+                    raise ValueError("nwrite > 1 is invalid for scalar-valued DataArray.")
+
+        selected = arr if write_slice is None else arr[write_slice]
+        selected_shape = tuple(selected.shape)
+
+        words: List[int] = [0]
+        curr_ipos = 0
+        curr_iword = 0
+
+        if selected_shape:
+            for idxs in np.ndindex(selected_shape):
+                self.element_type.val = selected[idxs]
+                curr_ipos, curr_iword = self.element_type._serialize_recursive(
+                    word_bw=32,
+                    words=words,
+                    ipos0=curr_ipos,
+                    iword0=curr_iword,
+                )
+        else:
+            # Scalar selection (zero-dimensional view).
+            self.element_type.val = selected.item() if isinstance(selected, np.ndarray) else selected
+            curr_ipos, curr_iword = self.element_type._serialize_recursive(
+                word_bw=32,
+                words=words,
+                ipos0=curr_ipos,
+                iword0=curr_iword,
+            )
+
+        n_words = curr_iword + (1 if curr_ipos > 0 else 0)
+        if n_words > 0:
+            out_words = np.asarray(words[:n_words], dtype="<u4")
+        else:
+            out_words = np.asarray([], dtype="<u4")
+
+        out_path = Path(file_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_words.tofile(out_path)
+        return out_path
 
     def _member_name(self) -> str:
         """C++ field name used for the array member inside this class."""
@@ -2412,16 +2680,7 @@ class DataArray(DataSchema):
         member_name = self._member_name()
         elem_expr = f"data.{member_name}" + "".join([f"[{idx}]" for idx in idx_names])
 
-        if isinstance(self.element_type, FloatField):
-            elem_uint_expr = f"streamutils::float_to_uint({elem_expr})"
-        elif isinstance(self.element_type, EnumField):
-            elem_uint_expr = f"(ap_uint<{elem_bw}>)({elem_expr})"
-        elif isinstance(self.element_type, IntField):
-            elem_uint_expr = elem_expr
-        elif isinstance(self.element_type, DataField):
-            elem_uint_expr = f"(ap_uint<{elem_bw}>)({elem_expr})"
-        else:
-            elem_uint_expr = f"{self.element_type.cpp_class_name()}::pack_to_uint({elem_expr})"
+        elem_uint_expr = self.element_type.to_uint_value_expr(elem_expr)
 
         lines: List[str] = [
             f"{indent}static ap_uint<bitwidth> pack_to_uint(const {cls_name}& data) {{",
@@ -2446,19 +2705,25 @@ class DataArray(DataSchema):
 
         return "\n".join(lines)
 
-    def gen_word_helpers(
+    def gen_stream_helpers(
         self,
         indent_level: int = 1,
         word_bw_supported: Optional[List[int]] = None,
     ) -> str:
         """
-        Generate single-word helpers for streaming use cases where callers pack
-        or unpack only one word at a time.
+        Generate stream-element helpers for stream and AXI4-stream interfaces.
 
         The generated C++ methods are:
         - template<int word_bw> static constexpr int pf();
-        - template<int word_bw> static void write_word(...);
-        - template<int word_bw> static void read_word(...);
+        - template<int word_bw> static void read_stream_elem(...);
+        - template<int word_bw> static void read_axi4_stream_elem(...);
+        - template<int word_bw> static void write_stream_elem(...);
+        - template<int word_bw> static void write_axi4_stream_elem(...);
+
+        Behavior:
+        - If pf >= 2, one stream word carries multiple array elements.
+        - If pf < 2, one element is transferred, delegating to element stream
+          read/write methods when element_type is itself a composite schema.
         """
         elem_bw = self.element_type.get_bitwidth()
         elem_cpp = self.element_type.cpp_class_name()
@@ -2481,7 +2746,7 @@ class DataArray(DataSchema):
             f"{indent}}}",
             "",
             f"{indent}template<int word_bw>",
-            f"{indent}static void write_word(const {elem_cpp} in[pf<word_bw>()], ap_uint<word_bw>& w, int n = pf<word_bw>()) {{",
+            f"{indent}static void read_stream_elem(hls::stream<ap_uint<word_bw>>& s, {elem_cpp} out[pf<word_bw>()], int n = pf<word_bw>()) {{",
             f"{i1}#pragma HLS INLINE",
         ]
 
@@ -2489,27 +2754,36 @@ class DataArray(DataSchema):
             pfv = bw // elem_bw
             kw = "if" if idx == 0 else "else if"
             lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
-            if pfv <= 0:
-                lines.append(f"{i2}static_assert(word_bw > 0, \"word_bw is too small to fit one array element.\");")
-                lines.append(f"{i1}}}")
-                continue
-            lines.append(f"{i2}w = 0;")
-            for j in range(pfv):
-                lo = j * elem_bw
-                hi = lo + elem_bw - 1
-                lines.append(f"{i2}if (n > {j}) {{")
-                lines.append(f"{i3}w.range({hi}, {lo}) = {self.element_type.to_uint_value_expr(f'in[{j}]')};")
-                lines.append(f"{i2}}}")
+
+            if pfv >= 2:
+                lines.append(f"{i2}ap_uint<{bw}> w = s.read();")
+                for j in range(pfv):
+                    lo = j * elem_bw
+                    hi = lo + elem_bw - 1
+                    lines.append(f"{i2}if (n > {j}) {{")
+                    lines.append(f"{i3}out[{j}] = {self.element_type.from_uint_expr(f'w.range({hi}, {lo})')};")
+                    lines.append(f"{i2}}}")
+            else:
+                if elem_bw <= bw:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}ap_uint<{bw}> w = s.read();")
+                    lines.append(f"{i3}out[0] = {self.element_type.from_uint_expr('w')};")
+                    lines.append(f"{i2}}}")
+                else:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}out[0].read_stream<{bw}>(s);")
+                    lines.append(f"{i2}}}")
+
             lines.append(f"{i1}}}")
 
         lines.extend([
             f"{i1}else {{",
-            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for write_word\");",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for read_stream_elem\");",
             f"{i1}}}",
             f"{indent}}}",
             "",
             f"{indent}template<int word_bw>",
-            f"{indent}static void read_word({elem_cpp} out[pf<word_bw>()], const ap_uint<word_bw>& w, int n = pf<word_bw>()) {{",
+            f"{indent}static void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, {elem_cpp} out[pf<word_bw>()], int n = pf<word_bw>()) {{",
             f"{i1}#pragma HLS INLINE",
         ])
 
@@ -2517,21 +2791,102 @@ class DataArray(DataSchema):
             pfv = bw // elem_bw
             kw = "if" if idx == 0 else "else if"
             lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
-            if pfv <= 0:
-                lines.append(f"{i2}static_assert(word_bw > 0, \"word_bw is too small to fit one array element.\");")
-                lines.append(f"{i1}}}")
-                continue
-            for j in range(pfv):
-                lo = j * elem_bw
-                hi = lo + elem_bw - 1
-                lines.append(f"{i2}if (n > {j}) {{")
-                lines.append(f"{i3}out[{j}] = {self.element_type.from_uint_expr(f'w.range({hi}, {lo})')};")
-                lines.append(f"{i2}}}")
+            if pfv >= 2:
+                lines.append(f"{i2}ap_uint<{bw}> w = s.read().data;")
+                for j in range(pfv):
+                    lo = j * elem_bw
+                    hi = lo + elem_bw - 1
+                    lines.append(f"{i2}if (n > {j}) {{")
+                    lines.append(f"{i3}out[{j}] = {self.element_type.from_uint_expr(f'w.range({hi}, {lo})')};")
+                    lines.append(f"{i2}}}")
+            else:
+                if elem_bw <= bw:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}ap_uint<{bw}> w = s.read().data;")
+                    lines.append(f"{i3}out[0] = {self.element_type.from_uint_expr('w')};")
+                    lines.append(f"{i2}}}")
+                else:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}out[0].read_axi4_stream<{bw}>(s);")
+                    lines.append(f"{i2}}}")
+
             lines.append(f"{i1}}}")
 
         lines.extend([
             f"{i1}else {{",
-            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for read_word\");",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for read_axi4_stream_elem\");",
+            f"{i1}}}",
+            f"{indent}}}",
+            "",
+            f"{indent}template<int word_bw>",
+            f"{indent}static void write_stream_elem(hls::stream<ap_uint<word_bw>>& s, const {elem_cpp} in[pf<word_bw>()], int n = pf<word_bw>()) {{",
+            f"{i1}#pragma HLS INLINE",
+        ])
+
+        for idx, bw in enumerate(supported):
+            pfv = bw // elem_bw
+            kw = "if" if idx == 0 else "else if"
+            lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+            if pfv >= 2:
+                lines.append(f"{i2}ap_uint<{bw}> w = 0;")
+                for j in range(pfv):
+                    lo = j * elem_bw
+                    hi = lo + elem_bw - 1
+                    lines.append(f"{i2}if (n > {j}) {{")
+                    lines.append(f"{i3}w.range({hi}, {lo}) = {self.element_type.to_uint_value_expr(f'in[{j}]')};")
+                    lines.append(f"{i2}}}")
+                lines.append(f"{i2}s.write(w);")
+            else:
+                if elem_bw <= bw:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}ap_uint<{bw}> w = {self.element_type.to_uint_value_expr('in[0]')};")
+                    lines.append(f"{i3}s.write(w);")
+                    lines.append(f"{i2}}}")
+                else:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}in[0].write_stream<{bw}>(s);")
+                    lines.append(f"{i2}}}")
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for write_stream_elem\");",
+            f"{i1}}}",
+            f"{indent}}}",
+            "",
+            f"{indent}template<int word_bw>",
+            f"{indent}static void write_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const {elem_cpp} in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {{",
+            f"{i1}#pragma HLS INLINE",
+        ])
+
+        for idx, bw in enumerate(supported):
+            pfv = bw // elem_bw
+            kw = "if" if idx == 0 else "else if"
+            lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+            if pfv >= 2:
+                lines.append(f"{i2}ap_uint<{bw}> w = 0;")
+                for j in range(pfv):
+                    lo = j * elem_bw
+                    hi = lo + elem_bw - 1
+                    lines.append(f"{i2}if (n > {j}) {{")
+                    lines.append(f"{i3}w.range({hi}, {lo}) = {self.element_type.to_uint_value_expr(f'in[{j}]')};")
+                    lines.append(f"{i2}}}")
+                lines.append(f"{i2}streamutils::write_axi4_word<{bw}>(s, w, tlast);")
+            else:
+                if elem_bw <= bw:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}ap_uint<{bw}> w = {self.element_type.to_uint_value_expr('in[0]')};")
+                    lines.append(f"{i3}streamutils::write_axi4_word<{bw}>(s, w, tlast);")
+                    lines.append(f"{i2}}}")
+                else:
+                    lines.append(f"{i2}if (n > 0) {{")
+                    lines.append(f"{i3}in[0].write_axi4_stream<{bw}>(s, tlast);")
+                    lines.append(f"{i2}}}")
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for write_axi4_stream_elem\");",
             f"{i1}}}",
             f"{indent}}}",
         ])
@@ -2582,10 +2937,77 @@ class DataArray(DataSchema):
         a programmable number of elements.
         """
         _ = params, write
+        if self.static:
+            return ""
         ndims = len(tuple(self.max_shape))
         if ndims == 0:
             return ""
         return ", ".join([f"int n{i}=1" for i in range(ndims)])
+
+    def gen_nwords_len_helpers(
+        self,
+        indent_level: int = 1,
+        word_bw_supported: Optional[List[int]] = None,
+    ) -> str:
+        """Generate runtime-length nwords helper for dynamic DataArray instances."""
+        if self.static:
+            return ""
+
+        supported = sorted(set(int(bw) for bw in (word_bw_supported or [])))
+        if not supported:
+            return ""
+
+        shape = tuple(int(dim) for dim in self.max_shape)
+        if any(dim < 0 for dim in shape):
+            raise ValueError("max_shape dimensions must be non-negative.")
+
+        ndims = len(shape)
+        if ndims == 0:
+            return ""
+
+        elem_bw = self.element_type.get_bitwidth()
+        indent = self._get_indent(indent_level)
+        i1 = self._get_indent(indent_level + 1)
+        i2 = self._get_indent(indent_level + 2)
+
+        params = ", ".join([f"int n{i}=1" for i in range(ndims)])
+        n_eff_names = [f"n{i}_eff" for i in range(ndims)]
+        n_total_expr = " * ".join(n_eff_names)
+
+        lines: List[str] = [
+            f"{indent}template<int word_bw>",
+            f"{indent}static int nwords_len({params}) {{",
+        ]
+
+        for idx, bw in enumerate(supported):
+            kw = "if" if idx == 0 else "else if"
+            lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+
+            for d, dim in enumerate(shape):
+                lines.append(
+                    f"{i2}const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {dim}) ? {dim} : n{d});"
+                )
+
+            lines.append(f"{i2}const int n_total = {n_total_expr};")
+
+            pf = bw // elem_bw if elem_bw > 0 else 0
+            if pf >= 1:
+                lines.append(f"{i2}return (n_total + {pf} - 1) / {pf};")
+            else:
+                words_per_elem = self.element_type.nwords_per_inst(bw)
+                lines.append(f"{i2}return n_total * {words_per_elem};")
+
+            lines.append(f"{i1}}}")
+
+        lines.extend([
+            f"{i1}else {{",
+            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for nwords_len\");",
+            f"{i2}return 0;",
+            f"{i1}}}",
+            f"{indent}}}",
+        ])
+
+        return "\n".join(lines)
 
     def _gen_write_recursive(
         self,
@@ -2608,8 +3030,20 @@ class DataArray(DataSchema):
         """
         _ = params
 
-        if ipos0 != 0:
-            raise ValueError("DataArray _gen_write_recursive currently requires word-aligned entry (ipos0 == 0).")
+        pre_lines: List[str] = []
+        start_ipos = ipos0
+        start_iword = iword0
+
+        # Simpler composition rule: if entry is mid-word, advance to the next word.
+        if start_ipos > 0:
+            if dst_type == "stream":
+                pre_lines.append(f"    {target}.write(w);")
+                pre_lines.append("    w = 0;")
+            elif dst_type == "axi4_stream":
+                pre_lines.append(f"    streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
+                pre_lines.append("    w = 0;")
+            start_iword += 1
+            start_ipos = 0
 
         shape = tuple(int(dim) for dim in self.max_shape)
         if any(dim < 0 for dim in shape):
@@ -2617,7 +3051,7 @@ class DataArray(DataSchema):
 
         ndims = len(shape)
         if ndims == 0:
-            return [], ipos0, iword0
+            return pre_lines, start_ipos, start_iword
 
         elem_bw = self.element_type.get_bitwidth()
         pf = word_bw // elem_bw if elem_bw > 0 else 0
@@ -2633,31 +3067,27 @@ class DataArray(DataSchema):
             elem_expr += f"[{idx}]"
 
         def _elem_to_uint_expr(expr: str) -> str:
-            if isinstance(self.element_type, FloatField):
-                return f"streamutils::float_to_uint({expr})"
-            if isinstance(self.element_type, EnumField):
-                return f"(ap_uint<{elem_bw}>)({expr})"
-            if isinstance(self.element_type, IntField):
-                return expr
-            if isinstance(self.element_type, DataField):
-                return f"(ap_uint<{elem_bw}>)({expr})"
-            return f"{self.element_type.cpp_class_name()}::pack_to_uint({expr})"
+            return self.element_type.to_uint_value_expr(expr)
 
         elem_uint_expr = _elem_to_uint_expr(elem_expr)
 
-        lines: List[str] = []
+        lines: List[str] = list(pre_lines)
 
         for d in range(ndims):
-            lines.append(
-                f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});"
-            )
+            if self.static:
+                lines.append(f"    const int {n_eff_names[d]} = {shape[d]};")
+            else:
+                lines.append(
+                    f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});"
+                )
 
         n_total_expr = " * ".join(n_eff_names) if n_eff_names else "1"
 
         if pf >= 2:
             if ndims == 1:
                 n0_eff = n_eff_names[0]
-                lines.insert(len(n_eff_names), "    int out_idx = 0;")
+                out_idx_init = start_iword if dst_type == "array" else 0
+                lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
                 if dst_type == "axi4_stream":
                     lines.insert(len(n_eff_names) + 1, f"    const int total_words = ({n0_eff} + {pf} - 1) / {pf};")
 
@@ -2683,7 +3113,8 @@ class DataArray(DataSchema):
                     lines.append("        out_idx++;")
 
                 lines.append("    }")
-                return lines, 0, iword0
+                next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+                return lines, 0, next_iword
 
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
@@ -2691,7 +3122,8 @@ class DataArray(DataSchema):
             body_indent = "    " * (ndims + 1)
 
             lines.insert(len(n_eff_names), "    int elem_idx = 0;")
-            lines.insert(len(n_eff_names) + 1, "    int out_idx = 0;")
+            out_idx_init = start_iword if dst_type == "array" else 0
+            lines.insert(len(n_eff_names) + 1, f"    int out_idx = {out_idx_init};")
             if dst_type == "axi4_stream":
                 lines.insert(len(n_eff_names) + 2, f"    const int total_words = ({n_total_expr} + {pf} - 1) / {pf};")
             if dst_type != "array":
@@ -2738,14 +3170,16 @@ class DataArray(DataSchema):
                 lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
             lines.append("    }")
 
-            return lines, 0, iword0
+            next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+            return lines, 0, next_iword
 
         if pf == 1:
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
 
             body_indent = "    " * (ndims + 1)
-            lines.insert(len(n_eff_names), "    int out_idx = 0;")
+            out_idx_init = start_iword if dst_type == "array" else 0
+            lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
             if dst_type != "array":
                 lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
 
@@ -2764,7 +3198,8 @@ class DataArray(DataSchema):
             for d in range(ndims):
                 lines.append(f"{'    ' * (ndims - d)}}}")
 
-            return lines, 0, iword0
+            next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+            return lines, 0, next_iword
 
         # pf == 0: element bitwidth is larger than word_bw.
         # Delegate to element write methods for each element.
@@ -2772,7 +3207,8 @@ class DataArray(DataSchema):
             lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
 
         body_indent = "    " * (ndims + 1)
-        lines.insert(len(n_eff_names), "    int out_idx = 0;")
+        out_idx_init = start_iword if dst_type == "array" else 0
+        lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
 
         if isinstance(self.element_type, DataField):
             raise ValueError(
@@ -2794,7 +3230,8 @@ class DataArray(DataSchema):
         for d in range(ndims):
             lines.append(f"{'    ' * (ndims - d)}}}")
 
-        return lines, 0, iword0
+        next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+        return lines, 0, next_iword
 
     def _nwords_per_inst_recursive(
         self,
@@ -2951,8 +3388,14 @@ class DataArray(DataSchema):
         """
         _ = params
 
-        if ipos0 != 0:
-            raise ValueError("DataArray _gen_read_recursive currently requires word-aligned entry (ipos0 == 0).")
+        start_ipos = ipos0
+        start_iword = iword0
+
+        # Simpler composition rule: if entry is mid-word, skip remainder and
+        # continue from the next source word.
+        if start_ipos > 0:
+            start_iword += 1
+            start_ipos = 0
 
         shape = tuple(int(dim) for dim in self.max_shape)
         if any(dim < 0 for dim in shape):
@@ -2960,7 +3403,7 @@ class DataArray(DataSchema):
 
         ndims = len(shape)
         if ndims == 0:
-            return [], ipos0, iword0
+            return [], start_ipos, start_iword
 
         elem_bw = self.element_type.get_bitwidth()
         pf = word_bw // elem_bw if elem_bw > 0 else 0
@@ -2981,12 +3424,15 @@ class DataArray(DataSchema):
         lines: List[str] = []
 
         for d in range(ndims):
-            lines.append(
-                f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});"
-            )
+            if self.static:
+                lines.append(f"    const int {n_eff_names[d]} = {shape[d]};")
+            else:
+                lines.append(
+                    f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});"
+                )
 
         n_total_expr = " * ".join(n_eff_names) if n_eff_names else "1"
-        lines.insert(len(n_eff_names), "    int in_idx = 0;")
+        lines.insert(len(n_eff_names), f"    int in_idx = {start_iword};")
 
         if pf >= 2:
             if ndims == 1:
@@ -3012,7 +3458,8 @@ class DataArray(DataSchema):
                     lines.append("        }")
                 lines.append("    }")
 
-                return lines, 0, iword0
+                next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+                return lines, 0, next_iword
 
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
@@ -3050,7 +3497,8 @@ class DataArray(DataSchema):
             lines.append("        in_idx++;")
             lines.append("    }")
 
-            return lines, 0, iword0
+            next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+            return lines, 0, next_iword
 
         if pf == 1:
             for d in range(ndims):
@@ -3074,7 +3522,8 @@ class DataArray(DataSchema):
             for d in range(ndims):
                 lines.append(f"{'    ' * (ndims - d)}}}")
 
-            return lines, 0, iword0
+            next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+            return lines, 0, next_iword
 
         # pf == 0: element bitwidth is larger than word_bw.
         # Delegate to element read methods for each element.
@@ -3101,7 +3550,8 @@ class DataArray(DataSchema):
         for d in range(ndims):
             lines.append(f"{'    ' * (ndims - d)}}}")
 
-        return lines, 0, iword0
+        next_iword = start_iword + self.nwords_per_inst(word_bw) if self.static else iword0
+        return lines, 0, next_iword
 
     def _serialize_recursive(
         self,
