@@ -1,9 +1,19 @@
+---
+title: Vitis Kernel Implementation
+parent: Polynomial Accelerator
+nav_order: 2
+---
+
+# Vitis Kernel implementation
+
+The HLS kernel is implemented in [`examples/poly/poly.cpp`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly.cpp).
+
+```cpp
 #include <ap_axi_sdata.h>
 #include <ap_int.h>
 #include <hls_stream.h>
 
 #include "poly.hpp"
-
 
 static float eval_poly_horner(const float coeff[4], float x) {
 #pragma HLS INLINE
@@ -54,3 +64,18 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
     resp_ftr.error = PolyError::NO_ERROR;
     resp_ftr.write_axi4_stream<WORD_BW>(out_stream);
 }
+```
+
+The generated schema classes remove most of the stream-handling boilerplate:
+
+- `cmd_hdr.read_axi4_stream<WORD_BW>(in_stream)` reads the typed command header directly from the AXI4-Stream input
+- `resp_hdr.write_axi4_stream<WORD_BW>(out_stream, false)` writes the response header in the correct stream format
+- `SampDataIn::read_axi4_stream_elem<WORD_BW>(...)` reads packed sample payload elements into a local array
+- `SampDataOut::write_axi4_stream_elem<WORD_BW>(...)` writes result payload elements back to the stream
+- `resp_ftr.write_axi4_stream<WORD_BW>(out_stream)` emits the closing footer record
+
+The kernel itself is therefore mostly standard HLS algorithm code plus a small amount of protocol sequencing.
+
+---
+
+Go to [implementing the Vitis HLS testbench](./vitis-tb.md)

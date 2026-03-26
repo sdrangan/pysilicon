@@ -15,8 +15,8 @@ from pysilicon.xilinxutils import toolchain
 
 TEST_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TEST_DIR.parent.parent
+POLY_EXAMPLE_DIR = REPO_ROOT / "examples" / "poly"
 POLY_HPP_PATH = REPO_ROOT / "examples" / "poly" / "poly.hpp"
-RESOURCE_DIR = TEST_DIR / "resources"
 
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
@@ -135,8 +135,8 @@ def _float32_words(values: np.ndarray) -> np.ndarray:
 
 
 def _copy_poly_vitis_resources(dst_dir: Path) -> None:
-    for name in ["poly.hpp", "poly.cpp", "tb_poly.cpp", "poly_run.tcl"]:
-        shutil.copy(RESOURCE_DIR / name, dst_dir / name)
+    for name in ["poly.hpp", "poly.cpp", "poly_tb.cpp", "run.tcl"]:
+        shutil.copy(POLY_EXAMPLE_DIR / name, dst_dir / name)
 
 
 def test_poly_notebook_flow_generates_headers_vectors_and_expected_outputs(tmp_path: Path):
@@ -244,7 +244,7 @@ def test_poly_notebook_flow_runs_vitis_csim(tmp_path: Path):
     samp_in.write_uint32_file(data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
 
     try:
-        toolchain.run_vitis_hls(tmp_path / "poly_run.tcl", work_dir=tmp_path)
+        toolchain.run_vitis_hls(tmp_path / "run.tcl", work_dir=tmp_path)
     except RuntimeError as exc:
         pytest.skip(f"Vitis execution unavailable in current setup: {exc}")
     except subprocess.CalledProcessError as exc:
