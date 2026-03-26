@@ -549,6 +549,22 @@ def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path
     assert "this->z.load_json(json_text, pos);" in content
 
 
+def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp_path: Path):
+    out_path = PacketWithArray.gen_include(
+        cfg=CodeGenConfig(root_dir=tmp_path),
+        word_bw_supported=[32, 64],
+    )
+    content = out_path.read_text(encoding="utf-8")
+
+    assert "this->coeffs.coeff[i0]" in content
+    assert "this->coeffs.coeff[i + 0]" in content
+    assert "this->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
+    assert "os << this->coeffs.coeff[i0];" in content
+    assert "this->coeffs.coeff[i0] =" in content
+    assert "streamutils::json_parse_number(json_text, pos)" in content
+    assert content.index("const int n0_eff = 4;") < content.index("const int total_words = (n0_eff + 2 - 1) / 2;")
+
+
 def test_gen_include_rejects_non_positive_word_widths():
     with pytest.raises(ValueError, match="word_bw values must be positive"):
         Packet.gen_include(word_bw_supported=[0])
@@ -599,7 +615,7 @@ def test_datalist_pack_emits_expected_member_slices():
     assert "ap_uint<bitwidth> res = 0;" in content
     assert "res.range(15, 0) = data.count;" in content
     assert "res.range(47, 16) = streamutils::float_to_uint(data.gain);" in content
-    assert "res.range(49, 48) = (ap_uint<2>)(data.mode);" in content
+    assert "res.range(49, 48) = (ap_uint<2>)(static_cast<unsigned int>(data.mode));" in content
     assert "res.range(81, 50) = Complex::pack_to_uint(data.z);" in content
     assert "return res;" in content
 
@@ -611,7 +627,7 @@ def test_datalist_unpack_emits_expected_member_slices():
     assert "Packet data;" in content
     assert "data.count = (ap_uint<16>)(packed.range(15, 0));" in content
     assert "data.gain = streamutils::uint_to_float((uint32_t)(packed.range(47, 16)));" in content
-    assert "data.mode = (Mode)(packed.range(49, 48));" in content
+    assert "data.mode = static_cast<Mode>(static_cast<unsigned int>(packed.range(49, 48)));" in content
     assert "data.z = Complex::unpack_from_uint(packed.range(81, 50));" in content
     assert "return data;" in content
 
@@ -626,7 +642,7 @@ def test_datalist_gen_write_array_emits_expected_slices():
     assert "x[0].range(15, 0) = this->count;" in content
     assert "x[1] = streamutils::float_to_uint(this->gain);" in content
     assert "x[2] = 0;" in content
-    assert "x[2].range(1, 0) = (ap_uint<2>)(this->mode);" in content
+    assert "x[2].range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(this->mode));" in content
     assert "x[2].range(17, 2) = this->z.real;" in content
     assert "x[3].range(15, 0) = this->z.imag;" in content
 
@@ -640,7 +656,7 @@ def test_datalist_gen_write_stream_flushes_words():
     assert "s.write(w);" in content
     assert "w = 0;" in content
     assert "w = streamutils::float_to_uint(this->gain);" in content
-    assert "w.range(1, 0) = (ap_uint<2>)(this->mode);" in content
+    assert "w.range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(this->mode));" in content
     assert "w.range(17, 2) = this->z.real;" in content
     assert "w.range(15, 0) = this->z.imag;" in content
 
@@ -667,7 +683,7 @@ def test_datalist_gen_read_array_emits_expected_slices():
     assert "if constexpr (word_bw == 32) {" in content
     assert "this->count = (ap_uint<16>)(x[0].range(15, 0));" in content
     assert "this->gain = streamutils::uint_to_float((uint32_t)(x[1]));" in content
-    assert "this->mode = (Mode)(x[2].range(1, 0));" in content
+    assert "this->mode = static_cast<Mode>(static_cast<unsigned int>(x[2].range(1, 0)));" in content
     assert "this->z.real = (ap_int<16>)(x[2].range(17, 2));" in content
     assert "this->z.imag = (ap_int<16>)(x[3].range(15, 0));" in content
 
@@ -680,7 +696,7 @@ def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
     assert "w = s.read();" in content
     assert "this->count = (ap_uint<16>)(w.range(15, 0));" in content
     assert "this->gain = streamutils::uint_to_float((uint32_t)(w));" in content
-    assert "this->mode = (Mode)(w.range(1, 0));" in content
+    assert "this->mode = static_cast<Mode>(static_cast<unsigned int>(w.range(1, 0)));" in content
 
 
 def test_datalist_gen_read_axi4_stream_uses_data_field():

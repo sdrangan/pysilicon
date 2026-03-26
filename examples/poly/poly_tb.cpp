@@ -37,7 +37,7 @@ int main(int argc, char* argv[])  {
 
     // Read the output stream staring with the RespHeader, then the  output samples, 
     // and finally the RespFooter
-    PolyRespHeader resp_hdr;
+    PolyRespHdr resp_hdr;
     resp_hdr.read_axi4_stream<WORD_BW>(out_stream);
 
     SampDataOut samp_out;

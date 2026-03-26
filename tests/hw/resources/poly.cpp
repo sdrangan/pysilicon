@@ -19,17 +19,13 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
 #pragma HLS INTERFACE axis port=out_stream
 #pragma HLS INTERFACE ap_ctrl_none port=return
 
-    // First read the command header
     PolyCmdHdr cmd_hdr;
     cmd_hdr.read_axi4_stream<WORD_BW>(in_stream);
 
-    // Create and write the response header
     PolyRespHdr resp_hdr;
     resp_hdr.tx_id = cmd_hdr.tx_id;
     resp_hdr.write_axi4_stream<WORD_BW>(out_stream, false);
 
-
-    // Read the input samples where we read pf 
     static const int pf = SampDataIn::pf<WORD_BW>();
     float x_lane[pf];
     float y_lane[pf];
@@ -38,29 +34,21 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
 
     int nrem = cmd_hdr.nsamp;
     for (int i = 0; i < cmd_hdr.nsamp; i += pf) {
-
-        // Read the pf input samples for the input stream
         SampDataIn::read_axi4_stream_elem<WORD_BW>(in_stream, x_lane, nrem);
 
         for (int k = 0; k < pf; ++k) {
 #pragma HLS UNROLL
             if (k < nrem) {
-                y_lane[k] = eval_poly_horner(
-                    cmd_hdr.coeffs.data, x_lane[k]);
+                y_lane[k] = eval_poly_horner(cmd_hdr.coeffs.data, x_lane[k]);
             }
         }
 
-        // Write the output samples, setting tlast on the last beat
         bool tlast = (nrem <= pf);
-        SampDataOut::write_axi4_stream_elem<WORD_BW>(
-            out_stream, y_lane, tlast, nrem);
+        SampDataOut::write_axi4_stream_elem<WORD_BW>(out_stream, y_lane, tlast, nrem);
 
-        // Decrement the remaining samples
         nrem -= pf;
     }
 
-    // Write the response footer
-    // For now, we do not model any errors
     PolyRespFtr resp_ftr;
     resp_ftr.nsamp_read = cmd_hdr.nsamp;
     resp_ftr.error = PolyError::NO_ERROR;

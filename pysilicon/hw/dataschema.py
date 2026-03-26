@@ -710,11 +710,11 @@ class DataField(DataSchema):
 
     @classmethod
     def to_uint_expr(cls, value_expr: str) -> str:
-        return f"(ap_uint<{cls.get_bitwidth()}>)({value_expr})"
+        return f"(ap_uint<{cls.get_bitwidth()}>)(static_cast<unsigned int>({value_expr}))"
 
     @classmethod
     def to_uint_value_expr(cls, value_expr: str) -> str:
-        return f"(ap_uint<{cls.get_bitwidth()}>)({value_expr})"
+        return f"(ap_uint<{cls.get_bitwidth()}>)(static_cast<unsigned int>({value_expr}))"
 
     @classmethod
     def from_uint_expr(cls, uint_expr: str) -> str:
@@ -734,12 +734,14 @@ class DataField(DataSchema):
     def _gen_dump_json_recursive(
         cls,
         prefix: str,
-        member_name: str,
+        member_name: str | None,
         os_name: str,
         depth_expr: str,
         indent_var: str,
     ) -> list[str]:
         _ = depth_expr, indent_var
+        if member_name is None:
+            raise ValueError(f"{cls.__name__} JSON generation requires a member_name.")
         value_expr = f"{prefix}{member_name}"
         cpp_name = cls.cpp_class_name()
 
@@ -760,12 +762,14 @@ class DataField(DataSchema):
     def _gen_load_json_recursive(
         cls,
         prefix: str,
-        member_name: str,
+        member_name: str | None,
         json_var: str,
         pos_var: str,
         ctx: str,
     ) -> list[str]:
         _ = ctx
+        if member_name is None:
+            raise ValueError(f"{cls.__name__} JSON load generation requires a member_name.")
         return [f"{prefix}{member_name} = {cls._json_load_expr(json_var=json_var, pos_var=pos_var)};"]
 
     @classmethod
@@ -809,8 +813,7 @@ class DataField(DataSchema):
             lines.append(f"    {lhs} = {val_expr};")
         else:
             if dst_type == "array" and curr_ipos == 0:
-                lines.append(f"    {target}[{curr_iword}] = 0;")
-
+                lines.append(f"    {lhs} = 0;")
             high = curr_ipos + bitwidth - 1
             low = curr_ipos
             lines.append(f"    {lhs}.range({high}, {low}) = {val_expr};")
@@ -1393,15 +1396,15 @@ class EnumField(DataField):
 
     @classmethod
     def to_uint_expr(cls, value_expr: str) -> str:
-        return f"(ap_uint<{cls.get_bitwidth()}>)({value_expr})"
+        return f"(ap_uint<{cls.get_bitwidth()}>)(static_cast<unsigned int>({value_expr}))"
 
     @classmethod
     def to_uint_value_expr(cls, value_expr: str) -> str:
-        return f"(ap_uint<{cls.get_bitwidth()}>)({value_expr})"
+        return f"(ap_uint<{cls.get_bitwidth()}>)(static_cast<unsigned int>({value_expr}))"
 
     @classmethod
     def from_uint_expr(cls, uint_expr: str) -> str:
-        return f"({cls.cpp_class_name()})({uint_expr})"
+        return f"static_cast<{cls.cpp_class_name()}>(static_cast<unsigned int>({uint_expr}))"
 
     @classmethod
     def _gen_include_decl(cls, word_bw_supported: list[int] | None = None) -> str:
@@ -2102,6 +2105,24 @@ class DataArray(DataSchema):
         return cls.member_name or "data"
 
     @classmethod
+    def _storage_expr(cls, prefix: str = "", member_name: str | None = None) -> str:
+        if member_name is None:
+            return f"{prefix}{cls._member_name()}"
+        return f"{prefix}{member_name}.{cls._member_name()}"
+
+    @classmethod
+    def _element_expr(
+        cls,
+        prefix: str = "",
+        member_name: str | None = None,
+        idx_names: list[str] | None = None,
+    ) -> str:
+        expr = cls._storage_expr(prefix=prefix, member_name=member_name)
+        if idx_names:
+            expr += "".join(f"[{idx}]" for idx in idx_names)
+        return expr
+
+    @classmethod
     def _element_template(cls) -> DataSchema:
         return cls._element_type()()
 
@@ -2597,8 +2618,7 @@ class DataArray(DataSchema):
         words_per_elem = elem_type.nwords_per_inst(word_bw)
         idx_names = [f"i{i}" for i in range(ndims)]
         n_eff_names = [f"n{i}_eff" for i in range(ndims)]
-        base_member = member_name or cls._member_name()
-        elem_expr = f"{prefix}{base_member}" + "".join(f"[{idx}]" for idx in idx_names)
+        elem_expr = cls._element_expr(prefix=prefix, member_name=member_name, idx_names=idx_names)
         elem_uint_expr = elem_type.to_uint_value_expr(elem_expr)
         lines = list(pre_lines)
 
@@ -2608,14 +2628,15 @@ class DataArray(DataSchema):
             else:
                 lines.append(f"    const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {shape[d]}) ? {shape[d]} : n{d});")
         n_total_expr = " * ".join(n_eff_names) if n_eff_names else "1"
+        decl_end = len(lines)
 
         if pf >= 2:
             if ndims == 1:
                 n0_eff = n_eff_names[0]
                 out_idx_init = start_iword if dst_type == "array" else 0
-                lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
+                lines.insert(decl_end, f"    int out_idx = {out_idx_init};")
                 if dst_type == "axi4_stream":
-                    lines.insert(len(n_eff_names) + 1, f"    const int total_words = ({n0_eff} + {pf} - 1) / {pf};")
+                    lines.insert(decl_end + 1, f"    const int total_words = ({n0_eff} + {pf} - 1) / {pf};")
                 lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
                 lines.append("        #pragma HLS PIPELINE II=1")
                 if dst_type == "array":
@@ -2625,7 +2646,9 @@ class DataArray(DataSchema):
                 for j in range(pf):
                     lo = j * elem_bw
                     hi = lo + elem_bw - 1
-                    lane_expr = elem_type.to_uint_value_expr(f"{prefix}{base_member}[i + {j}]")
+                    lane_expr = elem_type.to_uint_value_expr(
+                        cls._element_expr(prefix=prefix, member_name=member_name, idx_names=[f"i + {j}"])
+                    )
                     lines.append(f"        if (i + {j} < {n0_eff}) {{")
                     lines.append(f"            w.range({hi}, {lo}) = {lane_expr};")
                     lines.append("        }")
@@ -2642,11 +2665,11 @@ class DataArray(DataSchema):
                 next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
                 return lines, 0, next_iword
 
-            lines.insert(len(n_eff_names), "    int elem_idx = 0;")
+            lines.insert(decl_end, "    int elem_idx = 0;")
             out_idx_init = start_iword if dst_type == "array" else 0
-            lines.insert(len(n_eff_names) + 1, f"    int out_idx = {out_idx_init};")
+            lines.insert(decl_end + 1, f"    int out_idx = {out_idx_init};")
             if dst_type == "axi4_stream":
-                lines.insert(len(n_eff_names) + 2, f"    const int total_words = ({n_total_expr} + {pf} - 1) / {pf};")
+                lines.insert(decl_end + 2, f"    const int total_words = ({n_total_expr} + {pf} - 1) / {pf};")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
@@ -2691,7 +2714,7 @@ class DataArray(DataSchema):
 
         if pf == 1:
             out_idx_init = start_iword if dst_type == "array" else 0
-            lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
+            lines.insert(decl_end, f"    int out_idx = {out_idx_init};")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
@@ -2717,7 +2740,7 @@ class DataArray(DataSchema):
                 "DataField elements cannot be split across words."
             )
         out_idx_init = start_iword if dst_type == "array" else 0
-        lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
+        lines.insert(decl_end, f"    int out_idx = {out_idx_init};")
         for d in range(ndims):
             lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
         body_indent = "    " * (ndims + 1)
@@ -2764,8 +2787,7 @@ class DataArray(DataSchema):
         words_per_elem = elem_type.nwords_per_inst(word_bw)
         idx_names = [f"i{i}" for i in range(ndims)]
         n_eff_names = [f"n{i}_eff" for i in range(ndims)]
-        base_member = member_name or cls._member_name()
-        elem_expr = f"{prefix}{base_member}" + "".join(f"[{idx}]" for idx in idx_names)
+        elem_expr = cls._element_expr(prefix=prefix, member_name=member_name, idx_names=idx_names)
         lines: list[str] = []
         for d in range(ndims):
             if cls.static:
@@ -2796,7 +2818,9 @@ class DataArray(DataSchema):
                     hi = lo + elem_bw - 1
                     rhs_expr = elem_type.from_uint_expr(f"w.range({hi}, {lo})")
                     lines.append(f"        if (i + {j} < {n0_eff}) {{")
-                    lines.append(f"            {prefix}{base_member}[i + {j}] = {rhs_expr};")
+                    lines.append(
+                        f"            {cls._element_expr(prefix=prefix, member_name=member_name, idx_names=[f'i + {j}'])} = {rhs_expr};"
+                    )
                     lines.append("        }")
                 lines.append("    }")
                 next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
@@ -2875,7 +2899,7 @@ class DataArray(DataSchema):
     def _gen_dump_json_recursive(
         cls,
         prefix: str,
-        member_name: str,
+        member_name: str | None,
         os_name: str,
         depth_expr: str,
         indent_var: str,
@@ -2884,7 +2908,7 @@ class DataArray(DataSchema):
         shape = cls._normalized_shape()
         ndims = len(shape)
         idx_names = [f"i{i}" for i in range(ndims)]
-        elem_expr = f"{prefix}{member_name}" + "".join(f"[{i}]" for i in idx_names)
+        elem_expr = cls._element_expr(prefix=prefix, member_name=member_name, idx_names=idx_names)
         lines: list[str] = []
 
         def emit_value(indent: str) -> None:
@@ -2931,7 +2955,7 @@ class DataArray(DataSchema):
         ]
         for line in cls._gen_dump_json_recursive(
             prefix="this->",
-            member_name=cls._member_name(),
+            member_name=None,
             os_name="os",
             depth_expr="level",
             indent_var="step",
@@ -2949,7 +2973,7 @@ class DataArray(DataSchema):
         lines = [f"{indent}void load_json(const std::string& json_text, size_t& pos) {{"]
         for line in cls._gen_load_json_recursive(
             prefix="this->",
-            member_name=cls._member_name(),
+            member_name=None,
             json_var="json_text",
             pos_var="pos",
             ctx="root",
@@ -2977,7 +3001,7 @@ class DataArray(DataSchema):
     def _gen_load_json_recursive(
         cls,
         prefix: str,
-        member_name: str,
+        member_name: str | None,
         json_var: str,
         pos_var: str,
         ctx: str,
@@ -2986,7 +3010,7 @@ class DataArray(DataSchema):
         shape = cls._normalized_shape()
         ndims = len(shape)
         idx_names = [f"i{i}" for i in range(ndims)]
-        elem_expr = f"{prefix}{member_name}" + "".join(f"[{i}]" for i in idx_names)
+        elem_expr = cls._element_expr(prefix=prefix, member_name=member_name, idx_names=idx_names)
         lines: list[str] = []
 
         def emit_value(indent: str) -> None:
