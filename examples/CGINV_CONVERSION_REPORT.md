@@ -4,6 +4,8 @@
 
 Successfully converted the Python `cginv` function (Conjugate Gradient Matrix Inverse algorithm) into Vitis HLS C++ dataschema code using the PySilicon deterministic pipeline.
 
+> Update after the merged dataschema rewrite: the current AI pipeline now emits class-specialized Python dataschema modules (`IntField.specialize(...)`, `DataArray.specialize(...)`, `class ... (DataList): elements = {...}`), and this CGINV example can now generate the struct wrapper headers `cginv_input.h`, `cginv_output.h`, and `cginv_state.h`. The word-alignment failure described later in this historical report no longer applies to the current implementation for this example.
+
 ## Python Source Function
 
 ```python

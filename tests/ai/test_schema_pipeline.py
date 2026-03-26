@@ -103,16 +103,36 @@ def test_infer_from_dataclass_and_generate_headers(tmp_path):
     headers = generate_schema_headers(spec, include_dir=tmp_path)
 
     assert result["ok"] is True
-    assert headers["generated_types"] == ["Inner", "HistArray", "Packet"]
+    assert headers["generated_types"] == ["Inner", "HistArray", "ModeField", "Packet"]
     assert (tmp_path / "inner.h").exists()
     assert (tmp_path / "hist_array.h").exists()
-    assert not (tmp_path / "packet.h").exists()
-    assert headers["failed_headers"] == [
-        {
-            "type_name": "Packet",
-            "error": "DataArray _gen_write_recursive currently requires word-aligned entry (ipos0 == 0).",
-        }
+    assert (tmp_path / "mode.h").exists()
+    assert (tmp_path / "packet.h").exists()
+    assert headers["failed_headers"] == []
+
+
+@dataclass
+class MultiArrayPacket:
+    coeffs: Annotated[
+        list[Annotated[float, FloatHint(32)]],
+        ArrayHint(max_shape=(4,), type_name="CoeffArray", element_name="coeff"),
     ]
+    samples: Annotated[
+        list[Annotated[float, FloatHint(32)]],
+        ArrayHint(max_shape=(4,), type_name="SampleArray", element_name="sample"),
+    ]
+
+
+def test_generate_headers_preserves_array_type_names(tmp_path):
+    spec = infer_schema_spec_from_symbol(MultiArrayPacket)
+    headers = generate_schema_headers(spec, include_dir=tmp_path)
+
+    assert headers["generated_types"] == ["CoeffArray", "SampleArray", "MultiArrayPacket"]
+    assert (tmp_path / "coeff_array.h").exists()
+    assert (tmp_path / "sample_array.h").exists()
+    assert (tmp_path / "multi_array_packet.h").exists()
+    assert not (tmp_path / "float32_array.h").exists()
+    assert headers["failed_headers"] == []
 
 
 def test_spec_from_python_symbol_file_roundtrip(tmp_path):

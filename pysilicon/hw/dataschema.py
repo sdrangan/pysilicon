@@ -1344,7 +1344,6 @@ class EnumField(DataField):
         }
         resolved_overrides = dict(enum_defaults)
         resolved_overrides.update(overrides)
-        override_items = tuple(sorted(overrides.items()))
         resolved_override_items = tuple(sorted(resolved_overrides.items()))
         key = (
             cls,
@@ -2204,6 +2203,24 @@ class DataArray(DataSchema):
             return [build(shape_tail[1:]) for _ in range(shape_tail[0])]
 
         return build(def_shape)
+
+    @classmethod
+    def _full_init_value(cls) -> Any:
+        shape = cls._normalized_shape()
+        elem_init = cls._element_type().init_value()
+
+        if isinstance(elem_init, np.generic):
+            return np.zeros(shape, dtype=np.asarray(elem_init).dtype)
+
+        if isinstance(elem_init, np.ndarray):
+            return np.zeros(shape + tuple(elem_init.shape), dtype=elem_init.dtype)
+
+        def build(shape_tail: tuple[int, ...]) -> Any:
+            if not shape_tail:
+                return cls._element_type().init_value()
+            return [build(shape_tail[1:]) for _ in range(shape_tail[0])]
+
+        return build(shape)
 
     @property
     def val(self) -> Any:
@@ -3198,7 +3215,7 @@ class DataArray(DataSchema):
         shape = self.__class__._normalized_shape()
         curr_ipos = ipos0
         curr_iword = iword0
-        data = self.__class__.init_value()
+        data = self.__class__._full_init_value() if not self.__class__.static else self.__class__.init_value()
         child = self.__class__._element_type()()
 
         def set_elem(container: Any, idxs: tuple[int, ...], value: Any) -> None:

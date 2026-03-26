@@ -20,12 +20,19 @@ The stable path is:
 3. validation
 4. generated PySilicon dataschema module
 5. optional header generation or Python roundtrip validation
+6. optional interface-bundle generation with manifests, reports, vectors, and Vitis validation
+
+Generated modules should target the merged class-specialized dataschema API:
+- scalar fields via `IntField.specialize(...)`, `FloatField.specialize(...)`, or `EnumField.specialize(...)`
+- arrays via `DataArray.specialize(...)`
+- structs via `class TypeName(DataList): elements = {...}`
 
 ## Workflow
 
 ### 1. Choose the source path
 
 - If the user already has a Python dataclass or `TypedDict`, use the MCP helper `spec_from_python_symbol`.
+- If the user has a `pydantic` model, a NumPy structured dtype, a notebook symbol, or a callable signature, use the deterministic inference helpers instead of hand-translating them.
 - If the user gives a prompt, first translate it into the constrained schema spec described below.
 
 ### 2. Use the constrained schema spec
@@ -53,8 +60,11 @@ Use:
 - `generate_dataschema_module` to create the Python dataschema source
 - `generate_schema_headers` to emit one header per named struct/array type
 - `validate_generated_schema` to roundtrip a payload through Python serialization
+- `bundle_from_python_symbols` or `bundle_from_callable_symbol` to infer an accelerator interface bundle
+- `generate_interface_bundle` to emit specs, modules, headers, vectors, manifests, and a markdown report
+- `validate_schema_with_vitis` or `validate_bundle_with_vitis` for compile-level validation
 
-Check `failed_headers` after header generation. The current core library can reject some nested-array layouts when the array field does not begin on a word boundary.
+Check `failed_headers` after header generation. A successful run should usually emit semantic header names derived from schema `type_name` values, rather than generic element-type names.
 
 ### 5. State assumptions explicitly
 

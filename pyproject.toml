@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 ai = [
     "mcp>=1.26.0",
+    "PyYAML>=6.0",
 ]
 dev = [
     "pytest",
@@ -23,6 +24,7 @@ dev = [
     "ruff",
     "mypy",
     "mcp>=1.26.0",
+    "PyYAML>=6.0",
 ]
 
 [build-system]

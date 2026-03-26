@@ -1,54 +1,54 @@
 """Auto-generated PySilicon dataschema module."""
 
-from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
+from pysilicon.hw import DataArray, DataList, FloatField, IntField
 
 
-class RArray(DataArray):
-    def __init__(self, name=None):
-        super().__init__(
-            name=name,
-            element_type=FloatField(name='r_elem', bitwidth=32),
-            max_shape=(1024,),
-            static=True,
-        )
+RArray = DataArray.specialize(
+    element_type=FloatField.specialize(bitwidth=32),
+    max_shape=(1024,),
+    static=True,
+    member_name="r_elem",
+    cpp_repr="RArray",
+    include_filename="r_array.h",
+)
 
 
-class PArray(DataArray):
-    def __init__(self, name=None):
-        super().__init__(
-            name=name,
-            element_type=FloatField(name='p_elem', bitwidth=32),
-            max_shape=(1024,),
-            static=True,
-        )
+PArray = DataArray.specialize(
+    element_type=FloatField.specialize(bitwidth=32),
+    max_shape=(1024,),
+    static=True,
+    member_name="p_elem",
+    cpp_repr="PArray",
+    include_filename="p_array.h",
+)
 
 
-class XArray(DataArray):
-    def __init__(self, name=None):
-        super().__init__(
-            name=name,
-            element_type=FloatField(name='x_elem', bitwidth=32),
-            max_shape=(1024,),
-            static=True,
-        )
+XArray = DataArray.specialize(
+    element_type=FloatField.specialize(bitwidth=32),
+    max_shape=(1024,),
+    static=True,
+    member_name="x_elem",
+    cpp_repr="XArray",
+    include_filename="x_array.h",
+)
 
 
-class RnormArray(DataArray):
-    def __init__(self, name=None):
-        super().__init__(
-            name=name,
-            element_type=FloatField(name='rnorm_elem', bitwidth=32),
-            max_shape=(32,),
-            static=True,
-        )
+RnormArray = DataArray.specialize(
+    element_type=FloatField.specialize(bitwidth=32),
+    max_shape=(32,),
+    static=True,
+    member_name="rnorm_elem",
+    cpp_repr="RnormArray",
+    include_filename="rnorm_array.h",
+)
 
 
 class CginvState(DataList):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self.add_elem(IntField(name='n', bitwidth=8, signed=False))
-        self.add_elem(IntField(name='iteration', bitwidth=16, signed=False))
-        self.add_elem(RArray(name='R'))
-        self.add_elem(PArray(name='P'))
-        self.add_elem(XArray(name='X'))
-        self.add_elem(RnormArray(name='rnorm'))
+    elements = {
+        "n": IntField.specialize(bitwidth=8, signed=False),
+        "iteration": IntField.specialize(bitwidth=16, signed=False),
+        "R": RArray,
+        "P": PArray,
+        "X": XArray,
+        "rnorm": RnormArray,
+    }

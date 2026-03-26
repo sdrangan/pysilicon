@@ -1,21 +1,21 @@
 """Auto-generated PySilicon dataschema module."""
 
-from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
+from pysilicon.hw import DataArray, DataList, FloatField, IntField
 
 
-class QArray(DataArray):
-    def __init__(self, name=None):
-        super().__init__(
-            name=name,
-            element_type=FloatField(name='q_elem', bitwidth=32),
-            max_shape=(1024,),
-            static=True,
-        )
+QArray = DataArray.specialize(
+    element_type=FloatField.specialize(bitwidth=32),
+    max_shape=(1024,),
+    static=True,
+    member_name="q_elem",
+    cpp_repr="QArray",
+    include_filename="q_array.h",
+)
 
 
 class CginvInput(DataList):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self.add_elem(IntField(name='n', bitwidth=8, signed=False))
-        self.add_elem(IntField(name='nit', bitwidth=16, signed=False))
-        self.add_elem(QArray(name='Q'))
+    elements = {
+        "n": IntField.specialize(bitwidth=8, signed=False),
+        "nit": IntField.specialize(bitwidth=16, signed=False),
+        "Q": QArray,
+    }
