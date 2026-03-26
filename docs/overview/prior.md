@@ -1,3 +1,9 @@
+---
+title: Prior Work
+parent: Overview
+nav_order: 4
+---
+
 # Comparison to Existing Work
 
 This section summarizes how PySilicon differs from and extends prior work across several research areas. Google Scholar results (as expected) surface PyMTL and related frameworks, but none provide the unified workflow proposed here.

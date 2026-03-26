@@ -1,3 +1,9 @@
+---
+title: AI Assistants
+parent: Architecture
+nav_order: 7
+---
+
 # Overcoming Custom Hardware Barriers with Auto‑Generated AI Assistants
 
 Custom micro‑code, ad‑hoc DSLs, and device‑specific command encodings have been the primary barrier to adoption for most custom silicon. Every accelerator family invents its own control language, its own register map, and its own firmware conventions. This fragmentation makes hardware powerful but inaccessible, especially for small teams and software‑first users.

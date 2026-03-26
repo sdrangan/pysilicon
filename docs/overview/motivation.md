@@ -1,3 +1,9 @@
+---
+title: Motivation
+parent: Overview
+nav_order: 1
+---
+
 # Motivation
 
 The recent wave of AI‑assisted hardware design tools has demonstrated that large language models can generate **local RTL or HLS fragments** with impressive quality. But these tools all share the same limitation: they operate at the *module level* and provide no support for architectural coherence, reproducibility, or end‑to‑end integration. For experienced hardware designers, this is the real barrier to adoption. The following challenges remain unsolved by existing approaches and form the core motivation for PySilicon.

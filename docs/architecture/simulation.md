@@ -1,3 +1,9 @@
+---
+title: Simulation
+parent: Architecture
+nav_order: 2
+---
+
 # Unified High‑Speed Functional Simulation with Event‑Driven Semantics
 
 The simulation subsystem models both hardware and non‑hardware entities in a unified discrete‑event environment. It is built on top of the `simpy` engine, which provides deterministic event scheduling, concurrency modeling, and precise control over simulated time.

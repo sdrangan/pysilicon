@@ -1,3 +1,9 @@
+---
+title: Unit Testing
+parent: Architecture
+nav_order: 6
+---
+
 # A Python‑Native Unit Testing Framework for Deterministic, Gated Builds
 
 PySilicon provides a unified, Python‑native testing framework that supports verification of hardware modules, simulated environments, and the interaction between the two. Because all hardware behavior, interfaces, and simulation semantics are defined in Python, tests can be written using standard Python testing tools without any special DSLs or hardware‑specific languages.

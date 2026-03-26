@@ -1,3 +1,9 @@
+---
+title: Hardware Objects
+parent: Architecture
+nav_order: 1
+---
+
 # Python‑Native Hardware Architecture with Explicit Transactional Interface
 
 PySilicon is built around two core Python abstractions that together define the structure, behavior, and connectivity of hardware systems.

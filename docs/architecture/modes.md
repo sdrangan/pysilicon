@@ -1,3 +1,9 @@
+---
+title: Planning and Synthesis Modes
+parent: Architecture
+nav_order: 3
+---
+
 # Modes for Planning and Synthesis in PySilicon
 
 PySilicon organizes accelerator development into two complementary modes: **Planning Mode** and **Synthesis Mode**. These modes reflect the natural split between exploratory architectural design and deterministic code generation. Understanding this separation helps contributors navigate the workflow and know where each part of the system fits.

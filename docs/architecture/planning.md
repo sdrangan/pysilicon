@@ -1,3 +1,9 @@
+---
+title: AI-Assisted Planning
+parent: Architecture
+nav_order: 4
+---
+
 # Hardware Architecture Planning Powered by Enhanced Copilot Chat
 
 Planning Mode is the exploratory phase of PySilicon where developers describe their goals in natural language and receive structured architectural guidance. This mode exists to make early hardware design accessible, especially for developers who are not hardware specialists. It transforms the blank‑slate problem of accelerator architecture into a guided, conversational process grounded in PySilicon’s conventions and examples.

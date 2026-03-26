@@ -1,3 +1,9 @@
+---
+title: Synthesis
+parent: Architecture
+nav_order: 5
+---
+
 # Guided and Reproducible AI‑Driven Synthesis 
 
 The synthesis pipeline translates the unified Python specification into FPGA hardware, firmware, and integration artifacts. While the initial implementation targets Xilinx FPGAs, the abstractions are intentionally designed so that the same flow can later support ASIC backends. The pipeline is divided into two major tasks:
