@@ -6,6 +6,29 @@ nav_order: 2
 
 # Vitis Kernel implementation
 
+## Overview
+
+On the Vitis HLS side, the generated schema headers make the accelerator code much simpler.  
+Instead of manually packing and unpacking AXI4-Stream words, the kernel can read and write typed protocol objects directly.
+
+In this example, the generated serializers and deserializers handle the stream encoding for:
+
+- `PolyCmdHdr`
+- `PolyRespHdr`
+- `PolyRespFtr`
+- `SampDataIn`
+- `SampDataOut`
+
+As a result, the kernel implementation mainly consists of:
+
+- reading the command header,
+- evaluating the polynomial on streamed input samples,
+- writing response records back to the output stream.
+
+This keeps the HLS code focused on algorithm behavior and transaction flow rather than low-level stream formatting.
+
+## Implementation code
+
 The HLS kernel is implemented in [`examples/poly/poly.cpp`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly.cpp).
 
 ```cpp
