@@ -1,13 +1,24 @@
 ---
 title: PySilicon
 nav_order: 1
+has_children: true
 ---
 
 # PySilicon
 
-*PySilicon is a Python‑native hardware design platform that unifies architecture, simulation, synthesis, and AI‑grounded tooling into a single coherent workflow*. 
 
-It provides a disciplined substrate for hardware development: a consistent object model, deterministic simulation, structured data schemas, and reproducible code‑generation paths that allow AI to operate as a reliable engineering assistant rather than a loose code generator. The result is a workflow where hardware design becomes reproducible, inspectable, and architecturally coherent from end to end.
+PySilicon is an aspirational Python-native framework for designing, simulating, verifying, and synthesizing hardware systems from a single structured specification.
+
+The long-term vision is to make **Python the single source of truth** for hardware architecture: typed data schemas, transactional interfaces, hardware objects, simulation behavior, testing, synthesis inputs, runtime APIs, and documentation. Rather than treating hardware as a collection of disconnected artifacts, PySilicon aims to unify the flow in one coherent, software-like environment.
+
+The intended ideas behind PySilicon include:
+
+- **Typed hardware architecture** through explicit hardware objects and transactional interfaces  
+- **Unified Python simulation** for functional validation and approximate timing  
+- **Deterministic, AI-assisted synthesis** with reproducible, dependency-aware builds  
+- **Software-native hardware consumption** through generated Python APIs, docs, examples, and grounded AI assistants  
+
+At this stage, PySilicon is still an early project and much of this vision has not yet been fully built. This repository is a place to explore the architecture, prototypes, and design ideas behind that goal.
 
 ---
 
@@ -16,24 +27,18 @@ It provides a disciplined substrate for hardware development: a consistent objec
 If you're new to PySilicon, begin with:
 
 - [Installation](./installation/index.md) — how to install PySilicon from source.
-- [Overview](./overview/) — conceptual documentation describing the architecture
+- [Overview](./overview/) — conceptual background, motivation, and examples.
+- [Architecture](./architecture/) — system design, simulation, synthesis, testing, and generated interfaces.
 
 
 These pages introduce the core ideas behind PySilicon and how the system fits together.
 
----
 
-## Examples
+## People
 
-Hands‑on examples live in the `examples/` directory and are documented here:
+PySilicon is being developed by [Sundeep Rangan](https://wireless.engineering.nyu.edu/sundeep-rangan/), a Professor in Electrical and Computer Engineering and Director of [NYU Wireless](https://wireless.engineering.nyu.edu/).  Sundeep's research is in wireless communications.
 
-- **[WaveFlow](examples/waveflow)** — a walkthrough of how we can implement
-a complex reconfigurable wireless chip with PySilicon.
+## Feedback
 
-More examples will be added as the framework evolves.
+The project is very early.  We would love to get your feedback -- positive or negative.
 
----
-
-## Project Status
-
-PySilicon is under active development. Documentation will expand as the architecture stabilizes and the public API takes shape. Until then, the `docs/` directory is the most accurate source of information.

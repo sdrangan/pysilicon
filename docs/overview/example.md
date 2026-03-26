@@ -1,3 +1,9 @@
+---
+title: WaveFlow Example
+parent: Overview
+nav_order: 3
+---
+
 # WaveFlow: A Reconfigurable Wireless Processing Chip
 
 WaveFlow is a motivating example that illustrates why PySilicon is needed and what kinds of systems cannot be built reliably with current AI‑assisted hardware tools. WaveFlow represents a class of modern wireless architectures that combine heterogeneous accelerators, high‑rate antenna interfaces, and dynamic dataflow reconfiguration. These systems demand architectural exploration, concurrency modeling, and unified firmware generation—capabilities that existing tools do not provide.

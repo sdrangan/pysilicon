@@ -2618,7 +2618,10 @@ class DataArray(DataSchema):
                     lines.insert(len(n_eff_names) + 1, f"    const int total_words = ({n0_eff} + {pf} - 1) / {pf};")
                 lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
                 lines.append("        #pragma HLS PIPELINE II=1")
-                lines.append(f"        ap_uint<{word_bw}> w = 0;")
+                if dst_type == "array":
+                    lines.append(f"        ap_uint<{word_bw}> w = 0;")
+                else:
+                    lines.append("        w = 0;")
                 for j in range(pf):
                     lo = j * elem_bw
                     hi = lo + elem_bw - 1
@@ -2644,8 +2647,6 @@ class DataArray(DataSchema):
             lines.insert(len(n_eff_names) + 1, f"    int out_idx = {out_idx_init};")
             if dst_type == "axi4_stream":
                 lines.insert(len(n_eff_names) + 2, f"    const int total_words = ({n_total_expr} + {pf} - 1) / {pf};")
-            if dst_type != "array":
-                lines.insert(len(n_eff_names) + (3 if dst_type == "axi4_stream" else 2), f"    ap_uint<{word_bw}> w = 0;")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
@@ -2691,8 +2692,6 @@ class DataArray(DataSchema):
         if pf == 1:
             out_idx_init = start_iword if dst_type == "array" else 0
             lines.insert(len(n_eff_names), f"    int out_idx = {out_idx_init};")
-            if dst_type != "array":
-                lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
@@ -2787,10 +2786,10 @@ class DataArray(DataSchema):
                 if src_type == "array":
                     lines.append(f"        ap_uint<{word_bw}> w = {source}[in_idx++];")
                 elif src_type == "stream":
-                    lines.append(f"        ap_uint<{word_bw}> w = {source}.read();")
+                    lines.append(f"        w = {source}.read();")
                     lines.append("        in_idx++;")
                 else:
-                    lines.append(f"        ap_uint<{word_bw}> w = {source}.read().data;")
+                    lines.append(f"        w = {source}.read().data;")
                     lines.append("        in_idx++;")
                 for j in range(pf):
                     lo = j * elem_bw
@@ -2803,8 +2802,6 @@ class DataArray(DataSchema):
                 next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
                 return lines, 0, next_iword
 
-            if src_type != "array":
-                lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
             lines.insert(len(n_eff_names) + (2 if src_type != "array" else 1), "    int elem_idx = 0;")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
@@ -2833,8 +2830,6 @@ class DataArray(DataSchema):
             return lines, 0, next_iword
 
         if pf == 1:
-            if src_type != "array":
-                lines.insert(len(n_eff_names) + 1, f"    ap_uint<{word_bw}> w = 0;")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)

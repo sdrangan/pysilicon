@@ -1,3 +1,9 @@
+---
+title: Innovations
+parent: Overview
+nav_order: 2
+---
+
 # Innovations
 
 ## Python as the single source of truth

@@ -1,3 +1,9 @@
+---
+title: Generated C/C++ APIs
+parent: Architecture
+nav_order: 8
+---
+
 # Optional High‑Performance C/C++ APIs Auto‑Generated from Python Semantics
 
 ## C/C++ Runtime APIs for Industry Deployment

@@ -340,6 +340,18 @@ def test_dataarray_gen_include_emits_runtime_shape_params(tmp_path: Path):
     assert "void read_array(const ap_uint<word_bw> x[], int n0=1) {" in content
 
 
+def test_dataarray_stream_codegen_does_not_redeclare_word_buffer():
+    coeff_write = CoeffArray.gen_write(word_bw=32, dst_type="stream")
+    coeff_read = CoeffArray.gen_read(word_bw=32, src_type="stream")
+    matrix_write = WordMatrix.gen_write(word_bw=32, dst_type="stream")
+    matrix_read = WordMatrix.gen_read(word_bw=32, src_type="stream")
+
+    assert coeff_write.count("ap_uint<32> w = 0;") == 1
+    assert coeff_read.count("ap_uint<32> w = 0;") == 1
+    assert matrix_write.count("ap_uint<32> w = 0;") == 1
+    assert matrix_read.count("ap_uint<32> w = 0;") == 1
+
+
 def test_datalist_with_array_field_assigns_and_roundtrips():
     packet = PacketWithArray(count=3)
     packet.coeffs = np.asarray([0.25, 0.5, 0.75, 1.0], dtype=np.float32)

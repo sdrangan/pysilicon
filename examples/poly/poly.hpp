@@ -5,14 +5,14 @@
 #include <ap_int.h>
 #include <hls_stream.h>
 
-#include "poly_error.h"
-#include "coeffs.h"
-#include "poly_cmd_header.h"
-#include "poly_resp_footer.h"
-#include "poly_resp_header.h"
-#include "sample_data_in.h"
-#include "sample_data_out.h"
-#include "streamutils.h"
+#include "include/poly_error.h"
+#include "include/coeff_array.h"
+#include "include/poly_cmd_header.h"
+#include "include/poly_resp_footer.h"
+#include "include/poly_resp_header.h"
+#include "include/samp_data_in.h"
+#include "include/samp_data_out.h"
+#include "include/streamutils.h"
 
 
 static const int WORD_BW = 32;

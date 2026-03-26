@@ -1,3 +1,9 @@
+---
+title: RTL Verification
+parent: Architecture
+nav_order: 9
+---
+
 # Extensible RTL‑Level Verification for Future Regression and Co‑Simulatio
 
 PySilicon approaches verification as a layered process that begins with fast, deterministic functional simulation and extends naturally toward RTL‑level verification. The current implementation focuses on architectural correctness and reproducibility, while the design of PySilicon explicitly supports future integration of RTL‑level regression tests.
