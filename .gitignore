@@ -108,3 +108,7 @@ pysilicon-extension/*.vsix
 examples/dataschema
 examples/vecunit
 examples/test
+examples/poly/include
+examples/poly/logs
+examples/poly/pysilicon_poly_proj
+
