@@ -3,35 +3,31 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 
+from pysilicon.codegen.build import CodeGenConfig
 
-def copy_streamutils(dst_path: str | Path) -> str:
-	"""
-	Copy ``streamutils.h`` to the specified destination path.
 
-	Parameters
-	----------
-	dst_path : str | Path
-		Destination directory or full destination file path.
-		- If a directory is provided, the output file will be
-		  ``<dst_path>/streamutils.h``.
-		- If a file path is provided, the header is copied to that file path.
+def copy_streamutils(cfg: CodeGenConfig) -> str:
+    """Copy ``streamutils.h`` into the configured utility directory.
 
-	Returns
-	-------
-	str
-		Absolute path to the copied file.
-	"""
-	src_path = Path(__file__).resolve().with_name("streamutils.h")
-	if not src_path.exists():
-		raise FileNotFoundError(f"Could not find source header: {src_path}")
+    Parameters
+    ----------
+    cfg : CodeGenConfig
+        Code-generation configuration describing the output root and utility
+        directory. The header is written to
+        ``cfg.root_dir / cfg.util_dir / "streamutils.h"``.
 
-	dst = Path(dst_path).expanduser()
-	is_dir_target = dst.exists() and dst.is_dir()
-	if not is_dir_target and dst.suffix == "":
-		is_dir_target = True
+    Returns
+    -------
+    str
+        Absolute path to the copied file.
+    """
+    src_path = Path(__file__).resolve().with_name("streamutils.h")
+    if not src_path.exists():
+        raise FileNotFoundError(f"Could not find source header: {src_path}")
 
-	out_file = dst / "streamutils.h" if is_dir_target else dst
-	out_file.parent.mkdir(parents=True, exist_ok=True)
-	shutil.copy2(src_path, out_file)
-	return str(out_file.resolve())
+    out_dir = cfg.root_dir / cfg.util_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / "streamutils.h"
+    shutil.copy2(src_path, out_file)
+    return str(out_file.resolve())
 
