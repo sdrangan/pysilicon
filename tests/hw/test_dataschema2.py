@@ -5,7 +5,24 @@ import numpy as np
 import pytest
 
 from pysilicon.codegen.build import CodeGenConfig
-from pysilicon.hw.dataschema2 import DataList, EnumField, FloatField, IntField
+from pysilicon.hw import (
+    DataArray as PublicDataArray,
+    DataField as PublicDataField,
+    DataList as PublicDataList,
+    DataSchema as PublicDataSchema,
+    EnumField as PublicEnumField,
+    FloatField as PublicFloatField,
+    IntField as PublicIntField,
+)
+from pysilicon.hw.dataschema2 import (
+    DataArray,
+    DataField,
+    DataList,
+    DataSchema,
+    EnumField,
+    FloatField,
+    IntField,
+)
 
 
 class Mode(IntEnum):
@@ -20,9 +37,14 @@ class OpCode(IntEnum):
 
 
 U16 = IntField.specialize(bitwidth=16, signed=False)
+U8 = IntField.specialize(bitwidth=8, signed=False)
 S16 = IntField.specialize(bitwidth=16, signed=True)
 F32 = FloatField.specialize(bitwidth=32)
 ModeField = EnumField.specialize(enum_type=Mode, default=Mode.AUTO)
+CoeffArray = DataArray.specialize(element_type=F32, max_shape=(4,), member_name="coeff")
+ByteArray = DataArray.specialize(element_type=U8, max_shape=(8,), member_name="x")
+WordMatrix = DataArray.specialize(element_type=U16, max_shape=(4, 4), member_name="x")
+DynByteArray = DataArray.specialize(element_type=U8, max_shape=(16,), static=False, member_name="x")
 
 
 class Complex(DataList):
@@ -38,6 +60,13 @@ class Packet(DataList):
         "gain": F32,
         "mode": ModeField,
         "z": Complex,
+    }
+
+
+class PacketWithArray(DataList):
+    elements = {
+        "count": U16,
+        "coeffs": CoeffArray,
     }
 
 
@@ -225,6 +254,152 @@ def test_write_uint32_file_creates_parent_directories(tmp_path: Path):
     assert out_path.exists()
 
 
+def test_dataarray_init_value_and_assignment():
+    arr = ByteArray()
+
+    assert isinstance(arr.val, np.ndarray)
+    assert arr.val.shape == (8,)
+    assert arr.val.dtype == np.uint32
+
+    arr.val = [1, 2, 3, 4, 5, 6, 7, 8]
+    assert np.array_equal(arr.val, np.asarray([1, 2, 3, 4, 5, 6, 7, 8], dtype=np.uint32))
+
+
+def test_dynamic_dataarray_init_value_has_zero_length_first_axis():
+    arr = DynByteArray()
+
+    assert isinstance(arr.val, np.ndarray)
+    assert arr.val.shape == (0,)
+    assert arr.val.dtype == np.uint32
+
+
+def test_dataarray_serialize_deserialize_roundtrip():
+    arr = ByteArray()
+    arr.val = np.asarray([1, 2, 3, 4, 5, 6, 7, 8], dtype=np.uint32)
+
+    packed = arr.serialize(word_bw=32)
+    restored = ByteArray().deserialize(packed, word_bw=32)
+
+    assert packed.dtype == np.uint32
+    assert packed.shape == (2,)
+    assert restored.is_close(arr)
+
+
+def test_dataarray_write_uint32_file_nwrite(tmp_path: Path):
+    arr = ByteArray()
+    arr.val = np.asarray([1, 2, 3, 4, 5, 6, 7, 8], dtype=np.uint32)
+
+    out_path = tmp_path / "arr_nwrite.bin"
+    arr.write_uint32_file(out_path, nwrite=4)
+
+    file_words = np.fromfile(out_path, dtype="<u4")
+    ref = DataArray.specialize(element_type=U8, max_shape=(4,), member_name="x")()
+    ref.val = np.asarray([1, 2, 3, 4], dtype=np.uint32)
+    expected_words = np.asarray(ref.serialize(word_bw=32), dtype="<u4")
+
+    assert np.array_equal(file_words, expected_words)
+
+
+def test_dataarray_write_uint32_file_write_slice(tmp_path: Path):
+    arr = WordMatrix()
+    arr.val = np.arange(16, dtype=np.uint32).reshape(4, 4)
+
+    out_path = tmp_path / "arr_slice.bin"
+    arr.write_uint32_file(out_path, write_slice=np.s_[:2, 1:3])
+
+    file_words = np.fromfile(out_path, dtype="<u4")
+    ref = DataArray.specialize(element_type=U16, max_shape=(2, 2), member_name="x")()
+    ref.val = np.asarray(arr.val[:2, 1:3], dtype=np.uint32)
+    expected_words = np.asarray(ref.serialize(word_bw=32), dtype="<u4")
+
+    assert np.array_equal(file_words, expected_words)
+
+
+def test_dataarray_gen_include_emits_nwords_len_for_dynamic(tmp_path: Path):
+    out_path = DynByteArray.gen_include(
+        cfg=CodeGenConfig(root_dir=tmp_path),
+        word_bw_supported=[32, 64],
+    )
+    content = out_path.read_text(encoding="utf-8")
+
+    assert out_path == tmp_path / "u_int8_array.h"
+    assert "static int nwords_len(int n0=1) {" in content
+    assert "if constexpr (word_bw == 32) {" in content
+    assert "const int n0_eff = (n0 < 0) ? 0 : ((n0 > 16) ? 16 : n0);" in content
+    assert "return (n_total + 4 - 1) / 4;" in content
+
+
+def test_dataarray_gen_include_emits_runtime_shape_params(tmp_path: Path):
+    out_path = DynByteArray.gen_include(
+        cfg=CodeGenConfig(root_dir=tmp_path),
+        word_bw_supported=[32],
+    )
+    content = out_path.read_text(encoding="utf-8")
+
+    assert "void write_array(ap_uint<word_bw> x[], int n0=1) const {" in content
+    assert "void read_array(const ap_uint<word_bw> x[], int n0=1) {" in content
+
+
+def test_datalist_with_array_field_assigns_and_roundtrips():
+    packet = PacketWithArray(count=3)
+    packet.coeffs = np.asarray([0.25, 0.5, 0.75, 1.0], dtype=np.float32)
+
+    packed = packet.serialize(word_bw=32)
+    restored = PacketWithArray().deserialize(packed, word_bw=32)
+
+    assert np.asarray(packet.coeffs).shape == (4,)
+    assert restored.is_close(packet, rel_tol=1e-6, abs_tol=1e-6)
+
+
+def test_datalist_to_dict_from_dict_roundtrip():
+    packet = Packet(count=9, gain=1.5, mode=Mode.ON)
+    packet.z.real = -3
+    packet.z.imag = 8
+
+    payload = packet.to_dict()
+    restored = Packet().from_dict(payload)
+
+    assert payload == {
+        "count": np.uint32(9),
+        "gain": np.float32(1.5),
+        "mode": Mode.ON,
+        "z": {
+            "real": np.int32(-3),
+            "imag": np.int32(8),
+        },
+    }
+    assert restored.is_close(packet)
+
+
+def test_datalist_to_json_from_json_roundtrip(tmp_path: Path):
+    packet = Packet(count=31, gain=2.25, mode=Mode.AUTO)
+    packet.z.real = -17
+    packet.z.imag = 6
+
+    json_path = tmp_path / "packet.json"
+    json_str = packet.to_json(file_path=json_path)
+
+    restored = Packet().from_json(json_str)
+    restored2 = Packet().from_json(json_path)
+
+    assert json_path.exists()
+    assert '"count": 31' in json_str
+    assert '"mode": 2' in json_str
+    assert restored.is_close(packet)
+    assert restored2.is_close(packet)
+
+
+def test_datalist_val_accepts_same_type_instance():
+    src = Packet(count=4, gain=1.25, mode=Mode.ON)
+    src.z.real = -2
+    src.z.imag = 5
+
+    dst = Packet()
+    dst.val = src
+
+    assert dst.is_close(src)
+
+
 def test_datalist_element_normalization_accessors_work_for_both_forms():
     assert Complex.get_element_schema("real") is S16
     assert Complex.get_element_description("real") is None
@@ -308,6 +483,10 @@ def test_datalist_gen_include_emits_dependency_includes_and_members(tmp_path: Pa
     assert "static constexpr int bitwidth = 82;" in content
     assert "static ap_uint<bitwidth> pack_to_uint(const Packet& data) {" in content
     assert "static Packet unpack_from_uint(const ap_uint<bitwidth>& packed) {" in content
+    assert "void dump_json(std::ostream& os, int indent = 2, int level = 0) const {" in content
+    assert "void load_json(std::istream& is) {" in content
+    assert "void dump_json_file(const char* file_path, int indent = 2) const {" in content
+    assert "void load_json_file(const char* file_path) {" in content
     assert "#endif // PACKET_H" in content
 
 
@@ -338,6 +517,24 @@ def test_datalist_gen_include_emits_read_helpers_when_requested(tmp_path: Path):
     assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
     assert "this->count = (ap_uint<16>)(x[0].range(15, 0));" in content
     assert "w = s.read().data;" in content
+
+
+def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path: Path):
+    out_path = Packet.gen_include(
+        cfg=CodeGenConfig(root_dir=tmp_path),
+        word_bw_supported=[32, 64],
+    )
+    content = out_path.read_text(encoding="utf-8")
+
+    assert out_path == tmp_path / "packet.h"
+    assert "template<int word_bw>" in content
+    assert "static constexpr int nwords() {" in content
+    assert "if constexpr (word_bw == 32) {" in content
+    assert "return 4;" in content
+    assert "else if constexpr (word_bw == 64) {" in content
+    assert "return 2;" in content
+    assert "this->z.dump_json(os, step, level + 1);" in content
+    assert "this->z.load_json(json_text, pos);" in content
 
 
 def test_gen_include_rejects_non_positive_word_widths():
@@ -525,11 +722,33 @@ def test_default_include_filename_uses_snake_case_class_name():
     assert MyPacketHeader.default_include_filename() == "my_packet_header.h"
 
 
+def test_public_hw_exports_point_to_dataschema2_symbols():
+    assert PublicDataSchema is DataSchema
+    assert PublicDataField is DataField
+    assert PublicIntField is IntField
+    assert PublicFloatField is FloatField
+    assert PublicEnumField is EnumField
+    assert PublicDataList is DataList
+    assert PublicDataArray is DataArray
+
+
 def test_root_include_dir_resolves_to_filename_only():
     class Instruction(DataList):
         elements = {}
 
     assert Instruction.include_path() == "instruction.h"
+
+
+def test_dataarray_subclass_include_uses_class_name_not_member_name(tmp_path: Path):
+    class CoeffArray(DataArray):
+        element_type = F32
+        max_shape = (4,)
+        static = True
+
+    out_path = CoeffArray.gen_include(cfg=CodeGenConfig(root_dir=tmp_path), word_bw_supported=[32])
+
+    assert out_path == tmp_path / "coeff_array.h"
+    assert out_path.exists()
 
 
 def test_non_root_include_dir_resolves_to_dir_filename():
