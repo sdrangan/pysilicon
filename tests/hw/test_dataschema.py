@@ -121,14 +121,17 @@ def test_enumfield_defaults_follow_enum_type_metadata():
 
     assert mode_field.cpp_class_name() == "Mode"
     assert mode_field.resolved_include_filename() == "mode.h"
+    assert mode_field.resolved_tb_include_filename() == "mode_tb.h"
     assert opcode_field.cpp_class_name() == "OpCode"
     assert opcode_field.resolved_include_filename() == "op_code.h"
+    assert opcode_field.resolved_tb_include_filename() == "op_code_tb.h"
 
 
 def test_enumfield_gen_include_emits_guard_and_members(tmp_path: Path):
     mode_field = EnumField.specialize(enum_type=Mode)
     out_path = mode_field.gen_include(cfg=CodeGenConfig(root_dir=tmp_path))
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "mode_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "mode.h"
     assert "#ifndef MODE_H" in content
@@ -138,6 +141,7 @@ def test_enumfield_gen_include_emits_guard_and_members(tmp_path: Path):
     assert "ON = 1," in content
     assert "AUTO = 2," in content
     assert "#endif // MODE_H" in content
+    assert '#include "mode.h"' in tb_content
 
 
 def test_enumfield_explicit_overrides_win():
@@ -149,6 +153,7 @@ def test_enumfield_explicit_overrides_win():
 
     assert mode_field.cpp_class_name() == "CustomMode"
     assert mode_field.resolved_include_filename() == "custom_mode.h"
+    assert mode_field.resolved_tb_include_filename() == "custom_mode_tb.h"
 
 
 def test_inline_enum_specialization_keeps_expected_metadata():
@@ -160,6 +165,7 @@ def test_inline_enum_specialization_keeps_expected_metadata():
     mode_schema = Instruction.elements["mode"]
     assert mode_schema.cpp_class_name() == "Mode"
     assert mode_schema.resolved_include_filename() == "mode.h"
+    assert mode_schema.resolved_tb_include_filename() == "mode_tb.h"
 
 
 def test_datalist_get_dependencies_only_returns_generated_types():
@@ -481,9 +487,11 @@ def test_datalist_get_dependencies_works_with_metadata_form():
 def test_datalist_gen_include_emits_dependency_includes_and_members(tmp_path: Path):
     out_path = Packet.gen_include(cfg=CodeGenConfig(root_dir=tmp_path))
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "packet.h"
-    assert '#include "streamutils.h"' in content
+    assert '#include "streamutils_hls.h"' in content
+    assert '#include "streamutils_tb.h"' not in content
     assert "#ifndef PACKET_H" in content
     assert '#include "mode.h"' in content
     assert '#include "complex.h"' in content
@@ -495,11 +503,14 @@ def test_datalist_gen_include_emits_dependency_includes_and_members(tmp_path: Pa
     assert "static constexpr int bitwidth = 82;" in content
     assert "static ap_uint<bitwidth> pack_to_uint(const Packet& data) {" in content
     assert "static Packet unpack_from_uint(const ap_uint<bitwidth>& packed) {" in content
-    assert "void dump_json(std::ostream& os, int indent = 2, int level = 0) const {" in content
-    assert "void load_json(std::istream& is) {" in content
-    assert "void dump_json_file(const char* file_path, int indent = 2) const {" in content
-    assert "void load_json_file(const char* file_path) {" in content
     assert "#endif // PACKET_H" in content
+    assert '#include "streamutils_tb.h"' in tb_content
+    assert '#include "mode_tb.h"' in tb_content
+    assert '#include "complex_tb.h"' in tb_content
+    assert "inline void Packet::dump_json(std::ostream& os, int indent, int level) const {" in tb_content
+    assert "inline void Packet::load_json(std::istream& is) {" in tb_content
+    assert "inline void Packet::dump_json_file(const char* file_path, int indent) const {" in tb_content
+    assert "inline void Packet::load_json_file(const char* file_path) {" in tb_content
 
 
 def test_datalist_gen_include_emits_inline_and_block_comments(tmp_path: Path):
@@ -537,6 +548,7 @@ def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path
         word_bw_supported=[32, 64],
     )
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "packet.h"
     assert "template<int word_bw>" in content
@@ -545,8 +557,8 @@ def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path
     assert "return 4;" in content
     assert "else if constexpr (word_bw == 64) {" in content
     assert "return 2;" in content
-    assert "this->z.dump_json(os, step, level + 1);" in content
-    assert "this->z.load_json(json_text, pos);" in content
+    assert "this->z.dump_json(os, step, level + 1);" in tb_content
+    assert "this->z.load_json(json_text, pos);" in tb_content
 
 
 def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp_path: Path):
@@ -555,13 +567,14 @@ def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp
         word_bw_supported=[32, 64],
     )
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_with_array_tb.h").read_text(encoding="utf-8")
 
     assert "this->coeffs.coeff[i0]" in content
     assert "this->coeffs.coeff[i + 0]" in content
     assert "this->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
-    assert "os << this->coeffs.coeff[i0];" in content
-    assert "this->coeffs.coeff[i0] =" in content
-    assert "streamutils::json_parse_number(json_text, pos)" in content
+    assert "os << this->coeffs.coeff[i0];" in tb_content
+    assert "this->coeffs.coeff[i0] =" in tb_content
+    assert "streamutils::json_parse_number(json_text, pos)" in tb_content
     assert content.index("const int n0_eff = 4;") < content.index("const int total_words = (n0_eff + 2 - 1) / 2;")
 
 
@@ -579,18 +592,22 @@ def test_gen_include_writes_under_cfg_root_and_include_dir(tmp_path: Path):
 
     out_path = Instruction.gen_include(cfg=CodeGenConfig(root_dir=tmp_path))
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "isa" / "instruction_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "isa" / "instruction.h"
     assert out_path.exists()
-    assert '#include "../streamutils.h"' in content
+    assert '#include "../streamutils_hls.h"' in content
+    assert '#include "../streamutils_tb.h"' in tb_content
 
 
 def test_gen_include_uses_cfg_util_dir_for_streamutils_include(tmp_path: Path):
     cfg = CodeGenConfig(root_dir=tmp_path, util_dir="common")
     out_path = Packet.gen_include(cfg=cfg)
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_tb.h").read_text(encoding="utf-8")
 
-    assert '#include "common/streamutils.h"' in content
+    assert '#include "common/streamutils_hls.h"' in content
+    assert '#include "common/streamutils_tb.h"' in tb_content
 
 
 def test_gen_include_overwrites_existing_file(tmp_path: Path):
@@ -765,6 +782,7 @@ def test_root_include_dir_resolves_to_filename_only():
         elements = {}
 
     assert Instruction.include_path() == "instruction.h"
+    assert Instruction.tb_include_path() == "instruction_tb.h"
 
 
 def test_dataarray_subclass_include_uses_class_name_not_member_name(tmp_path: Path):
@@ -785,6 +803,7 @@ def test_non_root_include_dir_resolves_to_dir_filename():
         elements = {}
 
     assert Instruction.include_path() == "isa/instruction.h"
+    assert Instruction.tb_include_path() == "isa/instruction_tb.h"
 
 
 def test_relative_include_path_uses_current_header_directory():
@@ -797,6 +816,7 @@ def test_relative_include_path_uses_current_header_directory():
         elements = {}
 
     assert Instruction.relative_include_path_to(CommonMode) == "../common/common_mode.h"
+    assert Instruction.relative_tb_include_path_to(CommonMode) == "../common/common_mode_tb.h"
 
 
 def test_invalid_specialize_kwargs_are_rejected():

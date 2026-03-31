@@ -521,11 +521,35 @@ class DataSchema(ABC):
         return cls.include_filename or cls.default_include_filename()
 
     @classmethod
+    def default_tb_include_filename(cls) -> str:
+        """Return the default generated TB include filename for this schema class."""
+        filename = PurePosixPath(cls.default_include_filename())
+        suffix = filename.suffix or ".h"
+        return f"{filename.stem}_tb{suffix}"
+
+    @classmethod
+    def resolved_tb_include_filename(cls) -> str:
+        """Return the generated TB include filename for this schema class."""
+        filename = PurePosixPath(cls.resolved_include_filename())
+        suffix = filename.suffix or ".h"
+        return f"{filename.stem}_tb{suffix}"
+
+    @classmethod
     def include_path(cls) -> str:
         """Return the schema header path relative to the code-generation root."""
         include_dir = (cls.include_dir or ".").replace("\\", "/")
         include_root = PurePosixPath(include_dir)
         filename = cls.resolved_include_filename()
+        if include_root.as_posix() == ".":
+            return filename
+        return f"{include_root.as_posix()}/{filename}"
+
+    @classmethod
+    def tb_include_path(cls) -> str:
+        """Return the schema TB header path relative to the code-generation root."""
+        include_dir = (cls.include_dir or ".").replace("\\", "/")
+        include_root = PurePosixPath(include_dir)
+        filename = cls.resolved_tb_include_filename()
         if include_root.as_posix() == ".":
             return filename
         return f"{include_root.as_posix()}/{filename}"
@@ -537,10 +561,27 @@ class DataSchema(ABC):
         return posixpath.relpath(dependency.include_path(), start=current_dir)
 
     @classmethod
+    def relative_tb_include_path_to(cls, dependency: type[DataSchema]) -> str:
+        """Return the TB include path from this schema TB header to a dependency TB header."""
+        current_dir = posixpath.dirname(cls.tb_include_path()) or "."
+        return posixpath.relpath(dependency.tb_include_path(), start=current_dir)
+
+    @classmethod
     def include_guard(cls) -> str:
         """Return a deterministic include guard derived from the include path."""
         guard = re.sub(r"[^A-Za-z0-9]+", "_", cls.include_path()).strip("_").upper()
         return re.sub(r"_+", "_", guard)
+
+    @classmethod
+    def tb_include_guard(cls) -> str:
+        """Return a deterministic include guard for the TB header."""
+        guard = re.sub(r"[^A-Za-z0-9]+", "_", cls.tb_include_path()).strip("_").upper()
+        return re.sub(r"_+", "_", guard)
+
+    @classmethod
+    def tb_member_macro(cls) -> str:
+        """Return the preprocessor symbol enabling TB-only member declarations."""
+        return f"PYSILICON_ENABLE_{cls.tb_include_guard()}_MEMBERS"
 
     @classmethod
     def validate_specialize_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -580,8 +621,18 @@ class DataSchema(ABC):
 
     @classmethod
     def _gen_include_decl(cls, word_bw_supported: list[int] | None = None) -> str:
-        """Return the declaration body emitted inside a generated header."""
+        """Return the synthesizable declaration body emitted inside a generated header."""
         raise NotImplementedError(f"{cls.__name__} does not implement generated includes.")
+
+    @classmethod
+    def _gen_tb_member_declarations(cls, indent_level: int = 0) -> str:
+        _ = indent_level
+        return ""
+
+    @classmethod
+    def _gen_tb_member_definitions(cls, indent_level: int = 0) -> str:
+        _ = indent_level
+        return ""
 
     @classmethod
     def gen_include(
@@ -627,29 +678,28 @@ class DataSchema(ABC):
                 raise ValueError(f"word_bw values must be positive. Got {bw}.")
 
         out_path = cfg.root_dir / cls.include_path()
-        streamutils_path = cfg.root_dir / cfg.util_dir / "streamutils.h"
-        streamutils_include = os.path.relpath(streamutils_path, start=out_path.parent)
-        streamutils_include = streamutils_include.replace("\\", "/")
+        tb_out_path = cfg.root_dir / cls.tb_include_path()
+        streamutils_hls_path = cfg.root_dir / cfg.util_dir / "streamutils_hls.h"
+        streamutils_hls_include = os.path.relpath(streamutils_hls_path, start=out_path.parent)
+        streamutils_hls_include = streamutils_hls_include.replace("\\", "/")
+        streamutils_tb_path = cfg.root_dir / cfg.util_dir / "streamutils_tb.h"
+        streamutils_tb_include = os.path.relpath(streamutils_tb_path, start=tb_out_path.parent)
+        streamutils_tb_include = streamutils_tb_include.replace("\\", "/")
+        synth_include_from_tb = os.path.relpath(out_path, start=tb_out_path.parent)
+        synth_include_from_tb = synth_include_from_tb.replace("\\", "/")
 
         lines = [
             f"#ifndef {cls.include_guard()}",
             f"#define {cls.include_guard()}",
             "",
             "#include <ap_int.h>",
-            "#include <cctype>",
-            "#include <cstdlib>",
-            "#include <fstream>",
             "#include <hls_stream.h>",
-            "#include <iterator>",
-            "#include <stdexcept>",
-            "#include <string>",
             "#if __has_include(<hls_axi_stream.h>)",
             "#include <hls_axi_stream.h>",
             "#else",
             "#include <ap_axi_sdata.h>",
             "#endif",
-            "#include <iostream>",
-            f'#include "{streamutils_include}"',
+            f'#include "{streamutils_hls_include}"',
             "",
         ]
 
@@ -667,9 +717,133 @@ class DataSchema(ABC):
             f"#endif // {cls.include_guard()}",
         ])
 
+        tb_lines = [
+            f"#ifndef {cls.tb_include_guard()}",
+            f"#define {cls.tb_include_guard()}",
+            "",
+        ]
+
+        tb_member_definitions = cls._gen_tb_member_definitions(indent_level=0)
+        if tb_member_definitions:
+            tb_lines.extend([
+                "#include <cctype>",
+                "#include <cstdlib>",
+                "#include <fstream>",
+                "#include <iostream>",
+                "#include <iterator>",
+                "#include <stdexcept>",
+                "#include <string>",
+                f'#include "{streamutils_tb_include}"',
+                "",
+            ])
+
+            dependency_tb_lines = [
+                f'#include "{cls.relative_tb_include_path_to(dependency)}"'
+                for dependency in cls.get_dependencies()
+            ]
+            if dependency_tb_lines:
+                tb_lines.extend(dependency_tb_lines)
+                tb_lines.append("")
+
+            tb_lines.extend([
+                f"#define {cls.tb_member_macro()}",
+                f'#include "{synth_include_from_tb}"',
+                f"#undef {cls.tb_member_macro()}",
+                "",
+                tb_member_definitions,
+            ])
+        else:
+            tb_lines.append(f'#include "{synth_include_from_tb}"')
+
+        tb_lines.extend([
+            "",
+            f"#endif // {cls.tb_include_guard()}",
+        ])
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text("\n".join(lines), encoding="utf-8")
+        tb_out_path.parent.mkdir(parents=True, exist_ok=True)
+        tb_out_path.write_text("\n".join(tb_lines), encoding="utf-8")
         return out_path
+
+    @classmethod
+    def _gen_json_member_declarations(cls, indent_level: int = 0) -> str:
+        indent = cls._get_indent(indent_level)
+        lines = [
+            f"{indent}void dump_json(std::ostream& os, int indent = 2, int level = 0) const;",
+            f"{indent}void load_json(const std::string& json_text, size_t& pos);",
+            f"{indent}void load_json(std::istream& is);",
+            f"{indent}void dump_json_file(const char* file_path, int indent = 2) const;",
+            f"{indent}void load_json_file(const char* file_path);",
+        ]
+        return "\n".join(lines)
+
+    @classmethod
+    def _gen_json_member_definitions(cls, indent_level: int = 0) -> str:
+        indent = cls._get_indent(indent_level)
+        i1 = cls._get_indent(indent_level + 1)
+        lines = [
+            f"{indent}inline void {cls.cpp_class_name()}::dump_json(std::ostream& os, int indent, int level) const {{",
+            f"{i1}const int step = (indent < 0) ? 0 : indent;",
+        ]
+
+        for line in cls._gen_dump_json_recursive(
+            prefix="this->",
+            os_name="os",
+            depth_expr="level",
+            indent_var="step",
+        ):
+            if line.startswith("    "):
+                line = line[4:]
+            lines.append(f"{i1}{line}" if line else "")
+
+        lines.extend([
+            f"{indent}}}",
+            "",
+            f"{indent}inline void {cls.cpp_class_name()}::load_json(const std::string& json_text, size_t& pos) {{",
+        ])
+
+        for line in cls._gen_load_json_recursive(
+            prefix="this->",
+            json_var="json_text",
+            pos_var="pos",
+            ctx="root",
+        ):
+            if line.startswith("    "):
+                line = line[4:]
+            lines.append(f"{i1}{line}" if line else "")
+
+        lines.extend([
+            f"{indent}}}",
+            "",
+            f"{indent}inline void {cls.cpp_class_name()}::load_json(std::istream& is) {{",
+            f"{i1}std::string json_text((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());",
+            f"{i1}size_t pos = 0;",
+            f"{i1}streamutils::json_skip_ws(json_text, pos);",
+            f"{i1}this->load_json(json_text, pos);",
+            f"{i1}streamutils::json_skip_ws(json_text, pos);",
+            f"{i1}if (pos != json_text.size()) {{",
+            f'{i1}    throw std::runtime_error("Trailing characters after JSON object.");',
+            f"{i1}}}",
+            f"{indent}}}",
+            "",
+            f"{indent}inline void {cls.cpp_class_name()}::dump_json_file(const char* file_path, int indent) const {{",
+            f"{i1}std::ofstream ofs(file_path);",
+            f"{i1}if (!ofs) {{",
+            f'{i1}    throw std::runtime_error("Failed to open output JSON file.");',
+            f"{i1}}}",
+            f"{i1}this->dump_json(ofs, indent);",
+            f"{indent}}}",
+            "",
+            f"{indent}inline void {cls.cpp_class_name()}::load_json_file(const char* file_path) {{",
+            f"{i1}std::ifstream ifs(file_path);",
+            f"{i1}if (!ifs) {{",
+            f'{i1}    throw std::runtime_error("Failed to open input JSON file.");',
+            f"{i1}}}",
+            f"{i1}this->load_json(ifs);",
+            f"{indent}}}",
+        ])
+        return "\n".join(lines)
 
 
 class DataField(DataSchema):
@@ -1923,35 +2097,25 @@ class DataList(DataSchema):
                     ).splitlines()
                 )
 
-        lines.append("")
-        lines.extend(cls.gen_dump_json(indent_level=1).splitlines())
-
-        lines.append("")
-        lines.extend(cls.gen_load_json(indent_level=1).splitlines())
-
-        lines.extend([
-            "",
-            "#ifndef __SYNTHESIS__",
-            "    void dump_json_file(const char* file_path, int indent = 2) const {",
-            "        std::ofstream ofs(file_path);",
-            "        if (!ofs) {",
-            '            throw std::runtime_error("Failed to open output JSON file.");',
-            "        }",
-            "        this->dump_json(ofs, indent);",
-            "    }",
-            "",
-            "    void load_json_file(const char* file_path) {",
-            "        std::ifstream ifs(file_path);",
-            "        if (!ifs) {",
-            '            throw std::runtime_error("Failed to open input JSON file.");',
-            "        }",
-            "        this->load_json(ifs);",
-            "    }",
-            "#endif",
-        ])
+        tb_member_declarations = cls._gen_tb_member_declarations(indent_level=1)
+        if tb_member_declarations:
+            lines.extend([
+                "",
+                f"#ifdef {cls.tb_member_macro()}",
+            ])
+            lines.extend(tb_member_declarations.splitlines())
+            lines.append("#endif")
 
         lines.append("};")
         return "\n".join(lines)
+
+    @classmethod
+    def _gen_tb_member_declarations(cls, indent_level: int = 0) -> str:
+        return cls._gen_json_member_declarations(indent_level=indent_level)
+
+    @classmethod
+    def _gen_tb_member_definitions(cls, indent_level: int = 0) -> str:
+        return cls._gen_json_member_definitions(indent_level=indent_level)
 
     @classmethod
     def init_value(cls) -> dict[str, Any]:
@@ -3084,30 +3248,85 @@ class DataArray(DataSchema):
             for src_type in ("array", "stream", "axi4_stream"):
                 lines.append("")
                 lines.extend(cls.gen_read(src_type=src_type, word_bw_supported=word_bw_supported, indent_level=1).splitlines())
-        lines.append("")
-        lines.extend(cls.gen_dump_json(indent_level=1).splitlines())
-        lines.append("")
-        lines.extend(cls.gen_load_json(indent_level=1).splitlines())
+        tb_member_declarations = cls._gen_tb_member_declarations(indent_level=1)
+        if tb_member_declarations:
+            lines.extend([
+                "",
+                f"#ifdef {cls.tb_member_macro()}",
+            ])
+            lines.extend(tb_member_declarations.splitlines())
+            lines.append("#endif")
+        lines.append("};")
+        return "\n".join(lines)
+
+    @classmethod
+    def _gen_tb_member_declarations(cls, indent_level: int = 0) -> str:
+        return cls._gen_json_member_declarations(indent_level=indent_level)
+
+    @classmethod
+    def _gen_tb_member_definitions(cls, indent_level: int = 0) -> str:
+        indent = cls._get_indent(indent_level)
+        i1 = cls._get_indent(indent_level + 1)
+        lines = [
+            f"{indent}inline void {cls.cpp_class_name()}::dump_json(std::ostream& os, int indent, int level) const {{",
+            f"{i1}const int step = (indent < 0) ? 0 : indent;",
+        ]
+        for line in cls._gen_dump_json_recursive(
+            prefix="this->",
+            member_name=None,
+            os_name="os",
+            depth_expr="level",
+            indent_var="step",
+        ):
+            if line.startswith("    "):
+                line = line[4:]
+            lines.append(f"{i1}{line}" if line else "")
+
         lines.extend([
+            f"{indent}}}",
             "",
-            "#ifndef __SYNTHESIS__",
-            "    void dump_json_file(const char* file_path, int indent = 2) const {",
-            "        std::ofstream ofs(file_path);",
-            "        if (!ofs) {",
-            '            throw std::runtime_error("Failed to open output JSON file.");',
-            "        }",
-            "        this->dump_json(ofs, indent);",
-            "    }",
+            f"{indent}inline void {cls.cpp_class_name()}::load_json(const std::string& json_text, size_t& pos) {{",
+        ])
+        for line in cls._gen_load_json_recursive(
+            prefix="this->",
+            member_name=None,
+            json_var="json_text",
+            pos_var="pos",
+            ctx="root",
+        ):
+            if line.startswith("    "):
+                line = line[4:]
+            lines.append(f"{i1}{line}" if line else "")
+
+        lines.extend([
+            f"{indent}}}",
             "",
-            "    void load_json_file(const char* file_path) {",
-            "        std::ifstream ifs(file_path);",
-            "        if (!ifs) {",
-            '            throw std::runtime_error("Failed to open input JSON file.");',
-            "        }",
-            "        this->load_json(ifs);",
-            "    }",
-            "#endif",
-            "};",
+            f"{indent}inline void {cls.cpp_class_name()}::load_json(std::istream& is) {{",
+            f"{i1}std::string json_text((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());",
+            f"{i1}size_t pos = 0;",
+            f"{i1}streamutils::json_skip_ws(json_text, pos);",
+            f"{i1}this->load_json(json_text, pos);",
+            f"{i1}streamutils::json_skip_ws(json_text, pos);",
+            f"{i1}if (pos != json_text.size()) {{",
+            f'{i1}    throw std::runtime_error("Trailing characters after JSON object.");',
+            f"{i1}}}",
+            f"{indent}}}",
+            "",
+            f"{indent}inline void {cls.cpp_class_name()}::dump_json_file(const char* file_path, int indent) const {{",
+            f"{i1}std::ofstream ofs(file_path);",
+            f"{i1}if (!ofs) {{",
+            f'{i1}    throw std::runtime_error("Failed to open output JSON file.");',
+            f"{i1}}}",
+            f"{i1}this->dump_json(ofs, indent);",
+            f"{indent}}}",
+            "",
+            f"{indent}inline void {cls.cpp_class_name()}::load_json_file(const char* file_path) {{",
+            f"{i1}std::ifstream ifs(file_path);",
+            f"{i1}if (!ifs) {{",
+            f'{i1}    throw std::runtime_error("Failed to open input JSON file.");',
+            f"{i1}}}",
+            f"{i1}this->load_json(ifs);",
+            f"{indent}}}",
         ])
         return "\n".join(lines)
 

@@ -12,7 +12,8 @@
 #include "include/poly_resp_hdr.h"
 #include "include/samp_data_in.h"
 #include "include/samp_data_out.h"
-#include "include/streamutils.h"
+#include "include/streamutils_tb.h"
+#include "include/streamutils_hls.h"
 
 
 static const int WORD_BW = 32;
