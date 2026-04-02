@@ -24,7 +24,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 
 
 class DataSchema(ABC):

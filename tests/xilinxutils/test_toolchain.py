@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pysilicon.xilinxutils import toolchain
+from pysilicon.utils import toolchain
 import shutil
 import pytest
 import subprocess

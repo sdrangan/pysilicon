@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 from pysilicon.hw import (
     DataArray as PublicDataArray,
     DataField as PublicDataField,

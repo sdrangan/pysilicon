@@ -12,7 +12,7 @@ has_children: true
 A key feature of PySilicon's data schemas is that you can **auto-generate the Vitis HLS include files** that correspond to your schema definitions. For example, in the polynomial example introduced in the [Data Lists section](./datalists.md), we generate the include files as follows:
 
 ```python
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 
 # Define a code generation configuration
 cfg = CodeGenConfig(root_dir=root_dir, util_dir=include_dir)

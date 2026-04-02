@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 
 
 def copy_streamutils(cfg: CodeGenConfig) -> str:

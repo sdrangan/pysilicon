@@ -111,7 +111,7 @@ pywin32==306
 * You may also find a line like:
 
 ```
--e git+https://github.com/sdrangan/pysilicon.git@...#egg=xilinxutils
+-e git+https://github.com/sdrangan/pysilicon.git@...#egg=utils
 ```
 
 The particular github address may be different and there may be a long version number.

@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from pysilicon.codegen.build import CodeGenConfig
-from pysilicon.codegen.streamutils import copy_streamutils
+from pysilicon.build.build import CodeGenConfig
+from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw.arrayutils import gen_array_utils, read_uint32_file, write_uint32_file
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
-from pysilicon.xilinxutils import toolchain
+from pysilicon.utils import toolchain
 
 
 EXAMPLE_DIR = Path(__file__).resolve().parent

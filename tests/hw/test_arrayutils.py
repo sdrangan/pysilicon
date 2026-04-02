@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 from pysilicon.hw.arrayutils import gen_array_utils, read_uint32_file, write_array, write_uint32_file
 from pysilicon.hw.dataschema import FloatField, IntField
 

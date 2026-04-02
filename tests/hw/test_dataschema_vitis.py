@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.codegen.build import CodeGenConfig
-from pysilicon.codegen.streamutils import copy_streamutils
+from pysilicon.build.build import CodeGenConfig
+from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw.dataschema import DataArray, DataList, FloatField, IntField
-from pysilicon.xilinxutils import toolchain
+from pysilicon.utils import toolchain
 
 
 S16 = IntField.specialize(bitwidth=16, signed=True)

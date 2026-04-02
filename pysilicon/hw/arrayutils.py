@@ -4,7 +4,7 @@ Example
 -------
 ```python
 from pysilicon.hw.arrayutils import gen_array_utils, read_array, write_array
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 from pysilicon.hw.dataschema import IntField
 
 Int16 = IntField.specialize(16, signed=True)
@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
 from pysilicon.hw.dataschema import DataArray, DataList, DataSchema
 
 
