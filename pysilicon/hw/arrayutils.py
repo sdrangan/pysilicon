@@ -547,7 +547,7 @@ def _gen_write_specialization(elem_type: type[DataSchema], word_bw: int, indent_
 
 def _gen_stream_elem_helpers(
     elem_type: type[DataSchema],
-    supported_word_bw: list[int],
+    word_bw_supported: list[int],
     indent_level: int = 0,
 ) -> str:
     indent = elem_type._get_indent(indent_level)
@@ -569,7 +569,7 @@ def _gen_stream_elem_helpers(
         f"{i1}#pragma HLS INLINE",
     ]
 
-    for idx, bw in enumerate(supported_word_bw):
+    for idx, bw in enumerate(word_bw_supported):
         pfv = bw // elem_bw if elem_bw > 0 else 0
         kw = "if" if idx == 0 else "else if"
         lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
@@ -615,7 +615,7 @@ def _gen_stream_elem_helpers(
         f"{i1}#pragma HLS INLINE",
     ])
 
-    for idx, bw in enumerate(supported_word_bw):
+    for idx, bw in enumerate(word_bw_supported):
         pfv = bw // elem_bw if elem_bw > 0 else 0
         kw = "if" if idx == 0 else "else if"
         lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
@@ -662,7 +662,7 @@ def _gen_stream_elem_helpers(
         f"{i1}#pragma HLS INLINE",
     ])
 
-    for idx, bw in enumerate(supported_word_bw):
+    for idx, bw in enumerate(word_bw_supported):
         pfv = bw // elem_bw if elem_bw > 0 else 0
         kw = "if" if idx == 0 else "else if"
         lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
@@ -698,7 +698,7 @@ def _gen_stream_elem_helpers(
         f"{i1}#pragma HLS INLINE",
     ])
 
-    for idx, bw in enumerate(supported_word_bw):
+    for idx, bw in enumerate(word_bw_supported):
         pfv = bw // elem_bw if elem_bw > 0 else 0
         kw = "if" if idx == 0 else "else if"
         lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
@@ -734,7 +734,7 @@ def _gen_stream_elem_helpers(
         f"{i1}#pragma HLS INLINE",
     ])
 
-    for idx, bw in enumerate(supported_word_bw):
+    for idx, bw in enumerate(word_bw_supported):
         pfv = bw // elem_bw if elem_bw > 0 else 0
         kw = "if" if idx == 0 else "else if"
         lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
@@ -771,7 +771,7 @@ def _gen_stream_elem_helpers(
         f"{i1}#pragma HLS INLINE",
     ])
 
-    for idx, bw in enumerate(supported_word_bw):
+    for idx, bw in enumerate(word_bw_supported):
         pfv = bw // elem_bw if elem_bw > 0 else 0
         kw = "if" if idx == 0 else "else if"
         lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
@@ -918,7 +918,7 @@ def _gen_tb_helpers(elem_type: type[DataSchema], indent_level: int = 0) -> str:
 
 def gen_array_utils(
     elem_type: type[DataSchema],
-    supported_word_bw: list[int],
+    word_bw_supported: list[int],
     cfg: CodeGenConfig | None = None,
 ) -> Path:
     """Generate a Vitis HLS header that reads and writes packed arrays of one element type.
@@ -927,7 +927,7 @@ def gen_array_utils(
     ----------
     elem_type : type[DataSchema]
         Element schema class to decode.
-    supported_word_bw : list[int]
+    word_bw_supported : list[int]
         Word widths to specialize in the generated header.
     cfg : CodeGenConfig | None, optional
         Output configuration. If omitted, uses ``CodeGenConfig()``.
@@ -943,9 +943,9 @@ def gen_array_utils(
     if cfg is None:
         cfg = CodeGenConfig()
 
-    widths = sorted({int(bw) for bw in supported_word_bw})
+    widths = sorted({int(bw) for bw in word_bw_supported})
     if not widths:
-        raise ValueError("supported_word_bw must contain at least one positive width.")
+        raise ValueError("word_bw_supported must contain at least one positive width.")
 
     for bw in widths:
         if bw <= 0:
@@ -989,7 +989,7 @@ def gen_array_utils(
         "template<int>",
         "struct unsupported_word_bw { static constexpr bool value = false; };",
         "",
-        _gen_stream_elem_helpers(elem_type=elem_type, supported_word_bw=widths),
+        _gen_stream_elem_helpers(elem_type=elem_type, word_bw_supported=widths),
         "",
         "/**",
         f" * @brief Read an array of {elem_cpp} values from packed ap_uint words.",

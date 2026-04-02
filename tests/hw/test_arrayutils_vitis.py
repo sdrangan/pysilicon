@@ -9,7 +9,7 @@ from pysilicon.build.build import CodeGenConfig
 from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw.arrayutils import gen_array_utils, read_array, write_array
 from pysilicon.hw.dataschema import FloatField, IntField
-from pysilicon.utils import toolchain
+from pysilicon.toolchain import toolchain
 
 
 F32 = FloatField.specialize(bitwidth=32, include_dir="include")

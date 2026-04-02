@@ -3,7 +3,7 @@ import platform
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 
 def _is_vitis_binary(path: Path, binary_name: str) -> bool:
@@ -148,6 +148,23 @@ def find_vitis_path(top_dir: Optional[Union[str, Path]] = None) -> Optional[str]
     return _pick_highest_version(all_candidates)
 
 
+def _build_vitis_hls_cmd(
+    tcl_script: Union[str, Path],
+    args: Optional[Sequence[str]] = None,
+) -> tuple[List[str], Path]:
+    vitis_path = find_vitis_path()
+    if not vitis_path:
+        raise RuntimeError("Vitis installation not found. Please set PYSILICON_VITIS_PATH.")
+
+    tcl_path = Path(tcl_script)
+    cmd_list = [str(vitis_path), "--mode", "hls", "--tcl", str(tcl_path)]
+    if args:
+        cmd_list.append("--tclargs")
+        cmd_list.extend(str(arg) for arg in args)
+
+    return cmd_list, tcl_path.parent
+
+
 def run_vitis_hls(
     tcl_script: Union[str, Path],
     work_dir: Optional[Union[str, Path]] = None,
@@ -195,45 +212,77 @@ def run_vitis_hls(
     subprocess.CalledProcessError
         If Vitis returns a non-zero exit status (``check=True`` behavior).
     """
-    vitis_path = find_vitis_path()
-    if not vitis_path:
-        raise RuntimeError("Vitis installation not found. Please set PYSILICON_VITIS_PATH.")
-
-    cmd_list = [vitis_path, "--mode", "hls", "--tcl", str(tcl_script)]
-    if args:
-        cmd_list.append("--tclargs")
-        cmd_list.extend(args)
-
-    is_windows = platform.system() == "Windows"
-    if is_windows:
-        joined_cmd = " ".join(f'"{c}"' for c in cmd_list)
-        final_cmd = f'cmd.exe /c "call {joined_cmd}"'
-    else:
-        final_cmd = cmd_list
+    cmd_list, default_work_dir = _build_vitis_hls_cmd(tcl_script=tcl_script, args=args)
+    final_cmd, use_shell = _build_final_cmd(cmd_list)
 
     return subprocess.run(
         final_cmd,
-        cwd=work_dir or Path(tcl_script).parent,
-        shell=is_windows,
+        cwd=work_dir or default_work_dir,
+        shell=use_shell,
         check=True,
         text=True,
         capture_output=capture_output,
     )
 
 
-def run_vitis_hls_result(
-    tcl_script: Union[str, Path],
+def _build_final_cmd(cmd_list: Sequence[Union[str, Path]]) -> tuple[Union[str, List[str]], bool]:
+    normalized = [str(part) for part in cmd_list]
+    is_windows = platform.system() == "Windows"
+    if is_windows:
+        joined_cmd = " ".join(f'"{part}"' for part in normalized)
+        return f'cmd.exe /c "call {joined_cmd}"', True
+    return normalized, False
+
+
+def _write_vitis_hls_result_report(
+    output_path: Union[str, Path],
+    result: Dict[str, Optional[str]],
+) -> Path:
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with out_path.open("w", encoding="utf-8") as handle:
+        handle.write("status\n")
+        handle.write(f"{result.get('status')}\n\n")
+        handle.write("message\n")
+        handle.write(f"{result.get('message')}\n\n")
+        handle.write("stderr\n")
+        handle.write(f"{result.get('stderr')}\n\n")
+        handle.write("stdout\n")
+        handle.write(f"{result.get('stdout')}\n")
+
+    return out_path
+
+
+def subprocess_result(
+    cmd_list: Sequence[Union[str, Path]],
     work_dir: Optional[Union[str, Path]] = None,
-    args: Optional[List[str]] = None,
     capture_output: bool = True,
+    output_path: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Optional[str]]:
     """
-    Execute a Vitis HLS TCL script and return a structured result dictionary.
+    Execute a subprocess command and return a structured result dictionary.
 
-    This wrapper preserves the existing behavior of :func:`run_vitis_hls` for
-    command construction and subprocess execution, but it normalizes success and
-    common failure modes into a plain dictionary for callers that prefer not to
-    handle exceptions directly.
+    The command is normalized using the same platform-specific wrapping used by
+    :func:`run_vitis_hls`: on Windows it is executed via ``cmd.exe /c "call ..."``;
+    on non-Windows platforms it is executed directly as a list of arguments.
+
+    Parameters
+    ----------
+    cmd_list : Sequence[Union[str, Path]]
+        Command and arguments to execute.
+    work_dir : Optional[Union[str, Path]], optional
+        Working directory for the subprocess. If ``None``, the current working
+        directory is used.
+    capture_output : bool, optional
+        If ``True`` (default), captures stdout/stderr in the returned result
+        dictionary. If ``False``, output is inherited by the current process
+        terminal and the reported ``stdout``/``stderr`` values may be ``None``.
+    output_path : Optional[Union[str, Path]], optional
+        Optional text-file path where the structured result is written in a
+        simple human-readable format containing the ``status``, ``message``,
+        ``stderr``, and ``stdout`` fields. When provided, ``capture_output`` is
+        forced to ``True`` so the report file can include subprocess output.
 
     Returns
     -------
@@ -247,30 +296,112 @@ def run_vitis_hls_result(
         - ``message``: Error message for non-subprocess failures, otherwise
           ``None``.
     """
+    effective_capture_output = capture_output or (output_path is not None)
+    final_cmd, use_shell = _build_final_cmd(cmd_list)
+
     try:
-        result = run_vitis_hls(
-            tcl_script=tcl_script,
-            work_dir=work_dir,
-            args=args,
-            capture_output=capture_output,
+        result = subprocess.run(
+            final_cmd,
+            cwd=work_dir,
+            shell=use_shell,
+            check=True,
+            text=True,
+            capture_output=effective_capture_output,
         )
-        return {
+        out = {
             "status": "passed",
             "stdout": result.stdout,
             "stderr": result.stderr,
             "message": None,
         }
     except subprocess.CalledProcessError as exc:
-        return {
+        out = {
             "status": "subprocess_error",
             "stdout": exc.stdout,
             "stderr": exc.stderr,
             "message": str(exc),
         }
     except Exception as exc:
-        return {
+        out = {
             "status": "runtime_error",
             "stdout": None,
             "stderr": None,
             "message": str(exc),
         }
+
+    if output_path is not None:
+        _write_vitis_hls_result_report(output_path, out)
+
+    return out
+
+
+def run_vitis_hls_result(
+    tcl_script: Union[str, Path],
+    work_dir: Optional[Union[str, Path]] = None,
+    args: Optional[List[str]] = None,
+    capture_output: bool = True,
+    output_path: Optional[Union[str, Path]] = None,
+) -> Dict[str, Optional[str]]:
+    """
+    Execute a Vitis HLS TCL script and return a structured result dictionary.
+
+    This wrapper preserves the existing behavior of :func:`run_vitis_hls` for
+    command construction and subprocess execution, but it normalizes success and
+    common failure modes into a plain dictionary for callers that prefer not to
+    handle exceptions directly.
+
+    Parameters
+    ----------
+    tcl_script : Union[str, Path]
+        Path to the TCL script consumed by Vitis HLS.
+    work_dir : Optional[Union[str, Path]], optional
+        Working directory for the subprocess. If ``None``, defaults to
+        ``Path(tcl_script).parent``.
+    args : Optional[List[str]], optional
+        Optional values passed to the TCL script through ``--tclargs``.
+        If provided, they are appended after ``--tclargs`` in the exact order
+        given.
+    capture_output : bool, optional
+        If ``True`` (default), captures stdout/stderr in the returned result
+        dictionary. If ``False``, output is inherited by the current process
+        terminal and the reported ``stdout``/``stderr`` values may be ``None``.
+    output_path : Optional[Union[str, Path]], optional
+        Optional text-file path where the structured result is written in a
+        simple human-readable format containing the ``status``, ``message``,
+        ``stderr``, and ``stdout`` fields.
+        When provided, ``capture_output`` is forced to ``True`` so the report
+        file can include subprocess output.
+
+    Returns
+    -------
+    Dict[str, Optional[str]]
+        A dictionary with the fields:
+
+        - ``status``: One of ``"passed"``, ``"subprocess_error"``, or
+          ``"runtime_error"``.
+        - ``stdout``: Captured standard output when available.
+        - ``stderr``: Captured standard error when available.
+        - ``message``: Error message for non-subprocess failures, otherwise
+          ``None``.
+    """
+    effective_capture_output = capture_output or (output_path is not None)
+
+    try:
+        cmd_list, default_work_dir = _build_vitis_hls_cmd(tcl_script=tcl_script, args=args)
+    except RuntimeError as exc:
+        out = {
+            "status": "runtime_error",
+            "stdout": None,
+            "stderr": None,
+            "message": str(exc),
+        }
+        if output_path is not None:
+            _write_vitis_hls_result_report(output_path, out)
+        return out
+
+    return subprocess_result(
+        cmd_list=cmd_list,
+        work_dir=work_dir or default_work_dir,
+        capture_output=effective_capture_output,
+        output_path=output_path,
+    )

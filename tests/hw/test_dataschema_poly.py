@@ -11,7 +11,7 @@ from pysilicon.build.build import CodeGenConfig
 from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw.arrayutils import gen_array_utils, write_uint32_file
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
-from pysilicon.utils import toolchain
+from pysilicon.toolchain import toolchain
 
 
 TEST_DIR = Path(__file__).resolve().parent

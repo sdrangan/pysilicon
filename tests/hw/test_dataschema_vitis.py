@@ -8,7 +8,7 @@ import pytest
 from pysilicon.build.build import CodeGenConfig
 from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw.dataschema import DataArray, DataList, FloatField, IntField
-from pysilicon.utils import toolchain
+from pysilicon.toolchain import toolchain
 
 
 S16 = IntField.specialize(bitwidth=16, signed=True)

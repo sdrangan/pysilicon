@@ -1,5 +1,3 @@
 """Utility helpers for pysilicon."""
 
-from . import toolchain
-
-__all__ = ["toolchain"]
+__all__: list[str] = []
