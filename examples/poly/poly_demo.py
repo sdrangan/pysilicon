@@ -6,9 +6,11 @@ from enum import IntEnum
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 
 from pysilicon.codegen.build import CodeGenConfig
 from pysilicon.codegen.streamutils import copy_streamutils
+from pysilicon.hw.arrayutils import gen_array_utils, read_uint32_file, write_uint32_file
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
 from pysilicon.xilinxutils import toolchain
 
@@ -17,7 +19,7 @@ EXAMPLE_DIR = Path(__file__).resolve().parent
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
 U16 = IntField.specialize(bitwidth=16, signed=False)
-F32 = FloatField.specialize(bitwidth=32)
+Float32 = FloatField.specialize(bitwidth=32, include_dir=INCLUDE_DIR)
 
 """
 Define the data schemas for the polynomial accelerator
@@ -32,7 +34,7 @@ PolyErrorField = EnumField.specialize(enum_type=PolyError, include_dir=INCLUDE_D
 
 
 class CoeffArray(DataArray):
-    element_type = F32
+    element_type = Float32
     static = True
     max_shape = (4,)
     include_dir = INCLUDE_DIR
@@ -80,28 +82,12 @@ class PolyRespFtr(DataList):
     include_dir = INCLUDE_DIR
 
 
-class SampDataIn(DataArray):
-    element_type = F32
-    static = False
-    max_shape = (128,)
-    include_dir = INCLUDE_DIR
-
-
-class SampDataOut(DataArray):
-    element_type = F32
-    static = False
-    max_shape = (128,)
-    include_dir = INCLUDE_DIR
-
-
 SCHEMA_CLASSES = [
     PolyErrorField,
     CoeffArray,
     PolyCmdHdr,
     PolyRespHdr,
     PolyRespFtr,
-    SampDataIn,
-    SampDataOut,
 ]
 
 """
@@ -109,33 +95,30 @@ Python Golden model for polynomial evaluation
 """
 def polynomial_eval(
     cmd_hdr: PolyCmdHdr,
-    samp_in: SampDataIn,
-) -> tuple[PolyRespHdr, SampDataOut, PolyRespFtr]:
+    samp_in: npt.NDArray[np.float32],
+) -> tuple[PolyRespHdr, npt.NDArray[np.float32], PolyRespFtr]:
     resp_hdr = PolyRespHdr()
     resp_hdr.tx_id = cmd_hdr.tx_id
 
     coeffs = np.asarray(cmd_hdr.coeffs, dtype=np.float32)
-    x = np.asarray(samp_in.val, dtype=np.float32)
+    x = np.asarray(samp_in, dtype=np.float32)
     y = np.zeros_like(x)
     power = np.ones_like(x)
     for coeff in coeffs:
         y += coeff * power
         power *= x
 
-    samp_out = SampDataOut()
-    samp_out.val = y
-
     resp_ftr = PolyRespFtr()
     resp_ftr.nsamp_read = len(x)
     resp_ftr.error = PolyError.NO_ERROR if len(x) == int(cmd_hdr.nsamp) else PolyError.WRONG_NSAMP
 
-    return resp_hdr, samp_out, resp_ftr
+    return resp_hdr, y, resp_ftr
 
 
 """
 Building inputs, generating headers, writing vectors, running Vitis, and validating outputs
 """
-def build_demo_inputs(nsamp: int = 100) -> tuple[PolyCmdHdr, SampDataIn]:
+def build_demo_inputs(nsamp: int = 100) -> tuple[PolyCmdHdr, npt.NDArray[np.float32]]:
     coeffs = CoeffArray()
     coeffs.val = np.array([1.0, -2.0, -3.0, 4.0], dtype=np.float32)
 
@@ -144,8 +127,7 @@ def build_demo_inputs(nsamp: int = 100) -> tuple[PolyCmdHdr, SampDataIn]:
     cmd_hdr.coeffs = coeffs.val
     cmd_hdr.nsamp = nsamp
 
-    samp_in = SampDataIn()
-    samp_in.val = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
+    samp_in = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
     return cmd_hdr, samp_in
 
 
@@ -154,20 +136,22 @@ def generate_headers(example_dir: Path) -> None:
     for schema_class in SCHEMA_CLASSES:
         out_path = schema_class.gen_include(cfg=cfg, word_bw_supported=WORD_BW_SUPPORTED)
         print(f"generated {out_path}")
+    out_path = gen_array_utils(Float32, WORD_BW_SUPPORTED, cfg=cfg)
+    print(f"generated {out_path}")
     copy_streamutils(cfg)
 
 
-def write_vectors(example_dir: Path, cmd_hdr: PolyCmdHdr, samp_in: SampDataIn) -> Path:
+def write_vectors(example_dir: Path, cmd_hdr: PolyCmdHdr, samp_in: npt.NDArray[np.float32]) -> Path:
     data_dir = example_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     cmd_hdr.write_uint32_file(data_dir / "cmd_hdr_data.bin")
-    samp_in.write_uint32_file(data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
+    write_uint32_file(samp_in, elem_type=Float32, file_path=data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
     return data_dir
 
 
-def validate_python_model(data_dir: Path, resp_hdr: PolyRespHdr, samp_out: SampDataOut, resp_ftr: PolyRespFtr) -> None:
+def validate_python_model(data_dir: Path, resp_hdr: PolyRespHdr, samp_out: npt.NDArray[np.float32], resp_ftr: PolyRespFtr) -> None:
     resp_hdr.write_uint32_file(data_dir / "resp_hdr_data.bin")
-    samp_out.write_uint32_file(data_dir / "samp_out_data.bin", nwrite=resp_ftr.nsamp_read)
+    write_uint32_file(samp_out, elem_type=Float32, file_path=data_dir / "samp_out_data.bin", nwrite=resp_ftr.nsamp_read)
     resp_ftr.write_uint32_file(data_dir / "resp_ftr_data.bin")
 
 
@@ -178,30 +162,32 @@ def run_vitis(example_dir: Path) -> subprocess.CompletedProcess[str]:
 def check_vitis_outputs(
     data_dir: Path,
     expected_resp_hdr: PolyRespHdr,
-    expected_samp_out: SampDataOut,
+    expected_samp_out: npt.NDArray[np.float32],
     expected_resp_ftr: PolyRespFtr,
 ) -> None:
     got_resp_hdr = PolyRespHdr().read_uint32_file(data_dir / "resp_hdr_data.bin")
     got_resp_ftr = PolyRespFtr().read_uint32_file(data_dir / "resp_ftr_data.bin")
-    got_samp_out_words = np.fromfile(data_dir / "samp_out_data.bin", dtype="<u4")
-    got_samp_out = got_samp_out_words.view("<f4")
+    got_samp_out = np.asarray(
+        read_uint32_file(data_dir / "samp_out_data.bin", elem_type=Float32, shape=int(expected_resp_ftr.nsamp_read)),
+        dtype=np.float32,
+    )
 
     if not got_resp_hdr.is_close(expected_resp_hdr):
         raise RuntimeError("Response header mismatch after Vitis C-simulation.")
     if not got_resp_ftr.is_close(expected_resp_ftr):
         raise RuntimeError("Response footer mismatch after Vitis C-simulation.")
-    if not np.allclose(got_samp_out, expected_samp_out.val[: got_samp_out.size], rtol=1e-6, atol=1e-6):
+    if not np.allclose(got_samp_out, expected_samp_out[: got_samp_out.size], rtol=1e-6, atol=1e-6):
         raise RuntimeError("Sample output mismatch after Vitis C-simulation.")
 
 
-def maybe_plot(cmd_hdr: PolyCmdHdr, samp_in: SampDataIn, samp_out: SampDataOut) -> None:
+def maybe_plot(cmd_hdr: PolyCmdHdr, samp_in: npt.NDArray[np.float32], samp_out: npt.NDArray[np.float32]) -> None:
     try:
         import matplotlib.pyplot as plt
     except ImportError:
         print("matplotlib is not installed; skipping plot")
         return
 
-    plt.plot(samp_in.val, samp_out.val, label=f"tx_id={cmd_hdr.tx_id}")
+    plt.plot(samp_in, samp_out, label=f"tx_id={cmd_hdr.tx_id}")
     plt.xlabel("Input sample")
     plt.ylabel("Polynomial output")
     plt.title("Polynomial evaluation")

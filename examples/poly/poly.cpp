@@ -26,7 +26,7 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
     resp_hdr.tx_id = cmd_hdr.tx_id;
     resp_hdr.write_axi4_stream<WORD_BW>(out_stream, false);
 
-    static const int pf = SampDataIn::pf<WORD_BW>();
+    static const int pf = float32_array_utils::pf<WORD_BW>();
     float x_lane[pf];
     float y_lane[pf];
 #pragma HLS ARRAY_PARTITION variable=x_lane complete dim=1
@@ -34,7 +34,7 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
 
     int nrem = cmd_hdr.nsamp;
     for (int i = 0; i < cmd_hdr.nsamp; i += pf) {
-        SampDataIn::read_axi4_stream_elem<WORD_BW>(in_stream, x_lane, nrem);
+        float32_array_utils::read_axi4_stream_elem<WORD_BW>(in_stream, x_lane, nrem);
 
         for (int k = 0; k < pf; ++k) {
 #pragma HLS UNROLL
@@ -44,7 +44,7 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
         }
 
         bool tlast = (nrem <= pf);
-        SampDataOut::write_axi4_stream_elem<WORD_BW>(out_stream, y_lane, tlast, nrem);
+        float32_array_utils::write_axi4_stream_elem<WORD_BW>(out_stream, y_lane, tlast, nrem);
 
         nrem -= pf;
     }

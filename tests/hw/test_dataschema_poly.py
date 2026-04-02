@@ -9,6 +9,7 @@ import pytest
 
 from pysilicon.codegen.build import CodeGenConfig
 from pysilicon.codegen.streamutils import copy_streamutils
+from pysilicon.hw.arrayutils import gen_array_utils, write_uint32_file
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
 from pysilicon.xilinxutils import toolchain
 
@@ -21,7 +22,7 @@ POLY_HPP_PATH = REPO_ROOT / "examples" / "poly" / "poly.hpp"
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
 U16 = IntField.specialize(bitwidth=16, signed=False)
-F32 = FloatField.specialize(bitwidth=32)
+Float32 = FloatField.specialize(bitwidth=32, include_dir=INCLUDE_DIR)
 
 
 class PolyError(IntEnum):
@@ -33,7 +34,7 @@ PolyErrorField = EnumField.specialize(enum_type=PolyError, include_dir=INCLUDE_D
 
 
 class CoeffArray(DataArray):
-    element_type = F32
+    element_type = Float32
     static = True
     max_shape = (4,)
     include_dir = INCLUDE_DIR
@@ -81,43 +82,26 @@ class PolyRespFtr(DataList):
     include_dir = INCLUDE_DIR
 
 
-class SampDataIn(DataArray):
-    element_type = F32
-    static = False
-    max_shape = (128,)
-    include_dir = INCLUDE_DIR
-
-
-class SampDataOut(DataArray):
-    element_type = F32
-    static = False
-    max_shape = (128,)
-    include_dir = INCLUDE_DIR
-
-
 def polynomial_eval(
     cmd_hdr: PolyCmdHdr,
-    samp_in: SampDataIn,
-) -> tuple[PolyRespHdr, SampDataOut, PolyRespFtr]:
+    samp_in: np.ndarray,
+) -> tuple[PolyRespHdr, np.ndarray, PolyRespFtr]:
     resp_hdr = PolyRespHdr()
     resp_hdr.tx_id = cmd_hdr.tx_id
 
     coeffs = np.asarray(cmd_hdr.coeffs, dtype=np.float32)
-    x = np.asarray(samp_in.val, dtype=np.float32)
+    x = np.asarray(samp_in, dtype=np.float32)
     y = np.zeros_like(x)
     power = np.ones_like(x)
     for coeff in coeffs:
         y += coeff * power
         power *= x
 
-    samp_out = SampDataOut()
-    samp_out.val = y
-
     resp_ftr = PolyRespFtr()
     resp_ftr.nsamp_read = len(x)
     resp_ftr.error = PolyError.NO_ERROR if len(x) == int(cmd_hdr.nsamp) else PolyError.WRONG_NSAMP
 
-    return resp_hdr, samp_out, resp_ftr
+    return resp_hdr, y, resp_ftr
 
 
 def _poly_include_names() -> set[str]:
@@ -125,8 +109,8 @@ def _poly_include_names() -> set[str]:
     return set(re.findall(r'#include "include/([^"]+)"', content))
 
 
-def _write_and_read_words(schema_obj, path: Path, **kwargs) -> np.ndarray:
-    schema_obj.write_uint32_file(path, **kwargs)
+def _write_and_read_words_array(arr: np.ndarray, path: Path, **kwargs) -> np.ndarray:
+    write_uint32_file(arr, elem_type=Float32, file_path=path, **kwargs)
     return np.fromfile(path, dtype="<u4")
 
 
@@ -148,11 +132,10 @@ def test_poly_notebook_flow_generates_headers_vectors_and_expected_outputs(tmp_p
         PolyCmdHdr,
         PolyRespHdr,
         PolyRespFtr,
-        SampDataIn,
-        SampDataOut,
     ]
     for schema_class in schema_classes:
         schema_class.gen_include(cfg=cfg, word_bw_supported=WORD_BW_SUPPORTED)
+    gen_array_utils(Float32, WORD_BW_SUPPORTED, cfg=cfg)
     copy_streamutils(cfg)
 
     include_root = tmp_path / INCLUDE_DIR
@@ -168,30 +151,29 @@ def test_poly_notebook_flow_generates_headers_vectors_and_expected_outputs(tmp_p
     cmd_hdr.coeffs = coeffs.val
     cmd_hdr.nsamp = nsamp
 
-    samp_in = SampDataIn()
-    samp_in.val = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
+    samp_in = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
 
     resp_hdr, samp_out, resp_ftr = polynomial_eval(cmd_hdr, samp_in)
 
-    expected_y = np.polynomial.polynomial.polyval(samp_in.val, coeffs.val)
+    expected_y = np.polynomial.polynomial.polyval(samp_in, coeffs.val)
     assert int(resp_hdr.tx_id) == 42
     assert int(resp_ftr.nsamp_read) == nsamp
     assert resp_ftr.error is PolyError.NO_ERROR
-    assert np.allclose(samp_out.val, expected_y, rtol=1e-6, atol=1e-6)
+    assert np.allclose(samp_out, expected_y, rtol=1e-6, atol=1e-6)
 
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd_words = _write_and_read_words(cmd_hdr, data_dir / "cmd_hdr_data.bin")
-    samp_in_words = _write_and_read_words(samp_in, data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
-    resp_hdr_words = _write_and_read_words(resp_hdr, data_dir / "resp_hdr_data.bin")
-    samp_out_words = _write_and_read_words(samp_out, data_dir / "samp_out_data.bin", nwrite=cmd_hdr.nsamp)
-    resp_ftr_words = _write_and_read_words(resp_ftr, data_dir / "resp_ftr_data.bin")
+    cmd_words = np.fromfile(cmd_hdr.write_uint32_file(data_dir / "cmd_hdr_data.bin"), dtype="<u4")
+    samp_in_words = _write_and_read_words_array(samp_in, data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
+    resp_hdr_words = np.fromfile(resp_hdr.write_uint32_file(data_dir / "resp_hdr_data.bin"), dtype="<u4")
+    samp_out_words = _write_and_read_words_array(samp_out, data_dir / "samp_out_data.bin", nwrite=cmd_hdr.nsamp)
+    resp_ftr_words = np.fromfile(resp_ftr.write_uint32_file(data_dir / "resp_ftr_data.bin"), dtype="<u4")
 
     assert np.array_equal(cmd_words, np.asarray(cmd_hdr.serialize(word_bw=32), dtype="<u4"))
-    assert np.array_equal(samp_in_words, _float32_words(samp_in.val))
+    assert np.array_equal(samp_in_words, _float32_words(samp_in))
     assert np.array_equal(resp_hdr_words, np.asarray(resp_hdr.serialize(word_bw=32), dtype="<u4"))
-    assert np.array_equal(samp_out_words, _float32_words(samp_out.val))
+    assert np.array_equal(samp_out_words, _float32_words(samp_out))
     assert np.array_equal(resp_ftr_words, np.asarray(resp_ftr.serialize(word_bw=32), dtype="<u4"))
 
     restored_cmd = PolyCmdHdr().read_uint32_file(data_dir / "cmd_hdr_data.bin")
@@ -216,11 +198,10 @@ def test_poly_notebook_flow_runs_vitis_csim(tmp_path: Path):
         PolyCmdHdr,
         PolyRespHdr,
         PolyRespFtr,
-        SampDataIn,
-        SampDataOut,
     ]
     for schema_class in schema_classes:
         schema_class.gen_include(cfg=cfg, word_bw_supported=WORD_BW_SUPPORTED)
+    gen_array_utils(Float32, WORD_BW_SUPPORTED, cfg=cfg)
     copy_streamutils(cfg)
     _copy_poly_vitis_resources(tmp_path)
 
@@ -233,15 +214,14 @@ def test_poly_notebook_flow_runs_vitis_csim(tmp_path: Path):
     cmd_hdr.coeffs = coeffs.val
     cmd_hdr.nsamp = nsamp
 
-    samp_in = SampDataIn()
-    samp_in.val = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
+    samp_in = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
 
     expected_resp_hdr, expected_samp_out, expected_resp_ftr = polynomial_eval(cmd_hdr, samp_in)
 
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     cmd_hdr.write_uint32_file(data_dir / "cmd_hdr_data.bin")
-    samp_in.write_uint32_file(data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
+    write_uint32_file(samp_in, elem_type=Float32, file_path=data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
 
     try:
         toolchain.run_vitis_hls(tmp_path / "run.tcl", work_dir=tmp_path)
@@ -263,4 +243,4 @@ def test_poly_notebook_flow_runs_vitis_csim(tmp_path: Path):
 
     assert got_resp_hdr.is_close(expected_resp_hdr)
     assert got_resp_ftr.is_close(expected_resp_ftr)
-    assert np.allclose(got_samp_out, expected_samp_out.val[: got_samp_out.size], rtol=1e-6, atol=1e-6)
+    assert np.allclose(got_samp_out, expected_samp_out[: got_samp_out.size], rtol=1e-6, atol=1e-6)

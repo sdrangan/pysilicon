@@ -113,3 +113,6 @@ examples/poly/logs
 examples/poly/pysilicon_poly_proj
 examples/poly/data
 .hls.failed
+
+
+experiment/

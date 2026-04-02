@@ -3,6 +3,7 @@ from pathlib import Path
 from pysilicon.xilinxutils import toolchain
 import shutil
 import pytest
+import subprocess
 
 
 def test_find_vitis_path_prefers_env_direct_binary(tmp_path, monkeypatch):
@@ -65,6 +66,72 @@ def test_find_vitis_path_linux_uses_env_root(tmp_path, monkeypatch):
     out = toolchain.find_vitis_path()
 
     assert out == str(v2.resolve())
+
+
+def test_run_vitis_hls_result_passed(monkeypatch, tmp_path):
+    expected = subprocess.CompletedProcess(
+        args=["vitis-run"],
+        returncode=0,
+        stdout="ok\n",
+        stderr="",
+    )
+
+    def fake_run_vitis_hls(tcl_script, work_dir=None, args=None, capture_output=True):
+        assert tcl_script == tmp_path / "run.tcl"
+        assert work_dir == tmp_path
+        assert args == ["alpha", "beta"]
+        assert capture_output is True
+        return expected
+
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fake_run_vitis_hls)
+
+    out = toolchain.run_vitis_hls_result(
+        tmp_path / "run.tcl",
+        work_dir=tmp_path,
+        args=["alpha", "beta"],
+    )
+
+    assert out == {
+        "status": "passed",
+        "stdout": "ok\n",
+        "stderr": "",
+        "message": None,
+    }
+
+
+def test_run_vitis_hls_result_subprocess_error(monkeypatch, tmp_path):
+    def fake_run_vitis_hls(tcl_script, work_dir=None, args=None, capture_output=True):
+        raise subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["vitis-run"],
+            output="step log\n",
+            stderr="failed\n",
+        )
+
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fake_run_vitis_hls)
+
+    out = toolchain.run_vitis_hls_result(tmp_path / "run.tcl", work_dir=tmp_path)
+
+    assert out["status"] == "subprocess_error"
+    assert out["stdout"] == "step log\n"
+    assert out["stderr"] == "failed\n"
+    assert "returned non-zero exit status 1" in out["message"]
+
+
+def test_run_vitis_hls_result_runtime_error(monkeypatch, tmp_path):
+    def fake_run_vitis_hls(tcl_script, work_dir=None, args=None, capture_output=True):
+        raise RuntimeError("Vitis installation not found.")
+
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fake_run_vitis_hls)
+
+    out = toolchain.run_vitis_hls_result(tmp_path / "run.tcl", work_dir=tmp_path)
+
+    assert out == {
+        "status": "runtime_error",
+        "stdout": None,
+        "stderr": None,
+        "message": "Vitis installation not found.",
+    }
 
 
 # Get the directory where this test file lives

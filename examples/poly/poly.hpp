@@ -10,9 +10,7 @@
 #include "include/poly_cmd_hdr.h"
 #include "include/poly_resp_ftr.h"
 #include "include/poly_resp_hdr.h"
-#include "include/samp_data_in.h"
-#include "include/samp_data_out.h"
-#include "include/streamutils_tb.h"
+#include "include/float32_array_utils.h"
 #include "include/streamutils_hls.h"
 
 
@@ -21,6 +19,8 @@ static const int WORD_BW = 32;
 static_assert(WORD_BW == 32 || WORD_BW == 64, "WORD_BW must be 32 or 64");
 
 using axis_word_t = hls::axis<ap_uint<WORD_BW>, 0, 0, 0>;
+
+static const int MAX_NSAMP = 128;
 
 static float eval_poly_horner(const float coeff[4], float x);
 void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream);

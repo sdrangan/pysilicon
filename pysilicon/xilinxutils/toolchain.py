@@ -3,7 +3,7 @@ import platform
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 
 def _is_vitis_binary(path: Path, binary_name: str) -> bool:
@@ -219,3 +219,58 @@ def run_vitis_hls(
         text=True,
         capture_output=capture_output,
     )
+
+
+def run_vitis_hls_result(
+    tcl_script: Union[str, Path],
+    work_dir: Optional[Union[str, Path]] = None,
+    args: Optional[List[str]] = None,
+    capture_output: bool = True,
+) -> Dict[str, Optional[str]]:
+    """
+    Execute a Vitis HLS TCL script and return a structured result dictionary.
+
+    This wrapper preserves the existing behavior of :func:`run_vitis_hls` for
+    command construction and subprocess execution, but it normalizes success and
+    common failure modes into a plain dictionary for callers that prefer not to
+    handle exceptions directly.
+
+    Returns
+    -------
+    Dict[str, Optional[str]]
+        A dictionary with the fields:
+
+        - ``status``: One of ``"passed"``, ``"subprocess_error"``, or
+          ``"runtime_error"``.
+        - ``stdout``: Captured standard output when available.
+        - ``stderr``: Captured standard error when available.
+        - ``message``: Error message for non-subprocess failures, otherwise
+          ``None``.
+    """
+    try:
+        result = run_vitis_hls(
+            tcl_script=tcl_script,
+            work_dir=work_dir,
+            args=args,
+            capture_output=capture_output,
+        )
+        return {
+            "status": "passed",
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "message": None,
+        }
+    except subprocess.CalledProcessError as exc:
+        return {
+            "status": "subprocess_error",
+            "stdout": exc.stdout,
+            "stderr": exc.stderr,
+            "message": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "status": "runtime_error",
+            "stdout": None,
+            "stderr": None,
+            "message": str(exc),
+        }
