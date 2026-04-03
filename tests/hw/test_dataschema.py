@@ -330,7 +330,7 @@ def test_dataarray_gen_include_emits_nwords_len_for_dynamic(tmp_path: Path):
 
     assert out_path == tmp_path / "u_int8_array.h"
     assert "static int nwords_len(int n0=1) {" in content
-    assert "struct nwords_len_impl<32> {" in content
+    assert "static int nwords_len_impl(word_bw_tag<32>, int n0=1) {" in content
     assert "const int n0_eff = (n0 < 0) ? 0 : ((n0 > 16) ? 16 : n0);" in content
     assert "return (n_total + 4 - 1) / 4;" in content
 
@@ -553,11 +553,12 @@ def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path
     assert out_path == tmp_path / "packet.h"
     assert "template<int word_bw>" in content
     assert "static constexpr int nwords() {" in content
-    assert "struct nwords_impl<32> {" in content
+    assert "struct word_bw_tag {};" in content
+    assert "static constexpr int nwords_value(word_bw_tag<32>) {" in content
     assert "return 4;" in content
-    assert "struct nwords_impl<64> {" in content
+    assert "static constexpr int nwords_value(word_bw_tag<64>) {" in content
     assert "return 2;" in content
-    assert "return nwords_impl<word_bw>::value();" in content
+    assert "return nwords_value(word_bw_tag<word_bw>{});" in content
     assert "this->z.dump_json(os, step, level + 1);" in tb_content
     assert "this->z.load_json(json_text, pos);" in tb_content
 
@@ -655,8 +656,8 @@ def test_datalist_gen_write_array_emits_expected_slices():
 
     assert "template<int word_bw>" in content
     assert "void write_array(ap_uint<word_bw> x[]) const {" in content
-    assert "struct write_array_impl<32> {" in content
-    assert "write_array_impl<word_bw>::run(this, x);" in content
+    assert "static void write_array_impl(word_bw_tag<32>, const Packet* self, ap_uint<32> x[]) {" in content
+    assert "write_array_impl(word_bw_tag<word_bw>{}, this, x);" in content
     assert "x[0] = 0;" in content
     assert "x[0].range(15, 0) = self->count;" in content
     assert "x[1] = streamutils::float_to_uint(self->gain);" in content
@@ -699,8 +700,8 @@ def test_datalist_gen_read_array_emits_expected_slices():
 
     assert "template<int word_bw>" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
-    assert "struct read_array_impl<32> {" in content
-    assert "read_array_impl<word_bw>::run(this, x);" in content
+    assert "static void read_array_impl(word_bw_tag<32>, Packet* self, const ap_uint<32> x[]) {" in content
+    assert "read_array_impl(word_bw_tag<word_bw>{}, this, x);" in content
     assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
     assert "self->gain = streamutils::uint_to_float((uint32_t)(x[1]));" in content
     assert "self->mode = static_cast<Mode>(static_cast<unsigned int>(x[2].range(1, 0)));" in content

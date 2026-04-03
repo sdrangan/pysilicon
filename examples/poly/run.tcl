@@ -16,5 +16,11 @@ if {[catch {csim_design -argv "$data_dir"} res]} {
     exit 1
 }
 
-puts "PYSILICON_SUCCESS: poly C-Simulation passed."
+if {[catch {csynth_design} res]} {
+    puts "PYSILICON_ERROR: poly C-Synthesis failed."
+    puts $res
+    exit 1
+}
+
+puts "PYSILICON_SUCCESS: poly C-Simulation and C-Synthesis passed."
 exit 0
