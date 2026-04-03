@@ -30,6 +30,18 @@ from pysilicon.build.build import CodeGenConfig
 from pysilicon.hw.dataschema import DataArray, DataList, DataSchema
 
 
+def _normalize_array_shape(shape: int | tuple[int, ...] | list[int]) -> tuple[int, ...]:
+    if isinstance(shape, int):
+        norm_shape = (int(shape),)
+    else:
+        norm_shape = tuple(int(dim) for dim in shape)
+
+    if any(dim < 0 for dim in norm_shape):
+        raise ValueError("shape dimensions must be non-negative.")
+
+    return norm_shape
+
+
 def write_array(arr: Any, elem_type: type[DataSchema], word_bw: int) -> np.ndarray:
     """Pack a Python array of schema elements into hardware words.
 
@@ -157,13 +169,7 @@ def read_array(
     if word_bw <= 0:
         raise ValueError("word_bw must be positive.")
 
-    if isinstance(shape, int):
-        norm_shape = (int(shape),)
-    else:
-        norm_shape = tuple(int(dim) for dim in shape)
-
-    if any(dim < 0 for dim in norm_shape):
-        raise ValueError("shape dimensions must be non-negative.")
+    norm_shape = _normalize_array_shape(shape)
 
     array_cls = DataArray.specialize(
         element_type=elem_type,
@@ -173,6 +179,43 @@ def read_array(
     array_obj = array_cls()
     array_obj.deserialize(np.asarray(packed), word_bw=word_bw)
     return array_obj.val
+
+
+def nwords(
+    elem_type: type[DataSchema],
+    word_bw: int,
+    shape: int | tuple[int, ...] | list[int],
+) -> int:
+    """Return the packed word count for an array shape at a given word width.
+
+    Parameters
+    ----------
+    elem_type : type[DataSchema]
+        Element schema class describing each array entry.
+    word_bw : int
+        Packed word width in bits.
+    shape : int | tuple[int, ...] | list[int]
+        Array shape whose serialized/deserialized storage size is requested.
+        A scalar integer is treated as a 1D shape.
+
+    Returns
+    -------
+    int
+        Number of packed words consumed by ``deserialize`` input or produced by
+        ``serialize`` output for the given array shape.
+    """
+    if not isinstance(elem_type, type) or not issubclass(elem_type, DataSchema):
+        raise TypeError("elem_type must be a DataSchema subclass.")
+    if word_bw <= 0:
+        raise ValueError("word_bw must be positive.")
+
+    norm_shape = _normalize_array_shape(shape)
+    array_cls = DataArray.specialize(
+        element_type=elem_type,
+        max_shape=norm_shape,
+        static=True,
+    )
+    return int(array_cls.nwords_per_inst(word_bw))
 
 
 def read_uint32_file(

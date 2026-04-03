@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from pysilicon.build.build import CodeGenConfig
-from pysilicon.hw.arrayutils import gen_array_utils, read_uint32_file, write_array, write_uint32_file
+from pysilicon.hw.arrayutils import gen_array_utils, nwords, read_uint32_file, write_array, write_uint32_file
 from pysilicon.hw.dataschema import FloatField, IntField
 
 
@@ -68,6 +68,20 @@ def test_write_uint32_file_rejects_conflicting_selection_args(tmp_path: Path):
         assert "Specify only one of write_slice or nwrite." in str(exc)
     else:
         raise AssertionError("Expected ValueError when both write_slice and nwrite are provided.")
+
+
+def test_nwords_matches_serialized_length_int16() -> None:
+    data = np.arange(7, dtype=np.int16)
+    packed = np.asarray(write_array(data, elem_type=S16, word_bw=32))
+
+    assert nwords(elem_type=S16, word_bw=32, shape=data.shape) == int(packed.shape[0])
+
+
+def test_nwords_matches_serialized_length_float_matrix() -> None:
+    data = np.arange(12, dtype=np.float32).reshape(3, 4)
+    packed = np.asarray(write_array(data, elem_type=F32, word_bw=64))
+
+    assert nwords(elem_type=F32, word_bw=64, shape=data.shape) == int(packed.shape[0])
 
 
 def test_gen_array_utils_writes_companion_tb_header(tmp_path: Path):

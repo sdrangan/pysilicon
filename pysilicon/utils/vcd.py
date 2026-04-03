@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from vcdvcd import VCDVCD
 
-from xilinxutils.timing import SigTimingInfo
+from pysilicon.utils.timing import SigTimingInfo
 
 def binary_str_to_numeric(
         bin_str : str,
