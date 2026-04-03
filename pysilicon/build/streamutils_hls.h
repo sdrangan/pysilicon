@@ -3,18 +3,12 @@
 
 #include <ap_int.h>
 #include <cstdint>
-#include <cctype>
-#include <cstdlib>
-#include <fstream>
 #include <hls_stream.h>
 #if __has_include(<hls_axi_stream.h>)
 #include <hls_axi_stream.h>
 #else
 #include <ap_axi_sdata.h>
 #endif
-#include <stdexcept>
-#include <string>
-#include <vector>
 
 namespace streamutils {
 

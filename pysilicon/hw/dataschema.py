@@ -312,32 +312,63 @@ class DataSchema(ABC):
         i2 = cls._get_indent(indent_level + 2)
         param_str = cls.get_param_str(write=True)
         suffix = f", {param_str}" if param_str else ""
+        param_names = [part.split("=")[0].strip().split()[-1] for part in param_str.split(", ")] if param_str else []
+        call_suffix = "" if not param_names else ", " + ", ".join(param_names)
+        cls_name = cls.cpp_class_name()
 
         if dst_type == "array":
-            signature = f"{indent}template<int word_bw>\n{indent}void write_array(ap_uint<word_bw> x[]{suffix}) const {{"
+            impl_name = "write_array_impl"
+            wrapper_signature = f"{indent}template<int word_bw>\n{indent}void write_array(ap_uint<word_bw> x[]{suffix}) const {{"
+            impl_signature = "ap_uint<{bw}> x[]"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, x{call_suffix});"
             target = "x"
             unsupported_msg = "Unsupported word_bw for write_array"
         elif dst_type == "stream":
-            signature = (
+            impl_name = "write_stream_impl"
+            wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void write_stream(hls::stream<ap_uint<word_bw>> &s{suffix}) const {{"
             )
+            impl_signature = "hls::stream<ap_uint<{bw}>> &s"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s{call_suffix});"
             target = "s"
             unsupported_msg = "Unsupported word_bw for write_stream"
         else:
-            signature = (
+            impl_name = "write_axi4_stream_impl"
+            wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void write_axi4_stream("
                 f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true{suffix}) const {{"
             )
+            impl_signature = "hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>> &s, bool tlast"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s, tlast{call_suffix});"
             target = "s"
             unsupported_msg = "Unsupported word_bw for write_axi4_stream"
 
-        lines = signature.splitlines()
+        lines = [
+            f"{indent}template<int word_bw>",
+            f"{indent}struct {impl_name} {{",
+            f"{i1}static void run(const {cls_name}* self, {impl_signature.format(bw='word_bw')}{suffix}) {{",
+            f'{i2}static_assert(word_bw < 0, "{unsupported_msg}");',
+            f"{i2}(void)self;",
+        ]
 
-        for idx, bw in enumerate(word_bw_supported):
-            cond = "if constexpr" if idx == 0 else "else if constexpr"
-            lines.append(f"{i1}{cond} (word_bw == {bw}) {{")
+        for base_name in [target, *param_names]:
+            lines.append(f"{i2}(void){base_name};")
+        if dst_type == "axi4_stream":
+            lines.append(f"{i2}(void)tlast;")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
+
+        for bw in word_bw_supported:
+            lines.extend([
+                "",
+                f"{indent}template<>",
+                f"{indent}struct {impl_name}<{bw}> {{",
+                f"{i1}static void run(const {cls_name}* self, {impl_signature.format(bw=bw)}{suffix}) {{",
+            ])
 
             if dst_type != "array":
                 lines.append(f"{i2}ap_uint<{bw}> w = 0;")
@@ -348,7 +379,7 @@ class DataSchema(ABC):
                 target=target,
                 ipos0=0,
                 iword0=0,
-                prefix="this->",
+                prefix="self->",
             )
 
             if dst_type == "axi4_stream" and final_ipos == 0:
@@ -372,12 +403,15 @@ class DataSchema(ABC):
                 else:
                     lines.append(f"{i2}streamutils::write_axi4_word<{bw}>({target}, w, tlast);")
 
-            lines.append(f"{i1}}}")
+            lines.extend([
+                f"{i1}}}",
+                f"{indent}}};",
+            ])
 
         lines.extend([
-            f"{i1}else {{",
-            f"{i2}static_assert(word_bw > 0, \"{unsupported_msg}\");",
-            f"{i1}}}",
+            "",
+            *wrapper_signature.splitlines(),
+            wrapper_call,
             f"{indent}}}",
         ])
         return "\n".join(lines)
@@ -425,32 +459,60 @@ class DataSchema(ABC):
         i2 = cls._get_indent(indent_level + 2)
         param_str = cls.get_param_str(write=False)
         suffix = f", {param_str}" if param_str else ""
+        param_names = [part.split("=")[0].strip().split()[-1] for part in param_str.split(", ")] if param_str else []
+        call_suffix = "" if not param_names else ", " + ", ".join(param_names)
+        cls_name = cls.cpp_class_name()
 
         if src_type == "array":
-            signature = f"{indent}template<int word_bw>\n{indent}void read_array(const ap_uint<word_bw> x[]{suffix}) {{"
+            impl_name = "read_array_impl"
+            wrapper_signature = f"{indent}template<int word_bw>\n{indent}void read_array(const ap_uint<word_bw> x[]{suffix}) {{"
+            impl_signature = "const ap_uint<{bw}> x[]"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, x{call_suffix});"
             source = "x"
             unsupported_msg = "Unsupported word_bw for read_array"
         elif src_type == "stream":
-            signature = (
+            impl_name = "read_stream_impl"
+            wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void read_stream(hls::stream<ap_uint<word_bw>> &s{suffix}) {{"
             )
+            impl_signature = "hls::stream<ap_uint<{bw}>> &s"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s{call_suffix});"
             source = "s"
             unsupported_msg = "Unsupported word_bw for read_stream"
         else:
-            signature = (
+            impl_name = "read_axi4_stream_impl"
+            wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void read_axi4_stream(" 
                 f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s{suffix}) {{"
             )
+            impl_signature = "hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>> &s"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s{call_suffix});"
             source = "s"
             unsupported_msg = "Unsupported word_bw for read_axi4_stream"
 
-        lines = signature.splitlines()
+        lines = [
+            f"{indent}template<int word_bw>",
+            f"{indent}struct {impl_name} {{",
+            f"{i1}static void run({cls_name}* self, {impl_signature.format(bw='word_bw')}{suffix}) {{",
+            f'{i2}static_assert(word_bw < 0, "{unsupported_msg}");',
+            f"{i2}(void)self;",
+        ]
+        for base_name in [source, *param_names]:
+            lines.append(f"{i2}(void){base_name};")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
 
-        for idx, bw in enumerate(word_bw_supported):
-            cond = "if constexpr" if idx == 0 else "else if constexpr"
-            lines.append(f"{i1}{cond} (word_bw == {bw}) {{")
+        for bw in word_bw_supported:
+            lines.extend([
+                "",
+                f"{indent}template<>",
+                f"{indent}struct {impl_name}<{bw}> {{",
+                f"{i1}static void run({cls_name}* self, {impl_signature.format(bw=bw)}{suffix}) {{",
+            ])
 
             if src_type in {"stream", "axi4_stream"}:
                 lines.append(f"{i2}ap_uint<{bw}> w = 0;")
@@ -461,7 +523,7 @@ class DataSchema(ABC):
                 source=source,
                 ipos0=0,
                 iword0=0,
-                prefix="this->",
+                prefix="self->",
             )
 
             for line in final_lines:
@@ -469,12 +531,15 @@ class DataSchema(ABC):
                     line = line[4:]
                 lines.append(f"{i2}{line}" if line else "")
 
-            lines.append(f"{i1}}}")
+            lines.extend([
+                f"{i1}}}",
+                f"{indent}}};",
+            ])
 
         lines.extend([
-            f"{i1}else {{",
-            f"{i2}static_assert(word_bw > 0, \"{unsupported_msg}\");",
-            f"{i1}}}",
+            "",
+            *wrapper_signature.splitlines(),
+            wrapper_call,
             f"{indent}}}",
         ])
         return "\n".join(lines)
@@ -2054,16 +2119,24 @@ class DataList(DataSchema):
         if word_bw_supported:
             lines.append("")
             lines.append("    template<int word_bw>")
-            lines.append("    static constexpr int nwords() {")
-            for idx, bw in enumerate(word_bw_supported):
-                cond = "if constexpr" if idx == 0 else "else if constexpr"
-                lines.append(f"        {cond} (word_bw == {bw}) {{")
-                lines.append(f"            return {cls.nwords_per_inst(bw)};")
-                lines.append("        }")
-            lines.append("        else {")
-            lines.append('            static_assert(word_bw > 0, "Unsupported word_bw for nwords");')
+            lines.append("    struct nwords_impl {")
+            lines.append("        static constexpr int value() {")
+            lines.append('            static_assert(word_bw < 0, "Unsupported word_bw for nwords");')
             lines.append("            return 0;")
             lines.append("        }")
+            lines.append("    };")
+            for bw in word_bw_supported:
+                lines.append("")
+                lines.append("    template<>")
+                lines.append(f"    struct nwords_impl<{bw}> {{")
+                lines.append("        static constexpr int value() {")
+                lines.append(f"            return {cls.nwords_per_inst(bw)};")
+                lines.append("        }")
+                lines.append("    };")
+            lines.append("")
+            lines.append("    template<int word_bw>")
+            lines.append("    static constexpr int nwords() {")
+            lines.append("        return nwords_impl<word_bw>::value();")
             lines.append("    }")
 
         pack_decl = cls.gen_pack(indent_level=1)
@@ -2726,9 +2799,22 @@ class DataArray(DataSchema):
         n_eff_names = [f"n{i}_eff" for i in range(ndims)]
         n_total_expr = " * ".join(n_eff_names)
         lines = [f"{indent}template<int word_bw>", f"{indent}static int nwords_len({params}) {{"]
-        for idx, bw in enumerate(supported):
-            kw = "if" if idx == 0 else "else if"
-            lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+        lines = [
+            f"{indent}template<int word_bw>",
+            f"{indent}struct nwords_len_impl {{",
+            f"{i1}static int run({params}) {{",
+            f'{i2}static_assert(word_bw < 0, "Unsupported word_bw for nwords_len");',
+            f"{i2}return 0;",
+            f"{i1}}}",
+            f"{indent}}};",
+        ]
+        for bw in supported:
+            lines.extend([
+                "",
+                f"{indent}template<>",
+                f"{indent}struct nwords_len_impl<{bw}> {{",
+                f"{i1}static int run({params}) {{",
+            ])
             for d, dim in enumerate(shape):
                 lines.append(f"{i2}const int {n_eff_names[d]} = (n{d} < 0) ? 0 : ((n{d} > {dim}) ? {dim} : n{d});")
             lines.append(f"{i2}const int n_total = {n_total_expr};")
@@ -2737,12 +2823,16 @@ class DataArray(DataSchema):
                 lines.append(f"{i2}return (n_total + {pf} - 1) / {pf};")
             else:
                 lines.append(f"{i2}return n_total * {cls._element_type().nwords_per_inst(bw)};")
-            lines.append(f"{i1}}}")
+            lines.extend([
+                f"{i1}}}",
+                f"{indent}}};",
+            ])
+        arg_names = ", ".join(f"n{i}" for i in range(ndims))
         lines.extend([
-            f"{i1}else {{",
-            f"{i2}static_assert(word_bw > 0, \"Unsupported word_bw for nwords_len\");",
-            f"{i2}return 0;",
-            f"{i1}}}",
+            "",
+            f"{indent}template<int word_bw>",
+            f"{indent}static int nwords_len({params}) {{",
+            f"{i1}return nwords_len_impl<word_bw>::run({arg_names});",
             f"{indent}}}",
         ])
         return "\n".join(lines)
@@ -3214,16 +3304,24 @@ class DataArray(DataSchema):
         if word_bw_supported:
             lines.append("")
             lines.append("    template<int word_bw>")
-            lines.append("    static constexpr int nwords() {")
-            for idx, bw in enumerate(word_bw_supported):
-                cond = "if constexpr" if idx == 0 else "else if constexpr"
-                lines.append(f"        {cond} (word_bw == {bw}) {{")
-                lines.append(f"            return {cls.nwords_per_inst(bw)};")
-                lines.append("        }")
-            lines.append("        else {")
-            lines.append('            static_assert(word_bw > 0, "Unsupported word_bw for nwords");')
+            lines.append("    struct nwords_impl {")
+            lines.append("        static constexpr int value() {")
+            lines.append('            static_assert(word_bw < 0, "Unsupported word_bw for nwords");')
             lines.append("            return 0;")
             lines.append("        }")
+            lines.append("    };")
+            for bw in word_bw_supported:
+                lines.append("")
+                lines.append("    template<>")
+                lines.append(f"    struct nwords_impl<{bw}> {{")
+                lines.append("        static constexpr int value() {")
+                lines.append(f"            return {cls.nwords_per_inst(bw)};")
+                lines.append("        }")
+                lines.append("    };")
+            lines.append("")
+            lines.append("    template<int word_bw>")
+            lines.append("    static constexpr int nwords() {")
+            lines.append("        return nwords_impl<word_bw>::value();")
             lines.append("    }")
         nwords_len_helpers = cls.gen_nwords_len_helpers(indent_level=1, word_bw_supported=word_bw_supported)
         if nwords_len_helpers:

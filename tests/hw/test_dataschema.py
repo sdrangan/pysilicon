@@ -330,7 +330,7 @@ def test_dataarray_gen_include_emits_nwords_len_for_dynamic(tmp_path: Path):
 
     assert out_path == tmp_path / "u_int8_array.h"
     assert "static int nwords_len(int n0=1) {" in content
-    assert "if constexpr (word_bw == 32) {" in content
+    assert "struct nwords_len_impl<32> {" in content
     assert "const int n0_eff = (n0 < 0) ? 0 : ((n0 > 16) ? 16 : n0);" in content
     assert "return (n_total + 4 - 1) / 4;" in content
 
@@ -533,12 +533,12 @@ def test_datalist_gen_include_emits_read_helpers_when_requested(tmp_path: Path):
     assert "void write_array(ap_uint<word_bw> x[]) const {" in content
     assert "void write_stream(hls::stream<ap_uint<word_bw>> &s) const {" in content
     assert "void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true) const {" in content
-    assert "x[0].range(15, 0) = this->count;" in content
+    assert "x[0].range(15, 0) = self->count;" in content
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
     assert "void read_stream(hls::stream<ap_uint<word_bw>> &s) {" in content
     assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
-    assert "this->count = (ap_uint<16>)(x[0].range(15, 0));" in content
+    assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
     assert "w = s.read().data;" in content
 
 
@@ -553,10 +553,11 @@ def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path
     assert out_path == tmp_path / "packet.h"
     assert "template<int word_bw>" in content
     assert "static constexpr int nwords() {" in content
-    assert "if constexpr (word_bw == 32) {" in content
+    assert "struct nwords_impl<32> {" in content
     assert "return 4;" in content
-    assert "else if constexpr (word_bw == 64) {" in content
+    assert "struct nwords_impl<64> {" in content
     assert "return 2;" in content
+    assert "return nwords_impl<word_bw>::value();" in content
     assert "this->z.dump_json(os, step, level + 1);" in tb_content
     assert "this->z.load_json(json_text, pos);" in tb_content
 
@@ -569,9 +570,9 @@ def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp
     content = out_path.read_text(encoding="utf-8")
     tb_content = (tmp_path / "packet_with_array_tb.h").read_text(encoding="utf-8")
 
-    assert "this->coeffs.coeff[i0]" in content
-    assert "this->coeffs.coeff[i + 0]" in content
-    assert "this->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
+    assert "self->coeffs.coeff[i0]" in content
+    assert "self->coeffs.coeff[i + 0]" in content
+    assert "self->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
     assert "os << this->coeffs.coeff[i0];" in tb_content
     assert "this->coeffs.coeff[i0] =" in tb_content
     assert "streamutils::json_parse_number(json_text, pos)" in tb_content
@@ -654,14 +655,15 @@ def test_datalist_gen_write_array_emits_expected_slices():
 
     assert "template<int word_bw>" in content
     assert "void write_array(ap_uint<word_bw> x[]) const {" in content
-    assert "if constexpr (word_bw == 32) {" in content
+    assert "struct write_array_impl<32> {" in content
+    assert "write_array_impl<word_bw>::run(this, x);" in content
     assert "x[0] = 0;" in content
-    assert "x[0].range(15, 0) = this->count;" in content
-    assert "x[1] = streamutils::float_to_uint(this->gain);" in content
+    assert "x[0].range(15, 0) = self->count;" in content
+    assert "x[1] = streamutils::float_to_uint(self->gain);" in content
     assert "x[2] = 0;" in content
-    assert "x[2].range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(this->mode));" in content
-    assert "x[2].range(17, 2) = this->z.real;" in content
-    assert "x[3].range(15, 0) = this->z.imag;" in content
+    assert "x[2].range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(self->mode));" in content
+    assert "x[2].range(17, 2) = self->z.real;" in content
+    assert "x[3].range(15, 0) = self->z.imag;" in content
 
 
 def test_datalist_gen_write_stream_flushes_words():
@@ -669,13 +671,13 @@ def test_datalist_gen_write_stream_flushes_words():
 
     assert "void write_stream(hls::stream<ap_uint<word_bw>> &s) const {" in content
     assert "ap_uint<32> w = 0;" in content
-    assert "w.range(15, 0) = this->count;" in content
+    assert "w.range(15, 0) = self->count;" in content
     assert "s.write(w);" in content
     assert "w = 0;" in content
-    assert "w = streamutils::float_to_uint(this->gain);" in content
-    assert "w.range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(this->mode));" in content
-    assert "w.range(17, 2) = this->z.real;" in content
-    assert "w.range(15, 0) = this->z.imag;" in content
+    assert "w = streamutils::float_to_uint(self->gain);" in content
+    assert "w.range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(self->mode));" in content
+    assert "w.range(17, 2) = self->z.real;" in content
+    assert "w.range(15, 0) = self->z.imag;" in content
 
 
 def test_datalist_gen_write_axi4_stream_uses_tlast_on_final_word():
@@ -697,12 +699,13 @@ def test_datalist_gen_read_array_emits_expected_slices():
 
     assert "template<int word_bw>" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
-    assert "if constexpr (word_bw == 32) {" in content
-    assert "this->count = (ap_uint<16>)(x[0].range(15, 0));" in content
-    assert "this->gain = streamutils::uint_to_float((uint32_t)(x[1]));" in content
-    assert "this->mode = static_cast<Mode>(static_cast<unsigned int>(x[2].range(1, 0)));" in content
-    assert "this->z.real = (ap_int<16>)(x[2].range(17, 2));" in content
-    assert "this->z.imag = (ap_int<16>)(x[3].range(15, 0));" in content
+    assert "struct read_array_impl<32> {" in content
+    assert "read_array_impl<word_bw>::run(this, x);" in content
+    assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
+    assert "self->gain = streamutils::uint_to_float((uint32_t)(x[1]));" in content
+    assert "self->mode = static_cast<Mode>(static_cast<unsigned int>(x[2].range(1, 0)));" in content
+    assert "self->z.real = (ap_int<16>)(x[2].range(17, 2));" in content
+    assert "self->z.imag = (ap_int<16>)(x[3].range(15, 0));" in content
 
 
 def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
@@ -711,9 +714,9 @@ def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
     assert "void read_stream(hls::stream<ap_uint<word_bw>> &s) {" in content
     assert "ap_uint<32> w = 0;" in content
     assert "w = s.read();" in content
-    assert "this->count = (ap_uint<16>)(w.range(15, 0));" in content
-    assert "this->gain = streamutils::uint_to_float((uint32_t)(w));" in content
-    assert "this->mode = static_cast<Mode>(static_cast<unsigned int>(w.range(1, 0)));" in content
+    assert "self->count = (ap_uint<16>)(w.range(15, 0));" in content
+    assert "self->gain = streamutils::uint_to_float((uint32_t)(w));" in content
+    assert "self->mode = static_cast<Mode>(static_cast<unsigned int>(w.range(1, 0)));" in content
 
 
 def test_datalist_gen_read_axi4_stream_uses_data_field():
@@ -722,7 +725,7 @@ def test_datalist_gen_read_axi4_stream_uses_data_field():
     assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
     assert "ap_uint<32> w = 0;" in content
     assert "w = s.read().data;" in content
-    assert "this->gain = streamutils::uint_to_float((uint32_t)(w));" in content
+    assert "self->gain = streamutils::uint_to_float((uint32_t)(w));" in content
 
 
 def test_gen_read_requires_word_width_configuration():

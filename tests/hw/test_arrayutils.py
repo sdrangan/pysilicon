@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from pysilicon.build.build import CodeGenConfig
-from pysilicon.hw.arrayutils import gen_array_utils, nwords, read_uint32_file, write_array, write_uint32_file
+from pysilicon.hw.arrayutils import gen_array_utils, get_nwords, read_uint32_file, write_array, write_uint32_file
 from pysilicon.hw.dataschema import FloatField, IntField
 
 
@@ -74,14 +74,14 @@ def test_nwords_matches_serialized_length_int16() -> None:
     data = np.arange(7, dtype=np.int16)
     packed = np.asarray(write_array(data, elem_type=S16, word_bw=32))
 
-    assert nwords(elem_type=S16, word_bw=32, shape=data.shape) == int(packed.shape[0])
+    assert get_nwords(elem_type=S16, word_bw=32, shape=data.shape) == int(packed.shape[0])
 
 
 def test_nwords_matches_serialized_length_float_matrix() -> None:
     data = np.arange(12, dtype=np.float32).reshape(3, 4)
     packed = np.asarray(write_array(data, elem_type=F32, word_bw=64))
 
-    assert nwords(elem_type=F32, word_bw=64, shape=data.shape) == int(packed.shape[0])
+    assert get_nwords(elem_type=F32, word_bw=64, shape=data.shape) == int(packed.shape[0])
 
 
 def test_gen_array_utils_writes_companion_tb_header(tmp_path: Path):
@@ -108,6 +108,8 @@ def test_gen_array_utils_writes_companion_tb_header(tmp_path: Path):
     assert "inline void read_array_elem(const ap_uint<word_bw>* src, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
     assert "inline void write_array_elem(const value_type in[pf<word_bw>()], ap_uint<word_bw>* dst, int n = pf<word_bw>()) {" in content
     assert "inline void read_stream_elem(hls::stream<ap_uint<word_bw>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
+    assert "struct read_axi4_stream_elem_impl {" in content
+    assert "struct read_axi4_stream_elem_impl<32> {" in content
     assert "inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
     assert "inline void write_stream_elem(hls::stream<ap_uint<word_bw>>& s, const value_type in[pf<word_bw>()], int n = pf<word_bw>()) {" in content
     assert "inline void write_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {" in content
@@ -117,6 +119,7 @@ def test_gen_array_utils_writes_companion_tb_header(tmp_path: Path):
     assert "inline void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type* src, bool tlast = true, int len = pf<word_bw>()) {" in content
     assert "read_stream_elem<word_bw>(s, dst + i, len - i);" in content
     assert "read_axi4_stream_elem<word_bw>(s, dst + i, len - i);" in content
+    assert "read_axi4_stream_elem_impl<word_bw>::run(s, out, n);" in content
     assert "write_stream_elem<word_bw>(s, src + i, len - i);" in content
     assert "const bool lane_tlast = (i + pf<word_bw>() >= len) ? tlast : false;" in content
     assert "write_axi4_stream_elem<word_bw>(s, src + i, lane_tlast, len - i);" in content

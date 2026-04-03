@@ -181,7 +181,7 @@ def read_array(
     return array_obj.val
 
 
-def nwords(
+def get_nwords(
     elem_type: type[DataSchema],
     word_bw: int,
     shape: int | tuple[int, ...] | list[int],
@@ -588,7 +588,7 @@ def _gen_write_specialization(elem_type: type[DataSchema], word_bw: int, indent_
     return "\n".join(lines)
 
 
-def _gen_stream_elem_helpers(
+def _gen_read_axi4_stream_elem_specializations(
     elem_type: type[DataSchema],
     word_bw_supported: list[int],
     indent_level: int = 0,
@@ -599,23 +599,96 @@ def _gen_stream_elem_helpers(
     i3 = elem_type._get_indent(indent_level + 3)
 
     elem_bw = elem_type.get_bitwidth()
-    elem_cpp = elem_type.cpp_class_name()
 
     lines = [
         "template<int word_bw>",
-        f"{indent}static constexpr int pf() {{",
-        f"{i1}return word_bw / {elem_bw};",
-        f"{indent}}}",
-        "",
-        "template<int word_bw>",
-        f"{indent}inline void read_array_elem(const ap_uint<word_bw>* src, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
-        f"{i1}#pragma HLS INLINE",
+        f"{indent}struct read_axi4_stream_elem_impl {{",
+        f"{i1}static void run(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* out, int n) {{",
+        f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for read_axi4_stream_elem");',
+        f"{i2}(void)s;",
+        f"{i2}(void)out;",
+        f"{i2}(void)n;",
+        f"{i1}}}",
+        f"{indent}}};",
     ]
 
-    for idx, bw in enumerate(word_bw_supported):
+    for bw in word_bw_supported:
         pfv = bw // elem_bw if elem_bw > 0 else 0
-        kw = "if" if idx == 0 else "else if"
-        lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+        lines.extend([
+            "",
+            "template<>",
+            f"{indent}struct read_axi4_stream_elem_impl<{bw}> {{",
+            f"{i1}static void run(hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>>& s, value_type* out, int n) {{",
+            f"{i2}#pragma HLS INLINE",
+        ])
+        if pfv >= 2:
+            lines.append(f"{i2}ap_uint<{bw}> w = s.read().data;")
+            for j in range(pfv):
+                lo = j * elem_bw
+                hi = lo + elem_bw - 1
+                rhs_expr = elem_type.from_uint_expr(f"w.range({hi}, {lo})")
+                lines.append(f"{i2}if (n > {j}) {{")
+                lines.append(f"{i3}out[{j}] = {rhs_expr};")
+                lines.append(f"{i2}}}")
+        else:
+            if elem_bw <= bw:
+                lines.append(f"{i2}if (n > 0) {{")
+                lines.append(f"{i3}ap_uint<{bw}> w = s.read().data;")
+                lines.append(f"{i3}out[0] = {elem_type.from_uint_expr('w')};")
+                lines.append(f"{i2}}}")
+            else:
+                lines.append(f"{i2}if (n > 0) {{")
+                lines.append(f"{i3}out[0].template read_axi4_stream<{bw}>(s);")
+                lines.append(f"{i2}}}")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
+
+    lines.extend([
+        "",
+        "template<int word_bw>",
+        f"{indent}inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
+        f"{i1}#pragma HLS INLINE",
+        f"{i1}read_axi4_stream_elem_impl<word_bw>::run(s, out, n);",
+        f"{indent}}}",
+    ])
+
+    return "\n".join(lines)
+
+
+def _gen_read_array_elem_specializations(
+    elem_type: type[DataSchema],
+    word_bw_supported: list[int],
+    indent_level: int = 0,
+) -> str:
+    indent = elem_type._get_indent(indent_level)
+    i1 = elem_type._get_indent(indent_level + 1)
+    i2 = elem_type._get_indent(indent_level + 2)
+    i3 = elem_type._get_indent(indent_level + 3)
+    elem_bw = elem_type.get_bitwidth()
+
+    lines = [
+        "template<int word_bw>",
+        f"{indent}struct read_array_elem_impl {{",
+        f"{i1}static void run(const ap_uint<word_bw>* src, value_type* out, int n) {{",
+        f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for read_array_elem");',
+        f"{i2}(void)src;",
+        f"{i2}(void)out;",
+        f"{i2}(void)n;",
+        f"{i1}}}",
+        f"{indent}}};",
+    ]
+
+    for bw in word_bw_supported:
+        pfv = bw // elem_bw if elem_bw > 0 else 0
+        lines.extend([
+            "",
+            "template<>",
+            f"{indent}struct read_array_elem_impl<{bw}> {{",
+            f"{i1}static void run(const ap_uint<{bw}>* src, value_type* out, int n) {{",
+            f"{i2}#pragma HLS INLINE",
+        ])
         if pfv >= 2:
             lines.append(f"{i2}if (src == nullptr) {{")
             lines.append(f"{i3}return;")
@@ -645,23 +718,54 @@ def _gen_stream_elem_helpers(
                     stripped = line[4:] if line.startswith("    ") else line
                     lines.append(f"{i3}{stripped}" if stripped else "")
                 lines.append(f"{i2}}}")
-        lines.append(f"{i1}}}")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
 
     lines.extend([
-        f"{i1}else {{",
-        f'{i2}static_assert(word_bw > 0, "Unsupported word_bw for read_array_elem");',
-        f"{i1}}}",
-        f"{indent}}}",
         "",
         "template<int word_bw>",
-        f"{indent}inline void write_array_elem(const value_type in[pf<word_bw>()], ap_uint<word_bw>* dst, int n = pf<word_bw>()) {{",
+        f"{indent}inline void read_array_elem(const ap_uint<word_bw>* src, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
         f"{i1}#pragma HLS INLINE",
+        f"{i1}read_array_elem_impl<word_bw>::run(src, out, n);",
+        f"{indent}}}",
     ])
+    return "\n".join(lines)
 
-    for idx, bw in enumerate(word_bw_supported):
+
+def _gen_write_array_elem_specializations(
+    elem_type: type[DataSchema],
+    word_bw_supported: list[int],
+    indent_level: int = 0,
+) -> str:
+    indent = elem_type._get_indent(indent_level)
+    i1 = elem_type._get_indent(indent_level + 1)
+    i2 = elem_type._get_indent(indent_level + 2)
+    i3 = elem_type._get_indent(indent_level + 3)
+    elem_bw = elem_type.get_bitwidth()
+
+    lines = [
+        "template<int word_bw>",
+        f"{indent}struct write_array_elem_impl {{",
+        f"{i1}static void run(const value_type* in, ap_uint<word_bw>* dst, int n) {{",
+        f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for write_array_elem");',
+        f"{i2}(void)in;",
+        f"{i2}(void)dst;",
+        f"{i2}(void)n;",
+        f"{i1}}}",
+        f"{indent}}};",
+    ]
+
+    for bw in word_bw_supported:
         pfv = bw // elem_bw if elem_bw > 0 else 0
-        kw = "if" if idx == 0 else "else if"
-        lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+        lines.extend([
+            "",
+            "template<>",
+            f"{indent}struct write_array_elem_impl<{bw}> {{",
+            f"{i1}static void run(const value_type* in, ap_uint<{bw}>* dst, int n) {{",
+            f"{i2}#pragma HLS INLINE",
+        ])
         if pfv >= 2:
             lines.append(f"{i2}if (dst == nullptr) {{")
             lines.append(f"{i3}return;")
@@ -692,23 +796,54 @@ def _gen_stream_elem_helpers(
                     stripped = line[4:] if line.startswith("    ") else line
                     lines.append(f"{i3}{stripped}" if stripped else "")
                 lines.append(f"{i2}}}")
-        lines.append(f"{i1}}}")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
 
     lines.extend([
-        f"{i1}else {{",
-        f'{i2}static_assert(word_bw > 0, "Unsupported word_bw for write_array_elem");',
-        f"{i1}}}",
-        f"{indent}}}",
         "",
         "template<int word_bw>",
-        f"{indent}inline void read_stream_elem(hls::stream<ap_uint<word_bw>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
+        f"{indent}inline void write_array_elem(const value_type in[pf<word_bw>()], ap_uint<word_bw>* dst, int n = pf<word_bw>()) {{",
         f"{i1}#pragma HLS INLINE",
+        f"{i1}write_array_elem_impl<word_bw>::run(in, dst, n);",
+        f"{indent}}}",
     ])
+    return "\n".join(lines)
 
-    for idx, bw in enumerate(word_bw_supported):
+
+def _gen_read_stream_elem_specializations(
+    elem_type: type[DataSchema],
+    word_bw_supported: list[int],
+    indent_level: int = 0,
+) -> str:
+    indent = elem_type._get_indent(indent_level)
+    i1 = elem_type._get_indent(indent_level + 1)
+    i2 = elem_type._get_indent(indent_level + 2)
+    i3 = elem_type._get_indent(indent_level + 3)
+    elem_bw = elem_type.get_bitwidth()
+
+    lines = [
+        "template<int word_bw>",
+        f"{indent}struct read_stream_elem_impl {{",
+        f"{i1}static void run(hls::stream<ap_uint<word_bw>>& s, value_type* out, int n) {{",
+        f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for read_stream_elem");',
+        f"{i2}(void)s;",
+        f"{i2}(void)out;",
+        f"{i2}(void)n;",
+        f"{i1}}}",
+        f"{indent}}};",
+    ]
+
+    for bw in word_bw_supported:
         pfv = bw // elem_bw if elem_bw > 0 else 0
-        kw = "if" if idx == 0 else "else if"
-        lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+        lines.extend([
+            "",
+            "template<>",
+            f"{indent}struct read_stream_elem_impl<{bw}> {{",
+            f"{i1}static void run(hls::stream<ap_uint<{bw}>>& s, value_type* out, int n) {{",
+            f"{i2}#pragma HLS INLINE",
+        ])
         if pfv >= 2:
             lines.append(f"{i2}ap_uint<{bw}> w = s.read();")
             for j in range(pfv):
@@ -728,59 +863,54 @@ def _gen_stream_elem_helpers(
                 lines.append(f"{i2}if (n > 0) {{")
                 lines.append(f"{i3}out[0].template read_stream<{bw}>(s);")
                 lines.append(f"{i2}}}")
-        lines.append(f"{i1}}}")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
 
     lines.extend([
-        f"{i1}else {{",
-        f'{i2}static_assert(word_bw > 0, "Unsupported word_bw for read_stream_elem");',
-        f"{i1}}}",
-        f"{indent}}}",
         "",
         "template<int word_bw>",
-        f"{indent}inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
+        f"{indent}inline void read_stream_elem(hls::stream<ap_uint<word_bw>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
         f"{i1}#pragma HLS INLINE",
-    ])
-
-    for idx, bw in enumerate(word_bw_supported):
-        pfv = bw // elem_bw if elem_bw > 0 else 0
-        kw = "if" if idx == 0 else "else if"
-        lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
-        if pfv >= 2:
-            lines.append(f"{i2}ap_uint<{bw}> w = s.read().data;")
-            for j in range(pfv):
-                lo = j * elem_bw
-                hi = lo + elem_bw - 1
-                rhs_expr = elem_type.from_uint_expr(f"w.range({hi}, {lo})")
-                lines.append(f"{i2}if (n > {j}) {{")
-                lines.append(f"{i3}out[{j}] = {rhs_expr};")
-                lines.append(f"{i2}}}")
-        else:
-            if elem_bw <= bw:
-                lines.append(f"{i2}if (n > 0) {{")
-                lines.append(f"{i3}ap_uint<{bw}> w = s.read().data;")
-                lines.append(f"{i3}out[0] = {elem_type.from_uint_expr('w')};")
-                lines.append(f"{i2}}}")
-            else:
-                lines.append(f"{i2}if (n > 0) {{")
-                lines.append(f"{i3}out[0].template read_axi4_stream<{bw}>(s);")
-                lines.append(f"{i2}}}")
-        lines.append(f"{i1}}}")
-
-    lines.extend([
-        f"{i1}else {{",
-        f'{i2}static_assert(word_bw > 0, "Unsupported word_bw for read_axi4_stream_elem");',
-        f"{i1}}}",
+        f"{i1}read_stream_elem_impl<word_bw>::run(s, out, n);",
         f"{indent}}}",
-        "",
-        "template<int word_bw>",
-        f"{indent}inline void write_stream_elem(hls::stream<ap_uint<word_bw>>& s, const value_type in[pf<word_bw>()], int n = pf<word_bw>()) {{",
-        f"{i1}#pragma HLS INLINE",
     ])
+    return "\n".join(lines)
 
-    for idx, bw in enumerate(word_bw_supported):
+
+def _gen_write_stream_elem_specializations(
+    elem_type: type[DataSchema],
+    word_bw_supported: list[int],
+    indent_level: int = 0,
+) -> str:
+    indent = elem_type._get_indent(indent_level)
+    i1 = elem_type._get_indent(indent_level + 1)
+    i2 = elem_type._get_indent(indent_level + 2)
+    i3 = elem_type._get_indent(indent_level + 3)
+    elem_bw = elem_type.get_bitwidth()
+
+    lines = [
+        "template<int word_bw>",
+        f"{indent}struct write_stream_elem_impl {{",
+        f"{i1}static void run(hls::stream<ap_uint<word_bw>>& s, const value_type* in, int n) {{",
+        f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for write_stream_elem");',
+        f"{i2}(void)s;",
+        f"{i2}(void)in;",
+        f"{i2}(void)n;",
+        f"{i1}}}",
+        f"{indent}}};",
+    ]
+
+    for bw in word_bw_supported:
         pfv = bw // elem_bw if elem_bw > 0 else 0
-        kw = "if" if idx == 0 else "else if"
-        lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+        lines.extend([
+            "",
+            "template<>",
+            f"{indent}struct write_stream_elem_impl<{bw}> {{",
+            f"{i1}static void run(hls::stream<ap_uint<{bw}>>& s, const value_type* in, int n) {{",
+            f"{i2}#pragma HLS INLINE",
+        ])
         if pfv >= 2:
             lines.append(f"{i2}ap_uint<{bw}> w = 0;")
             for j in range(pfv):
@@ -801,23 +931,55 @@ def _gen_stream_elem_helpers(
                 lines.append(f"{i2}if (n > 0) {{")
                 lines.append(f"{i3}in[0].template write_stream<{bw}>(s);")
                 lines.append(f"{i2}}}")
-        lines.append(f"{i1}}}")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
 
     lines.extend([
-        f"{i1}else {{",
-        f'{i2}static_assert(word_bw > 0, "Unsupported word_bw for write_stream_elem");',
-        f"{i1}}}",
-        f"{indent}}}",
         "",
         "template<int word_bw>",
-        f"{indent}inline void write_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {{",
+        f"{indent}inline void write_stream_elem(hls::stream<ap_uint<word_bw>>& s, const value_type in[pf<word_bw>()], int n = pf<word_bw>()) {{",
         f"{i1}#pragma HLS INLINE",
+        f"{i1}write_stream_elem_impl<word_bw>::run(s, in, n);",
+        f"{indent}}}",
     ])
+    return "\n".join(lines)
 
-    for idx, bw in enumerate(word_bw_supported):
+
+def _gen_write_axi4_stream_elem_specializations(
+    elem_type: type[DataSchema],
+    word_bw_supported: list[int],
+    indent_level: int = 0,
+) -> str:
+    indent = elem_type._get_indent(indent_level)
+    i1 = elem_type._get_indent(indent_level + 1)
+    i2 = elem_type._get_indent(indent_level + 2)
+    i3 = elem_type._get_indent(indent_level + 3)
+    elem_bw = elem_type.get_bitwidth()
+
+    lines = [
+        "template<int word_bw>",
+        f"{indent}struct write_axi4_stream_elem_impl {{",
+        f"{i1}static void run(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type* in, bool tlast, int n) {{",
+        f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for write_axi4_stream_elem");',
+        f"{i2}(void)s;",
+        f"{i2}(void)in;",
+        f"{i2}(void)tlast;",
+        f"{i2}(void)n;",
+        f"{i1}}}",
+        f"{indent}}};",
+    ]
+
+    for bw in word_bw_supported:
         pfv = bw // elem_bw if elem_bw > 0 else 0
-        kw = "if" if idx == 0 else "else if"
-        lines.append(f"{i1}{kw} constexpr (word_bw == {bw}) {{")
+        lines.extend([
+            "",
+            "template<>",
+            f"{indent}struct write_axi4_stream_elem_impl<{bw}> {{",
+            f"{i1}static void run(hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>>& s, const value_type* in, bool tlast, int n) {{",
+            f"{i2}#pragma HLS INLINE",
+        ])
         if pfv >= 2:
             lines.append(f"{i2}ap_uint<{bw}> w = 0;")
             for j in range(pfv):
@@ -838,13 +1000,73 @@ def _gen_stream_elem_helpers(
                 lines.append(f"{i2}if (n > 0) {{")
                 lines.append(f"{i3}in[0].template write_axi4_stream<{bw}>(s, tlast);")
                 lines.append(f"{i2}}}")
-        lines.append(f"{i1}}}")
+        lines.extend([
+            f"{i1}}}",
+            f"{indent}}};",
+        ])
 
     lines.extend([
-        f"{i1}else {{",
-        f'{i2}static_assert(word_bw > 0, "Unsupported word_bw for write_axi4_stream_elem");',
-        f"{i1}}}",
+        "",
+        "template<int word_bw>",
+        f"{indent}inline void write_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {{",
+        f"{i1}#pragma HLS INLINE",
+        f"{i1}write_axi4_stream_elem_impl<word_bw>::run(s, in, tlast, n);",
         f"{indent}}}",
+    ])
+    return "\n".join(lines)
+
+
+def _gen_stream_elem_helpers(
+    elem_type: type[DataSchema],
+    word_bw_supported: list[int],
+    indent_level: int = 0,
+) -> str:
+    indent = elem_type._get_indent(indent_level)
+    i1 = elem_type._get_indent(indent_level + 1)
+    i2 = elem_type._get_indent(indent_level + 2)
+    elem_bw = elem_type.get_bitwidth()
+
+    lines = [
+        "template<int word_bw>",
+        f"{indent}static constexpr int pf() {{",
+        f"{i1}return word_bw / {elem_bw};",
+        f"{indent}}}",
+        "",
+        _gen_read_array_elem_specializations(
+            elem_type=elem_type,
+            word_bw_supported=word_bw_supported,
+            indent_level=indent_level,
+        ),
+        "",
+        _gen_write_array_elem_specializations(
+            elem_type=elem_type,
+            word_bw_supported=word_bw_supported,
+            indent_level=indent_level,
+        ),
+        "",
+        _gen_read_stream_elem_specializations(
+            elem_type=elem_type,
+            word_bw_supported=word_bw_supported,
+            indent_level=indent_level,
+        ),
+        "",
+        _gen_read_axi4_stream_elem_specializations(
+            elem_type=elem_type,
+            word_bw_supported=word_bw_supported,
+            indent_level=indent_level,
+        ),
+        "",
+        _gen_write_stream_elem_specializations(
+            elem_type=elem_type,
+            word_bw_supported=word_bw_supported,
+            indent_level=indent_level,
+        ),
+        "",
+        _gen_write_axi4_stream_elem_specializations(
+            elem_type=elem_type,
+            word_bw_supported=word_bw_supported,
+            indent_level=indent_level,
+        ),
         "",
         "template<int word_bw>",
         f"{indent}inline void read_stream(hls::stream<ap_uint<word_bw>>& s, value_type* dst, int len) {{",
@@ -890,7 +1112,7 @@ def _gen_stream_elem_helpers(
         f"{i2}write_axi4_stream_elem<word_bw>(s, src + i, lane_tlast, len - i);",
         f"{i1}}}",
         f"{indent}}}",
-    ])
+    ]
     return "\n".join(lines)
 
 
