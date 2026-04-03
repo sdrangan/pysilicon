@@ -82,6 +82,16 @@ class PolyRespFtr(DataList):
     include_dir = INCLUDE_DIR
 
 
+def test_poly_cmd_hdr_gen_write_axi4_stream_64_asserts_tlast_once_on_final_word():
+    content = PolyCmdHdr.gen_write(word_bw=64, dst_type="axi4_stream")
+
+    assert "const int total_words" not in content
+    assert "const bool last =" not in content
+    assert content.count("streamutils::write_axi4_word<64>(s, w, false);") == 2
+    assert "w.range(15, 0) = self->nsamp;" in content
+    assert content.count("streamutils::write_axi4_word<64>(s, w, tlast);") == 1
+
+
 def polynomial_eval(
     cmd_hdr: PolyCmdHdr,
     samp_in: np.ndarray,

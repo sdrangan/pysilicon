@@ -577,7 +577,9 @@ def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp
     assert "os << this->coeffs.coeff[i0];" in tb_content
     assert "this->coeffs.coeff[i0] =" in tb_content
     assert "streamutils::json_parse_number(json_text, pos)" in tb_content
-    assert content.index("const int n0_eff = 4;") < content.index("const int total_words = (n0_eff + 2 - 1) / 2;")
+    assert "const int n0_eff = 4;" in content
+    assert "const int total_words = (n0_eff + 2 - 1) / 2;" not in content
+    assert "const bool last =" not in content
 
 
 def test_gen_include_rejects_non_positive_word_widths():

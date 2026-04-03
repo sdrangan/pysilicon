@@ -2869,8 +2869,6 @@ class DataArray(DataSchema):
                 n0_eff = n_eff_names[0]
                 out_idx_init = start_iword if dst_type == "array" else 0
                 lines.insert(decl_end, f"    int out_idx = {out_idx_init};")
-                if dst_type == "axi4_stream":
-                    lines.insert(decl_end + 1, f"    const int total_words = ({n0_eff} + {pf} - 1) / {pf};")
                 lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
                 lines.append("        #pragma HLS PIPELINE II=1")
                 if dst_type == "array":
@@ -2892,8 +2890,7 @@ class DataArray(DataSchema):
                     lines.append(f"        {target}.write(w);")
                     lines.append("        out_idx++;")
                 else:
-                    lines.append("        const bool last = (out_idx == total_words - 1) ? tlast : false;")
-                    lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                    lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
                     lines.append("        out_idx++;")
                 lines.append("    }")
                 next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
@@ -2902,8 +2899,6 @@ class DataArray(DataSchema):
             lines.insert(decl_end, "    int elem_idx = 0;")
             out_idx_init = start_iword if dst_type == "array" else 0
             lines.insert(decl_end + 1, f"    int out_idx = {out_idx_init};")
-            if dst_type == "axi4_stream":
-                lines.insert(decl_end + 2, f"    const int total_words = ({n_total_expr} + {pf} - 1) / {pf};")
             for d in range(ndims):
                 lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
@@ -2927,8 +2922,7 @@ class DataArray(DataSchema):
                 lines.append(f"{body_indent}    w = 0;")
                 lines.append(f"{body_indent}    out_idx++;")
             else:
-                lines.append(f"{body_indent}    const bool last = (out_idx == total_words - 1) ? tlast : false;")
-                lines.append(f"{body_indent}    streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                lines.append(f"{body_indent}    streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
                 lines.append(f"{body_indent}    w = 0;")
                 lines.append(f"{body_indent}    out_idx++;")
             lines.append(f"{body_indent}}}")
@@ -2940,8 +2934,7 @@ class DataArray(DataSchema):
             elif dst_type == "stream":
                 lines.append(f"        {target}.write(w);")
             else:
-                lines.append("        const bool last = (out_idx == total_words - 1) ? tlast : false;")
-                lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                lines.append(f"        streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
             lines.append("    }")
             next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
             return lines, 0, next_iword
@@ -2960,8 +2953,7 @@ class DataArray(DataSchema):
                 lines.append(f"{body_indent}out_idx++;")
             else:
                 lines.append(f"{body_indent}w = {elem_uint_expr};")
-                lines.append(f"{body_indent}const bool last = (out_idx == ({n_total_expr}) - 1) ? tlast : false;")
-                lines.append(f"{body_indent}streamutils::write_axi4_word<{word_bw}>({target}, w, last);")
+                lines.append(f"{body_indent}streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
                 lines.append(f"{body_indent}out_idx++;")
             for d in range(ndims):
                 lines.append(f"{'    ' * (ndims - d)}}}")
@@ -2985,8 +2977,7 @@ class DataArray(DataSchema):
             lines.append(f"{body_indent}{elem_expr}.template write_stream<{word_bw}>({target});")
             lines.append(f"{body_indent}out_idx += {words_per_elem};")
         else:
-            lines.append(f"{body_indent}const bool last = (out_idx + {words_per_elem} >= ({n_total_expr}) * {words_per_elem}) ? tlast : false;")
-            lines.append(f"{body_indent}{elem_expr}.template write_axi4_stream<{word_bw}>({target}, last);")
+            lines.append(f"{body_indent}{elem_expr}.template write_axi4_stream<{word_bw}>({target}, false);")
             lines.append(f"{body_indent}out_idx += {words_per_elem};")
         for d in range(ndims):
             lines.append(f"{'    ' * (ndims - d)}}}")
