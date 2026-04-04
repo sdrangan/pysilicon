@@ -12,6 +12,21 @@
 
 namespace streamutils {
 
+    enum class tlast_status {
+        no_tlast,
+        tlast_at_end,
+        tlast_early,
+    };
+
+    struct tlast_status_info {
+        static constexpr int count = 3;
+        static constexpr const char* names[count] = {
+            "no_tlast",
+            "tlast_at_end",
+            "tlast_early",
+        };
+    };
+
     /**
      * Reinterprets the 32 bits of a float as an unsigned integer
      * without performing any type truncation or rounding.

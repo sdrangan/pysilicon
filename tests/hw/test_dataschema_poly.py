@@ -1,6 +1,7 @@
 import re
 import shutil
 import subprocess
+import json
 from enum import IntEnum
 from pathlib import Path
 
@@ -27,7 +28,11 @@ Float32 = FloatField.specialize(bitwidth=32, include_dir=INCLUDE_DIR)
 
 class PolyError(IntEnum):
     NO_ERROR = 0
-    WRONG_NSAMP = 1
+    TLAST_EARLY_CMD_HDR = 1
+    NO_TLAST_CMD_HDR = 2
+    TLAST_EARLY_SAMP_IN = 3
+    NO_TLAST_SAMP_IN = 4
+    WRONG_NSAMP = 5
 
 
 PolyErrorField = EnumField.specialize(enum_type=PolyError, include_dir=INCLUDE_DIR)
@@ -92,6 +97,19 @@ def test_poly_cmd_hdr_gen_write_axi4_stream_64_asserts_tlast_once_on_final_word(
     assert content.count("streamutils::write_axi4_word<64>(s, w, tlast);") == 1
 
 
+def test_poly_cmd_hdr_gen_read_axi4_stream_tracks_tlast_status():
+    content = PolyCmdHdr.gen_read(word_bw=32, src_type="axi4_stream")
+
+    assert "streamutils::tlast_status &tl" in content
+    assert "bool last = false;" in content
+    assert "auto axis_word = s.read();" in content
+    assert "last = axis_word.last;" in content
+    assert "for (int i0 = 0; i0 < n0_eff && !stop; ++i0) {" in content
+    assert "if (last && elem_idx < (n0_eff)) {" in content
+    assert "tl = streamutils::tlast_status::tlast_early;" in content
+    assert "tl = streamutils::tlast_status::tlast_at_end;" in content
+
+
 def polynomial_eval(
     cmd_hdr: PolyCmdHdr,
     samp_in: np.ndarray,
@@ -129,8 +147,15 @@ def _float32_words(values: np.ndarray) -> np.ndarray:
 
 
 def _copy_poly_vitis_resources(dst_dir: Path) -> None:
+    # Keep examples/poly as the canonical Vitis kernel and test bench sources.
     for name in ["poly.hpp", "poly.cpp", "poly_tb.cpp", "run.tcl"]:
         shutil.copy(POLY_EXAMPLE_DIR / name, dst_dir / name)
+
+
+def _read_sync_status(data_dir: Path) -> dict[str, str]:
+    sync_status_path = data_dir / "sync_status.json"
+    assert sync_status_path.exists(), f"Missing sync status output: {sync_status_path}"
+    return json.loads(sync_status_path.read_text(encoding="utf-8"))
 
 
 def test_poly_notebook_flow_generates_headers_vectors_and_expected_outputs(tmp_path: Path):
@@ -250,7 +275,20 @@ def test_poly_notebook_flow_runs_vitis_csim(tmp_path: Path):
     got_resp_ftr = PolyRespFtr().read_uint32_file(data_dir / "resp_ftr_data.bin")
     got_samp_out_words = np.fromfile(data_dir / "samp_out_data.bin", dtype="<u4")
     got_samp_out = got_samp_out_words.view("<f4")
+    sync_status = _read_sync_status(data_dir)
 
     assert got_resp_hdr.is_close(expected_resp_hdr)
     assert got_resp_ftr.is_close(expected_resp_ftr)
+    assert got_resp_ftr.error is expected_resp_ftr.error, (
+        f"Unexpected resp_ftr.error: expected {expected_resp_ftr.error.name}, got {got_resp_ftr.error.name}"
+    )
+    assert sync_status.get("resp_hdr_tlast") == "tlast_at_end", (
+        f"Unexpected resp_hdr_tlast: expected tlast_at_end, got {sync_status.get('resp_hdr_tlast')}"
+    )
+    assert sync_status.get("samp_out_tlast") == "tlast_at_end", (
+        f"Unexpected samp_out_tlast: expected tlast_at_end, got {sync_status.get('samp_out_tlast')}"
+    )
+    assert sync_status.get("resp_ftr_tlast") == "tlast_at_end", (
+        f"Unexpected resp_ftr_tlast: expected tlast_at_end, got {sync_status.get('resp_ftr_tlast')}"
+    )
     assert np.allclose(got_samp_out, expected_samp_out[: got_samp_out.size], rtol=1e-6, atol=1e-6)

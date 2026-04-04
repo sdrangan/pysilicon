@@ -12,11 +12,20 @@
 #else
 #include <ap_axi_sdata.h>
 #endif
+#include "streamutils_hls.h"
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace streamutils {
+
+    inline const char* to_string(tlast_status s) {
+        int idx = static_cast<int>(s);
+        if (idx < 0 || idx >= tlast_status_info::count) {
+            return "unknown";
+        }
+        return tlast_status_info::names[idx];
+    }
 
     inline uint32_t read_le_uint32(std::istream& is) {
         uint32_t value = 0;

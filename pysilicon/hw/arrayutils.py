@@ -603,10 +603,11 @@ def _gen_read_axi4_stream_elem_specializations(
     lines = [
         "template<int word_bw>",
         f"{indent}struct read_axi4_stream_elem_impl {{",
-        f"{i1}static void run(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* out, int n) {{",
+        f"{i1}static void run(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* out, streamutils::tlast_status& tl, int n) {{",
         f'{i2}static_assert(unsupported_word_bw<word_bw>::value, "Unsupported word_bw for read_axi4_stream_elem");',
         f"{i2}(void)s;",
         f"{i2}(void)out;",
+        f"{i2}(void)tl;",
         f"{i2}(void)n;",
         f"{i1}}}",
         f"{indent}}};",
@@ -618,11 +619,13 @@ def _gen_read_axi4_stream_elem_specializations(
             "",
             "template<>",
             f"{indent}struct read_axi4_stream_elem_impl<{bw}> {{",
-            f"{i1}static void run(hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>>& s, value_type* out, int n) {{",
+            f"{i1}static void run(hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>>& s, value_type* out, streamutils::tlast_status& tl, int n) {{",
             f"{i2}#pragma HLS INLINE",
+            f"{i2}tl = streamutils::tlast_status::no_tlast;",
         ])
         if pfv >= 2:
-            lines.append(f"{i2}ap_uint<{bw}> w = s.read().data;")
+            lines.append(f"{i2}auto axis_word = s.read();")
+            lines.append(f"{i2}ap_uint<{bw}> w = axis_word.data;")
             for j in range(pfv):
                 lo = j * elem_bw
                 hi = lo + elem_bw - 1
@@ -630,15 +633,22 @@ def _gen_read_axi4_stream_elem_specializations(
                 lines.append(f"{i2}if (n > {j}) {{")
                 lines.append(f"{i3}out[{j}] = {rhs_expr};")
                 lines.append(f"{i2}}}")
+            lines.append(f"{i2}if (axis_word.last) {{")
+            lines.append(f"{i3}tl = streamutils::tlast_status::tlast_at_end;")
+            lines.append(f"{i2}}}")
         else:
             if elem_bw <= bw:
                 lines.append(f"{i2}if (n > 0) {{")
-                lines.append(f"{i3}ap_uint<{bw}> w = s.read().data;")
+                lines.append(f"{i3}auto axis_word = s.read();")
+                lines.append(f"{i3}ap_uint<{bw}> w = axis_word.data;")
                 lines.append(f"{i3}out[0] = {elem_type.from_uint_expr('w')};")
+                lines.append(f"{i3}if (axis_word.last) {{")
+                lines.append(f"{i3}    tl = streamutils::tlast_status::tlast_at_end;")
+                lines.append(f"{i3}}}")
                 lines.append(f"{i2}}}")
             else:
                 lines.append(f"{i2}if (n > 0) {{")
-                lines.append(f"{i3}out[0].template read_axi4_stream<{bw}>(s);")
+                lines.append(f"{i3}out[0].template read_axi4_stream<{bw}>(s, tl);")
                 lines.append(f"{i2}}}")
         lines.extend([
             f"{i1}}}",
@@ -648,9 +658,16 @@ def _gen_read_axi4_stream_elem_specializations(
     lines.extend([
         "",
         "template<int word_bw>",
+        f"{indent}inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], streamutils::tlast_status& tl, int n = pf<word_bw>()) {{",
+        f"{i1}#pragma HLS INLINE",
+        f"{i1}read_axi4_stream_elem_impl<word_bw>::run(s, out, tl, n);",
+        f"{indent}}}",
+        "",
+        "template<int word_bw>",
         f"{indent}inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {{",
         f"{i1}#pragma HLS INLINE",
-        f"{i1}read_axi4_stream_elem_impl<word_bw>::run(s, out, n);",
+        f"{i1}streamutils::tlast_status tl = streamutils::tlast_status::no_tlast;",
+        f"{i1}read_axi4_stream_elem<word_bw>(s, out, tl, n);",
         f"{indent}}}",
     ])
 
@@ -1024,6 +1041,7 @@ def _gen_stream_elem_helpers(
     indent = elem_type._get_indent(indent_level)
     i1 = elem_type._get_indent(indent_level + 1)
     i2 = elem_type._get_indent(indent_level + 2)
+    i3 = elem_type._get_indent(indent_level + 3)
     elem_bw = elem_type.get_bitwidth()
 
     lines = [
@@ -1080,15 +1098,32 @@ def _gen_stream_elem_helpers(
         f"{indent}}}",
         "",
         "template<int word_bw>",
-        f"{indent}inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, int len) {{",
+        f"{indent}inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, streamutils::tlast_status& tl, int len) {{",
         f"{i1}#pragma HLS INLINE",
+        f"{i1}tl = streamutils::tlast_status::no_tlast;",
         f"{i1}if (dst == nullptr || len <= 0) {{",
         f"{i2}return;",
         f"{i1}}}",
-        f"{i1}for (int i = 0; i < len; i += pf<word_bw>()) {{",
-        f"{i2}read_axi4_stream_elem<word_bw>(s, dst + i, len - i);",
+        f"{i1}for (int i = 0; i < len && tl == streamutils::tlast_status::no_tlast; i += pf<word_bw>()) {{",
+        f"{i2}streamutils::tlast_status lane_tl = streamutils::tlast_status::no_tlast;",
+        f"{i2}read_axi4_stream_elem<word_bw>(s, dst + i, lane_tl, len - i);",
+        f"{i2}if (lane_tl == streamutils::tlast_status::tlast_early) {{",
+        f"{i3}tl = lane_tl;",
+        f"{i3}return;",
+        f"{i2}}}",
+        f"{i2}if (lane_tl == streamutils::tlast_status::tlast_at_end) {{",
+        f"{i3}tl = (i + pf<word_bw>() >= len) ? streamutils::tlast_status::tlast_at_end : streamutils::tlast_status::tlast_early;",
+        f"{i3}return;",
+        f"{i2}}}",
         f"{i1}}}",
         f"{indent}}}",
+        "",
+        "template<int word_bw>",
+        f"{indent}inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, int len) {{",
+        f"{i1}#pragma HLS INLINE",
+        f"{i1}streamutils::tlast_status tl = streamutils::tlast_status::no_tlast;",
+        f"{i1}read_axi4_stream<word_bw>(s, dst, tl, len);",
+        f"{i1}}}",
         "",
         "template<int word_bw>",
         f"{indent}inline void write_stream(hls::stream<ap_uint<word_bw>>& s, const value_type* src, int len) {{",

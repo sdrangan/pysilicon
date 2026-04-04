@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from pysilicon.build.build import CodeGenConfig
+from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw import (
     DataArray as PublicDataArray,
     DataField as PublicDataField,
@@ -537,9 +538,10 @@ def test_datalist_gen_include_emits_read_helpers_when_requested(tmp_path: Path):
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
     assert "void read_stream(hls::stream<ap_uint<word_bw>> &s) {" in content
+    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, streamutils::tlast_status &tl) {" in content
     assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
     assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
-    assert "w = s.read().data;" in content
+    assert "last = axis_word.last;" in content
 
 
 def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path: Path):
@@ -622,6 +624,18 @@ def test_gen_include_overwrites_existing_file(tmp_path: Path):
 
     assert written_path == out_path
     assert "stale" not in out_path.read_text(encoding="utf-8")
+
+
+def test_copy_streamutils_hls_emits_tlast_status_enum(tmp_path: Path):
+    copy_streamutils(CodeGenConfig(root_dir=tmp_path))
+    content = (tmp_path / "streamutils_hls.h").read_text(encoding="utf-8")
+
+    assert "enum class tlast_status {" in content
+    assert "struct tlast_status_info {" in content
+    assert '"no_tlast",' in content
+    assert "no_tlast," in content
+    assert "tlast_at_end," in content
+    assert "tlast_early," in content
 
 
 def test_primitive_field_pack_unpack_helpers_are_empty():
@@ -725,9 +739,14 @@ def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
 def test_datalist_gen_read_axi4_stream_uses_data_field():
     content = Packet.gen_read(word_bw=32, src_type="axi4_stream")
 
+    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, streamutils::tlast_status &tl) {" in content
     assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
     assert "ap_uint<32> w = 0;" in content
-    assert "w = s.read().data;" in content
+    assert "tl = streamutils::tlast_status::no_tlast;" in content
+    assert "auto axis_word = s.read();" in content
+    assert "w = axis_word.data;" in content
+    assert "last = axis_word.last;" in content
+    assert "tl = streamutils::tlast_status::tlast_at_end;" in content
     assert "self->gain = streamutils::uint_to_float((uint32_t)(w));" in content
 
 

@@ -461,6 +461,8 @@ class DataSchema(ABC):
             wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, x{call_suffix});"
             source = "x"
             unsupported_msg = "Unsupported word_bw for read_array"
+            compat_wrapper_signature = None
+            compat_wrapper_call = None
         elif src_type == "stream":
             impl_name = "read_stream_impl"
             wrapper_signature = (
@@ -471,15 +473,23 @@ class DataSchema(ABC):
             wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s{call_suffix});"
             source = "s"
             unsupported_msg = "Unsupported word_bw for read_stream"
+            compat_wrapper_signature = None
+            compat_wrapper_call = None
         else:
             impl_name = "read_axi4_stream_impl"
             wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
-                f"{indent}void read_axi4_stream(" 
+                f"{indent}void read_axi4_stream("
+                f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, streamutils::tlast_status &tl{suffix}) {{"
+            )
+            compat_wrapper_signature = (
+                f"{indent}template<int word_bw>\n"
+                f"{indent}void read_axi4_stream("
                 f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s{suffix}) {{"
             )
-            impl_signature = "hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>> &s"
-            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s{call_suffix});"
+            impl_signature = "hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>> &s, streamutils::tlast_status &tl"
+            wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s, tl{call_suffix});"
+            compat_wrapper_call = f"{i1}streamutils::tlast_status tl = streamutils::tlast_status::no_tlast;\n{i1}read_axi4_stream<word_bw>(s, tl{call_suffix});"
             source = "s"
             unsupported_msg = "Unsupported word_bw for read_axi4_stream"
 
@@ -491,6 +501,8 @@ class DataSchema(ABC):
         ]
         for base_name in [source, *param_names]:
             lines.append(f"{i1}(void){base_name};")
+        if src_type == "axi4_stream":
+            lines.append(f"{i1}(void)tl;")
         lines.append(f"{indent}}}")
 
         for bw in word_bw_supported:
@@ -501,6 +513,9 @@ class DataSchema(ABC):
 
             if src_type in {"stream", "axi4_stream"}:
                 lines.append(f"{i2}ap_uint<{bw}> w = 0;")
+            if src_type == "axi4_stream":
+                lines.append(f"{i2}tl = streamutils::tlast_status::no_tlast;")
+                lines.append(f"{i2}bool last = false;")
 
             final_lines, _, _ = cls._gen_read_recursive(
                 word_bw=bw,
@@ -516,6 +531,13 @@ class DataSchema(ABC):
                     line = line[4:]
                 lines.append(f"{i1}{line}" if line else "")
 
+            if src_type == "axi4_stream":
+                lines.extend([
+                    f"{i1}if (last) {{",
+                    f"{i2}tl = streamutils::tlast_status::tlast_at_end;",
+                    f"{i1}}}",
+                ])
+
             lines.append(f"{indent}}}")
 
         lines.extend([
@@ -524,6 +546,13 @@ class DataSchema(ABC):
             wrapper_call.replace(f"{impl_name}<word_bw>::run(", f"{impl_name}(word_bw_tag<word_bw>{{}}, "),
             f"{indent}}}",
         ])
+        if compat_wrapper_signature is not None and compat_wrapper_call is not None:
+            lines.extend([
+                "",
+                *compat_wrapper_signature.splitlines(),
+                *compat_wrapper_call.splitlines(),
+                f"{indent}}}",
+            ])
         return "\n".join(lines)
 
     @classmethod
@@ -1084,7 +1113,17 @@ class DataField(DataSchema):
         if src_type == "stream" and curr_ipos == 0:
             lines.append(f"    w = {source}.read();")
         elif src_type == "axi4_stream" and curr_ipos == 0:
-            lines.append(f"    w = {source}.read().data;")
+            lines.extend([
+                "    if (last) {",
+                "        tl = streamutils::tlast_status::tlast_early;",
+                "        return;",
+                "    }",
+                "    {",
+                f"        auto axis_word = {source}.read();",
+                "        w = axis_word.data;",
+                "        last = axis_word.last;",
+                "    }",
+            ])
 
         word_expr = f"{source}[{curr_iword}]" if src_type == "array" else "w"
 
@@ -2024,7 +2063,8 @@ class DataList(DataSchema):
         curr_ipos = ipos0
         curr_iword = iword0
 
-        for name, schema_cls in cls._iter_element_schemas():
+        element_schemas = cls._iter_element_schemas()
+        for idx, (name, schema_cls) in enumerate(element_schemas):
             if issubclass(schema_cls, DataList):
                 elem_prefix = f"{prefix}{name}."
                 elem_member_name = None
@@ -2061,7 +2101,8 @@ class DataList(DataSchema):
         curr_ipos = ipos0
         curr_iword = iword0
 
-        for name, schema_cls in cls._iter_element_schemas():
+        element_schemas = cls._iter_element_schemas()
+        for idx, (name, schema_cls) in enumerate(element_schemas):
             if issubclass(schema_cls, DataList):
                 elem_prefix = f"{prefix}{name}."
                 elem_member_name = None
@@ -2079,6 +2120,13 @@ class DataList(DataSchema):
                 member_name=elem_member_name,
             )
             lines.extend(elem_lines)
+
+            if src_type == "axi4_stream":
+                lines.append("    if (tl != streamutils::tlast_status::no_tlast) {")
+                if idx < len(element_schemas) - 1:
+                    lines.append("        tl = streamutils::tlast_status::tlast_early;")
+                lines.append("        return;")
+                lines.append("    }")
 
         return lines, curr_ipos, curr_iword
 
@@ -3028,7 +3076,11 @@ class DataArray(DataSchema):
         if pf >= 2:
             if ndims == 1:
                 n0_eff = n_eff_names[0]
-                lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
+                if src_type == "axi4_stream":
+                    lines.append("    int i = 0;")
+                    lines.append(f"    for (; i < {n0_eff}; i += {pf}) {{")
+                else:
+                    lines.append(f"    for (int i = 0; i < {n0_eff}; i += {pf}) {{")
                 lines.append("        #pragma HLS PIPELINE II=1")
                 if src_type == "array":
                     lines.append(f"        ap_uint<{word_bw}> w = {source}[in_idx++];")
@@ -3036,7 +3088,14 @@ class DataArray(DataSchema):
                     lines.append(f"        w = {source}.read();")
                     lines.append("        in_idx++;")
                 else:
-                    lines.append(f"        w = {source}.read().data;")
+                    lines.append("        if (last) {")
+                    lines.append("            break;")
+                    lines.append("        }")
+                    lines.append("        {")
+                    lines.append(f"            auto axis_word = {source}.read();")
+                    lines.append("            w = axis_word.data;")
+                    lines.append("            last = axis_word.last;")
+                    lines.append("        }")
                     lines.append("        in_idx++;")
                 for j in range(pf):
                     lo = j * elem_bw
@@ -3047,19 +3106,44 @@ class DataArray(DataSchema):
                         f"            {cls._element_expr(prefix=prefix, member_name=member_name, idx_names=[f'i + {j}'])} = {rhs_expr};"
                     )
                     lines.append("        }")
+                if src_type == "axi4_stream":
+                    lines.append("        if (last) {")
+                    lines.append("            break;")
+                    lines.append("        }")
                 lines.append("    }")
+                if src_type == "axi4_stream":
+                    lines.append(f"    if ((i + {pf}) < {n0_eff}) {{")
+                    lines.append("        tl = streamutils::tlast_status::tlast_early;")
+                    lines.append("        return;")
+                    lines.append("    }")
                 next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
                 return lines, 0, next_iword
 
             lines.insert(len(n_eff_names) + (2 if src_type != "array" else 1), "    int elem_idx = 0;")
+            if src_type == "axi4_stream":
+                lines.insert(len(n_eff_names) + (3 if src_type != "array" else 2), "    bool stop = false;")
             for d in range(ndims):
-                lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+                loop_cond = f"{idx_names[d]} < {n_eff_names[d]}"
+                if src_type == "axi4_stream":
+                    loop_cond += " && !stop"
+                lines.append(f"    for (int {idx_names[d]} = 0; {loop_cond}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
             lines.append(f"{body_indent}const int slot = (elem_idx % {pf});")
             if src_type == "stream":
                 lines.append(f"{body_indent}if (slot == 0) {{ w = {source}.read(); }}")
             elif src_type == "axi4_stream":
-                lines.append(f"{body_indent}if (slot == 0) {{ w = {source}.read().data; }}")
+                lines.append(f"{body_indent}if (slot == 0) {{")
+                lines.append(f"{body_indent}    if (last) {{")
+                lines.append(f"{body_indent}        stop = true;")
+                lines.append(f"{body_indent}    }} else {{")
+                lines.append(f"{body_indent}        auto axis_word = {source}.read();")
+                lines.append(f"{body_indent}        w = axis_word.data;")
+                lines.append(f"{body_indent}        last = axis_word.last;")
+                lines.append(f"{body_indent}    }}")
+                lines.append(f"{body_indent}}}")
+                lines.append(f"{body_indent}if (stop) {{")
+                lines.append(f"{body_indent}    break;")
+                lines.append(f"{body_indent}}}")
             for j in range(pf):
                 lo = j * elem_bw
                 hi = lo + elem_bw - 1
@@ -3072,6 +3156,11 @@ class DataArray(DataSchema):
             lines.append(f"{body_indent}if (slot == {pf - 1}) {{ in_idx++; }}")
             for d in range(ndims):
                 lines.append(f"{'    ' * (ndims - d)}}}")
+            if src_type == "axi4_stream":
+                lines.append("    if (stop) {")
+                lines.append("        tl = streamutils::tlast_status::tlast_early;")
+                lines.append("        return;")
+                lines.append("    }")
             lines.append(f"    if (({n_total_expr}) > 0 && (({n_total_expr}) % {pf}) != 0) {{")
             lines.append("        in_idx++;")
             lines.append("    }")
@@ -3079,8 +3168,14 @@ class DataArray(DataSchema):
             return lines, 0, next_iword
 
         if pf == 1:
+            if src_type == "axi4_stream":
+                lines.insert(len(n_eff_names) + 1, "    int elem_idx = 0;")
+                lines.insert(len(n_eff_names) + 2, "    bool stop = false;")
             for d in range(ndims):
-                lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+                loop_cond = f"{idx_names[d]} < {n_eff_names[d]}"
+                if src_type == "axi4_stream":
+                    loop_cond += " && !stop"
+                lines.append(f"    for (int {idx_names[d]} = 0; {loop_cond}; ++{idx_names[d]}) {{")
             body_indent = "    " * (ndims + 1)
             if src_type == "array":
                 lines.append(f"{body_indent}{assign_from_uint(f'{source}[in_idx]')}")
@@ -3090,11 +3185,24 @@ class DataArray(DataSchema):
                 lines.append(f"{body_indent}{assign_from_uint('w')}")
                 lines.append(f"{body_indent}in_idx++;")
             else:
-                lines.append(f"{body_indent}w = {source}.read().data;")
+                lines.append(f"{body_indent}{{")
+                lines.append(f"{body_indent}    auto axis_word = {source}.read();")
+                lines.append(f"{body_indent}    w = axis_word.data;")
+                lines.append(f"{body_indent}    last = axis_word.last;")
+                lines.append(f"{body_indent}}}")
                 lines.append(f"{body_indent}{assign_from_uint('w')}")
                 lines.append(f"{body_indent}in_idx++;")
+                lines.append(f"{body_indent}elem_idx++;")
+                lines.append(f"{body_indent}if (last && elem_idx < ({n_total_expr})) {{")
+                lines.append(f"{body_indent}    stop = true;")
+                lines.append(f"{body_indent}}}")
             for d in range(ndims):
                 lines.append(f"{'    ' * (ndims - d)}}}")
+            if src_type == "axi4_stream":
+                lines.append("    if (stop) {")
+                lines.append("        tl = streamutils::tlast_status::tlast_early;")
+                lines.append("        return;")
+                lines.append("    }")
             next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0
             return lines, 0, next_iword
 
@@ -3104,7 +3212,10 @@ class DataArray(DataSchema):
                 "DataField elements cannot be split across words."
             )
         for d in range(ndims):
-            lines.append(f"    for (int {idx_names[d]} = 0; {idx_names[d]} < {n_eff_names[d]}; ++{idx_names[d]}) {{")
+            loop_cond = f"{idx_names[d]} < {n_eff_names[d]}"
+            if src_type == "axi4_stream":
+                loop_cond += " && tl == streamutils::tlast_status::no_tlast"
+            lines.append(f"    for (int {idx_names[d]} = 0; {loop_cond}; ++{idx_names[d]}) {{")
         body_indent = "    " * (ndims + 1)
         if src_type == "array":
             lines.append(f"{body_indent}{elem_expr}.template read_array<{word_bw}>(&{source}[in_idx]);")
@@ -3113,8 +3224,16 @@ class DataArray(DataSchema):
             lines.append(f"{body_indent}{elem_expr}.template read_stream<{word_bw}>({source});")
             lines.append(f"{body_indent}in_idx += {words_per_elem};")
         else:
-            lines.append(f"{body_indent}{elem_expr}.template read_axi4_stream<{word_bw}>({source});")
+            lines.append(f"{body_indent}streamutils::tlast_status elem_tl = streamutils::tlast_status::no_tlast;")
+            lines.append(f"{body_indent}{elem_expr}.template read_axi4_stream<{word_bw}>({source}, elem_tl);")
             lines.append(f"{body_indent}in_idx += {words_per_elem};")
+            lines.append(f"{body_indent}if (elem_tl == streamutils::tlast_status::tlast_early) {{")
+            lines.append(f"{body_indent}    tl = elem_tl;")
+            lines.append(f"{body_indent}    return;")
+            lines.append(f"{body_indent}}}")
+            lines.append(f"{body_indent}if (elem_tl == streamutils::tlast_status::tlast_at_end) {{")
+            lines.append(f"{body_indent}    tl = elem_tl;")
+            lines.append(f"{body_indent}}}")
         for d in range(ndims):
             lines.append(f"{'    ' * (ndims - d)}}}")
         next_iword = start_iword + cls.nwords_per_inst(word_bw) if cls.static else iword0

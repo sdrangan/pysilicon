@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from enum import IntEnum
 from pathlib import Path
@@ -18,32 +19,46 @@ from pysilicon.toolchain import toolchain
 EXAMPLE_DIR = Path(__file__).resolve().parent
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
-U16 = IntField.specialize(bitwidth=16, signed=False)
+TxIdField = IntField.specialize(bitwidth=16, signed=False)
+NsampField = IntField.specialize(bitwidth=16, signed=False)
 Float32 = FloatField.specialize(bitwidth=32, include_dir=INCLUDE_DIR)
 
 """
 Define the data schemas for the polynomial accelerator
 """
 
+# Error codes for polynomial evaluation results
 class PolyError(IntEnum):
     NO_ERROR = 0
-    WRONG_NSAMP = 1
-
-
+    TLAST_EARLY_CMD_HDR = 1  # TLAST was asserted before the full command header was received
+    NO_TLAST_CMD_HDR = 2  # The full command header was received but TLAST was never asserted
+    TLAST_EARLY_SAMP_IN = 3  # TLAST was asserted before all input samples were received
+    NO_TLAST_SAMP_IN = 4  # All input samples were received but TLAST was never asserted
+    WRONG_NSAMP = 5  # The number of samples received does not match the expected number
 PolyErrorField = EnumField.specialize(enum_type=PolyError, include_dir=INCLUDE_DIR)
 
 
+
 class CoeffArray(DataArray):
+    """
+    Array of polynomial coefficients, stored in ascending order (constant term first).
+    For example, for a cubic polynomial c0 + c1*x + c2*x^2 + c3*x^3, the array would be [c0, c1, c2, c3].
+    """
+    ncoeff: int = 4
     element_type = Float32
     static = True
-    max_shape = (4,)
+    max_shape = (ncoeff,)
     include_dir = INCLUDE_DIR
 
 
 class PolyCmdHdr(DataList):
+    """
+    Command header sent to the accelerator, containing the transaction ID, polynomial coefficients, and number of samples.
+    The accelerator expects to receive exactly `nsamp` input samples after the command header, and will return `nsamp` output samples.
+    """
     elements = {
         "tx_id": {
-            "schema": U16,
+            "schema": TxIdField,
             "description": "Transaction ID",
         },
         "coeffs": {
@@ -51,7 +66,7 @@ class PolyCmdHdr(DataList):
             "description": "Polynomial coefficients",
         },
         "nsamp": {
-            "schema": U16,
+            "schema": NsampField,
             "description": "Number of samples",
         },
     }
@@ -59,9 +74,14 @@ class PolyCmdHdr(DataList):
 
 
 class PolyRespHdr(DataList):
+    """
+    Response header sent back from the accelerator, containing an echo of the transaction ID from the command header.
+    This allows the host to correlate responses with the commands that generated them, which is especially important if
+    the accelerator is processing multiple commands concurrently.
+    """
     elements = {
         "tx_id": {
-            "schema": U16,
+            "schema": TxIdField,
             "description": "Echo of the transaction ID sent in the command",
         },
     }
@@ -69,9 +89,12 @@ class PolyRespHdr(DataList):
 
 
 class PolyRespFtr(DataList):
+    """
+    Response footer sent back from the accelerator, containing the number of samples read and any error codes.
+    """
     elements = {
         "nsamp_read": {
-            "schema": U16,
+            "schema": NsampField,
             "description": "Number of samples returned in the response",
         },
         "error": {
@@ -178,6 +201,20 @@ def check_vitis_outputs(
         raise RuntimeError("Response footer mismatch after Vitis C-simulation.")
     if not np.allclose(got_samp_out, expected_samp_out[: got_samp_out.size], rtol=1e-6, atol=1e-6):
         raise RuntimeError("Sample output mismatch after Vitis C-simulation.")
+
+    sync_status_path = data_dir / "sync_status.json"
+    if sync_status_path.exists():
+        sync_status = json.loads(sync_status_path.read_text(encoding="utf-8"))
+        expected_sync = {
+            "resp_hdr_tlast": "tlast_at_end",
+            "samp_out_tlast": "tlast_at_end",
+            "resp_ftr_tlast": "tlast_at_end",
+        }
+        if sync_status != expected_sync:
+            raise RuntimeError(
+                "Output-stream TLAST synchronization mismatch after Vitis C-simulation. "
+                f"Expected {expected_sync}, got {sync_status}."
+            )
 
 
 def maybe_plot(cmd_hdr: PolyCmdHdr, samp_in: npt.NDArray[np.float32], samp_out: npt.NDArray[np.float32]) -> None:
