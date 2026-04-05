@@ -632,6 +632,7 @@ def test_copy_streamutils_hls_emits_tlast_status_enum(tmp_path: Path):
 
     assert "enum class tlast_status {" in content
     assert "struct tlast_status_info {" in content
+    assert "void flush_axi4_stream_to_tlast(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s) {" in content
     assert '"no_tlast",' in content
     assert "no_tlast," in content
     assert "tlast_at_end," in content

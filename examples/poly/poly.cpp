@@ -13,17 +13,6 @@ static float eval_poly_horner(const float coeff[4], float x) {
     y = y * x + coeff[0];
     return y;
 }
-
-
-static void flush_input_to_tlast(hls::stream<axis_word_t>& in_stream) {
-    bool done = false;
-    while (!done) {
-#pragma HLS PIPELINE II=1
-        axis_word_t axis_word = in_stream.read();
-        done = axis_word.last;
-    }
-}
-
 void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream) {
 #pragma HLS INTERFACE axis port=in_stream
 #pragma HLS INTERFACE axis port=out_stream
@@ -103,7 +92,7 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
     // If TLAST has not yet been seen for a malformed input message, drain words until the
     // next TLAST boundary so the following transaction starts aligned on the input stream.
     if (need_flush) {
-        flush_input_to_tlast(in_stream);
+        streamutils::flush_axi4_stream_to_tlast<WORD_BW>(in_stream);
     }
 
     // Terminate the response footer with TLAST so the test bench can detect the end of

@@ -67,6 +67,20 @@ namespace streamutils {
         s.write(pkt);
     }
 
+    /**
+     * Reads and discards AXI4-Stream words until a TLAST-terminated word is seen.
+     * Useful for resynchronizing to the next packet boundary after a framing error.
+     */
+    template<int W>
+    void flush_axi4_stream_to_tlast(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s) {
+        bool done = false;
+        while (!done) {
+#pragma HLS PIPELINE II=1
+            hls::axis<ap_uint<W>, 0, 0, 0> pkt = s.read();
+            done = pkt.last;
+        }
+    }
+
 } // namespace streamutils
 
 #endif // STREAMUTILS_HLS_H
