@@ -751,6 +751,18 @@ def test_datalist_gen_read_axi4_stream_uses_data_field():
     assert "self->gain = streamutils::uint_to_float((uint32_t)(w));" in content
 
 
+def test_dataarray_gen_read_axi4_stream_nested_schema_avoids_return_in_loop():
+    PacketArray = DataArray.specialize(element_type=Packet, max_shape=(2,), member_name="pkt")
+
+    content = PacketArray.gen_read(word_bw=32, src_type="axi4_stream")
+
+    assert "int elem_count = 0;" in content
+    assert "bool stop = false;" in content
+    assert "for (int i0 = 0; i0 < n0_eff && !stop; ++i0) {" in content
+    assert "stop = true;" in content
+    assert "tl = (elem_count < (n0_eff)) ? streamutils::tlast_status::tlast_early : streamutils::tlast_status::tlast_at_end;" in content
+
+
 def test_gen_read_requires_word_width_configuration():
     with pytest.raises(ValueError, match="word_bw must be provided"):
         Packet.gen_read()

@@ -3211,10 +3211,13 @@ class DataArray(DataSchema):
                 f"Array element '{elem_type.__name__}' has bitwidth {elem_bw} > word_bw={word_bw}; "
                 "DataField elements cannot be split across words."
             )
+        if src_type == "axi4_stream":
+            lines.append("    int elem_count = 0;")
+            lines.append("    bool stop = false;")
         for d in range(ndims):
             loop_cond = f"{idx_names[d]} < {n_eff_names[d]}"
             if src_type == "axi4_stream":
-                loop_cond += " && tl == streamutils::tlast_status::no_tlast"
+                loop_cond += " && !stop"
             lines.append(f"    for (int {idx_names[d]} = 0; {loop_cond}; ++{idx_names[d]}) {{")
         body_indent = "    " * (ndims + 1)
         if src_type == "array":
@@ -3227,12 +3230,16 @@ class DataArray(DataSchema):
             lines.append(f"{body_indent}streamutils::tlast_status elem_tl = streamutils::tlast_status::no_tlast;")
             lines.append(f"{body_indent}{elem_expr}.template read_axi4_stream<{word_bw}>({source}, elem_tl);")
             lines.append(f"{body_indent}in_idx += {words_per_elem};")
+            lines.append(f"{body_indent}elem_count++;")
             lines.append(f"{body_indent}if (elem_tl == streamutils::tlast_status::tlast_early) {{")
             lines.append(f"{body_indent}    tl = elem_tl;")
-            lines.append(f"{body_indent}    return;")
+            lines.append(f"{body_indent}    stop = true;")
             lines.append(f"{body_indent}}}")
             lines.append(f"{body_indent}if (elem_tl == streamutils::tlast_status::tlast_at_end) {{")
-            lines.append(f"{body_indent}    tl = elem_tl;")
+            lines.append(
+                f"{body_indent}    tl = (elem_count < ({n_total_expr})) ? streamutils::tlast_status::tlast_early : streamutils::tlast_status::tlast_at_end;"
+            )
+            lines.append(f"{body_indent}    stop = true;")
             lines.append(f"{body_indent}}}")
         for d in range(ndims):
             lines.append(f"{'    ' * (ndims - d)}}}")

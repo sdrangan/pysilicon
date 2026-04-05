@@ -182,6 +182,51 @@ def run_vitis(example_dir: Path) -> subprocess.CompletedProcess[str]:
     return toolchain.run_vitis_hls(example_dir / "run.tcl", work_dir=example_dir)
 
 
+def report_vitis_synthesis(example_dir: Path) -> None:
+    try:
+        from pysilicon.utils.csynthparse import CsynthParser
+    except ModuleNotFoundError as exc:
+        print(f"Skipping csynth report parsing: {exc}")
+        return
+
+    sol_path = example_dir / "pysilicon_poly_proj" / "solution1"
+    if not sol_path.exists():
+        print(f"Skipping csynth report parsing: solution directory not found at {sol_path}")
+        return
+
+    try:
+        parser = CsynthParser(sol_path=str(sol_path))
+        parser.get_loop_pipeline_info()
+        parser.get_resources()
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Skipping csynth report parsing: {exc}")
+        return
+
+    print("\nLatency and Initiation Interval:")
+    if parser.loop_df.empty:
+        print("No loop pipeline information found in csynth.xml.")
+    else:
+        print(parser.loop_df.to_string())
+        non_unit_ii = parser.loop_df[
+            parser.loop_df["PipelineII"].apply(lambda value: isinstance(value, (int, np.integer)) and value > 1)
+        ]
+        if non_unit_ii.empty:
+            print("All reported loops have PipelineII <= 1.")
+        else:
+            print("Loops with PipelineII > 1:")
+            print(non_unit_ii.to_string())
+            raise RuntimeError(
+                "Vitis synthesis produced loops with PipelineII > 1. "
+                "See the loop pipeline report above."
+            )
+
+    print("\nResource Usage:")
+    if parser.res_df.empty:
+        print("No resource information found in csynth.xml.")
+    else:
+        print(parser.res_df.to_string())
+
+
 def check_vitis_outputs(
     data_dir: Path,
     expected_resp_hdr: PolyRespHdr,
@@ -263,6 +308,7 @@ def main() -> None:
         return
 
     check_vitis_outputs(data_dir, resp_hdr, samp_out, resp_ftr)
+    report_vitis_synthesis(EXAMPLE_DIR)
     if result.stdout:
         print(result.stdout)
     if result.stderr:
