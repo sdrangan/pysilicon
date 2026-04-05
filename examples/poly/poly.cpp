@@ -49,11 +49,12 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
 #pragma HLS ARRAY_PARTITION variable=x_lane complete dim=1
 #pragma HLS ARRAY_PARTITION variable=y_lane complete dim=1
 
-    // Read input samples, evaluate the polynomial lane-by-lane, and stream the results
-    // back out.  TLAST on the sample payload must appear only on the final expected word.
+    // Read the sample-data burst, evaluate the polynomial lane-by-lane, and stream the
+    // results back out.  The command header and sample payload are now separate TLAST-
+    // terminated bursts on the input stream.
     int nsamp_read = 0;
     streamutils::tlast_status samp_in_tlast = streamutils::tlast_status::no_tlast;
-    bool read_samples = (cmd_hdr_tlast == streamutils::tlast_status::no_tlast) && (cmd_hdr.nsamp > 0);
+    bool read_samples = (cmd_hdr_tlast == streamutils::tlast_status::tlast_at_end) && (cmd_hdr.nsamp > 0);
     for (int i = 0; i < cmd_hdr.nsamp && read_samples; i += pf) {
         const int nrem = cmd_hdr.nsamp - i;
         const int lane_count = (nrem < pf) ? nrem : pf;
@@ -85,14 +86,11 @@ void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
     bool need_flush = false;
     if (cmd_hdr_tlast == streamutils::tlast_status::tlast_early) {
         resp_ftr.error = PolyError::TLAST_EARLY_CMD_HDR;
+    } else if (cmd_hdr_tlast == streamutils::tlast_status::no_tlast) {
+        resp_ftr.error = PolyError::NO_TLAST_CMD_HDR;
+        need_flush = true;
     } else if (cmd_hdr.nsamp == 0) {
         resp_ftr.nsamp_read = 0;
-        if (cmd_hdr_tlast == streamutils::tlast_status::no_tlast) {
-            resp_ftr.error = PolyError::NO_TLAST_CMD_HDR;
-            need_flush = true;
-        }
-    } else if (cmd_hdr_tlast == streamutils::tlast_status::tlast_at_end) {
-        resp_ftr.error = PolyError::TLAST_EARLY_SAMP_IN;
     } else if (samp_in_tlast == streamutils::tlast_status::tlast_early) {
         resp_ftr.error = PolyError::TLAST_EARLY_SAMP_IN;
     } else if (samp_in_tlast == streamutils::tlast_status::no_tlast) {

@@ -24,12 +24,12 @@ int main(int argc, char** argv) {
     hls::stream<axis_word_t> in_stream;
     hls::stream<axis_word_t> out_stream;
 
-    // Push the command header without TLAST. The sample payload follows in the same input stream.
-    cmd_hdr.write_axi4_stream<WORD_BW>(in_stream, false);
+    // Push the command header as its own TLAST-terminated burst.
+    cmd_hdr.write_axi4_stream<WORD_BW>(in_stream, true);
 
-    // Push the input samples to the accelerator.  To support wide bitwidths, we push the samples in
-    // chunks of pf samples at a time, where pf is the number of float32 values that fit in WORD_BW bits.
-    // Also, the last of the samples is marked with TLAST to indicate the end of the input sample stream.
+    // Push the sample payload as a second TLAST-terminated burst.  To support wide bitwidths,
+    // we push the samples in chunks of pf samples at a time, where pf is the number of float32
+    // values that fit in WORD_BW bits.
     static const int pf = float32_array_utils::pf<WORD_BW>();
     for (int i = 0; i < nsamp; i += pf) {
         const int nrem = nsamp - i;
@@ -40,9 +40,8 @@ int main(int argc, char** argv) {
     // Run the accelerator
     poly(in_stream, out_stream);
 
-    // Read the response header and output samples from the accelerator.  
-    // Similar to the input sample stream, the output samples are read in chunks of pf at a time, 
-    // and the end of the stream is determined by checking for TLAST.
+    // Read the three output bursts from the accelerator: response header, sample payload,
+    // and response footer.  The sample payload is still read in chunks of pf words.
     PolyRespHdr resp_hdr;
     streamutils::tlast_status resp_hdr_tlast = streamutils::tlast_status::no_tlast;
     resp_hdr.read_axi4_stream<WORD_BW>(out_stream, resp_hdr_tlast);
