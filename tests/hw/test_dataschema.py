@@ -581,16 +581,16 @@ def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp
     content = out_path.read_text(encoding="utf-8")
     tb_content = (tmp_path / "packet_with_array_tb.h").read_text(encoding="utf-8")
 
-    assert "self->coeffs.coeff[i0_self_coeffs_1_0]" in content
-    assert "self->coeffs.coeff[i_self_coeffs_1_0 + 0]" in content
-    assert "self->coeffs.coeff[i0_self_coeffs_1_0] = streamutils::uint_to_float((uint32_t)(x[in_idx_self_coeffs_1_0]));" in content
+    assert "self->coeffs.coeff[i0]" in content
+    assert "self->coeffs.coeff[i + 0]" in content
+    assert "self->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
     assert "os << this->coeffs.coeff[i0];" in tb_content
     assert "this->coeffs.coeff[i0] =" in tb_content
     assert "streamutils::json_parse_number(json_text, pos)" in tb_content
-    assert "const int n0_eff_self_coeffs_1_0 = 4;" in content
-    assert "const int n0_eff = 4;" not in content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 1;" in content
     assert "const int total_words = (n0_eff + 2 - 1) / 2;" not in content
     assert "const bool last =" not in content
+    assert "n0_eff_self_" not in content
 
 
 def test_datalist_with_multiple_dataarray_fields_uses_unique_codegen_locals(tmp_path: Path):
@@ -600,14 +600,11 @@ def test_datalist_with_multiple_dataarray_fields_uses_unique_codegen_locals(tmp_
     )
     content = out_path.read_text(encoding="utf-8")
 
-    assert "const int n0_eff_self_a_0_0 = 4;" in content
-    assert "const int n0_eff_self_b_4_0 = 4;" in content
-    assert "const int n0_eff_self_uab_8_0 = 4;" in content
-    assert "int out_idx_self_a_0_0 = 0;" in content
-    assert "int out_idx_self_b_4_0 = 4;" in content
-    assert "int out_idx_self_uab_8_0 = 8;" in content
-    assert "const int n0_eff = 4;" not in content
-    assert "int out_idx = 0;" not in content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 0;\n            for (int i0 = 0; i0 < n0_eff; ++i0) {" in content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 4;\n            for (int i0 = 0; i0 < n0_eff; ++i0) {" in content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 8;\n            for (int i0 = 0; i0 < n0_eff; ++i0) {" in content
+    assert "n0_eff_self_" not in content
+    assert "out_idx_self_" not in content
 
 
 def test_gen_include_rejects_non_positive_word_widths():
@@ -782,11 +779,10 @@ def test_dataarray_gen_read_axi4_stream_nested_schema_avoids_return_in_loop():
 
     content = PacketArray.gen_read(word_bw=32, src_type="axi4_stream")
 
-    assert "int elem_count_self_0_0 = 0;" in content
-    assert "bool stop_self_0_0 = false;" in content
-    assert "for (int i0_self_0_0 = 0; i0_self_0_0 < n0_eff_self_0_0 && !stop_self_0_0; ++i0_self_0_0) {" in content
-    assert "stop_self_0_0 = true;" in content
-    assert "tl = (elem_count_self_0_0 < (n0_eff_self_0_0)) ? streamutils::tlast_status::tlast_early : streamutils::tlast_status::tlast_at_end;" in content
+    assert "    {\n        const int n0_eff = 2;\n        int in_idx = 0;\n        int elem_count = 0;\n        bool stop = false;" in content
+    assert "for (int i0 = 0; i0 < n0_eff && !stop; ++i0) {" in content
+    assert "stop = true;" in content
+    assert "tl = (elem_count < (n0_eff)) ? streamutils::tlast_status::tlast_early : streamutils::tlast_status::tlast_at_end;" in content
 
 
 def test_gen_read_requires_word_width_configuration():
