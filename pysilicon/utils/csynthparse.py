@@ -116,6 +116,27 @@ class CsynthParser(object):
 
             self.module_info = modules_info
 
+    @staticmethod
+    def _parse_int_or_nan(text):
+        if text is None:
+            return float("nan")
+        try:
+            return int(str(text).strip())
+        except (TypeError, ValueError):
+            return float("nan")
+
+    @classmethod
+    def _parse_latency_range(cls, latency_text):
+        if latency_text is None:
+            return float("nan"), float("nan")
+
+        parts = [part.strip() for part in str(latency_text).split("~")]
+        if len(parts) == 2:
+            return cls._parse_int_or_nan(parts[0]), cls._parse_int_or_nan(parts[1])
+
+        value = cls._parse_int_or_nan(latency_text)
+        return value, value
+
     def get_loop_pipeline_info(self):
         """
         Parse csynth.xml to get the pipeline initiation interval (II) and depth
@@ -139,6 +160,9 @@ class CsynthParser(object):
                 loop_name = loop.findtext("Name", default="UnnamedLoop").strip()
                 ii = loop.findtext("PipelineII")
                 depth = loop.findtext("PipelineDepth")
+                trip_count_min = loop.findtext("TripCount/range/min")
+                trip_count_max = loop.findtext("TripCount/range/max")
+                latency_min, latency_max = self._parse_latency_range(loop.findtext("Latency"))
 
                 # Convert to int if possible
                 try:
@@ -152,7 +176,11 @@ class CsynthParser(object):
 
                 loop_info[f"{module_name}:{loop_name}"] = {
                     "PipelineII": ii_val,
-                    "PipelineDepth": depth_val
+                    "PipelineDepth": depth_val,
+                    "TripCountMin": self._parse_int_or_nan(trip_count_min),
+                    "TripCountMax": self._parse_int_or_nan(trip_count_max),
+                    "LatencyMin": latency_min,
+                    "LatencyMax": latency_max,
                 }
 
         # Convert to a pandas DataFrame for easier handling

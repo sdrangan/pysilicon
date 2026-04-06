@@ -104,8 +104,8 @@ def test_poly_cmd_hdr_gen_read_axi4_stream_tracks_tlast_status():
     assert "bool last = false;" in content
     assert "auto axis_word = s.read();" in content
     assert "last = axis_word.last;" in content
-    assert "for (int i0 = 0; i0 < n0_eff && !stop; ++i0) {" in content
-    assert "if (last && elem_idx < (n0_eff)) {" in content
+    assert "for (int i0_self_coeffs_1_0 = 0; i0_self_coeffs_1_0 < n0_eff_self_coeffs_1_0 && !stop_self_coeffs_1_0; ++i0_self_coeffs_1_0) {" in content
+    assert "if (last && elem_idx_self_coeffs_1_0 < (n0_eff_self_coeffs_1_0)) {" in content
     assert "tl = streamutils::tlast_status::tlast_early;" in content
     assert "tl = streamutils::tlast_status::tlast_at_end;" in content
 
