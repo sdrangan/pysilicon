@@ -1,7 +1,7 @@
 ---
 title: Installing the VS Code Extension
 parent: Installation
-nav_order: 1
+nav_order: 2
 has_children: false
 ---
 
@@ -20,24 +20,20 @@ You will need:
 
 No Python virtual environment is required for the extension.
 
-To validate the NodeJS installation, open a terminal (e.g., Powershell on Windows or command terminal on Unix / MacOS):
+To validate the Node.js installation, open a terminal (e.g., PowerShell on Windows or a terminal on macOS/Linux):
 
 ```bash
-> node -v
-v24.14.0
-> npm -v
-11.9.0
+node -v
+npm -v
 ```
 
 The precise version numbers may change.
 
-If you are on Windows, you may get a permission denied.  In this case, open Powershell as administrator and run:
+If you are on Windows and get a permission error, open PowerShell as administrator and run:
 
-```bash
+```powershell
 Set-ExecutionPolicy RemoteSigned
 ```
-
-
 
 ---
 
@@ -45,11 +41,11 @@ Set-ExecutionPolicy RemoteSigned
 
 From the root of the repository:
 
-```
-cd pysilicon/pysilicon-extension
+```bash
+cd pysilicon-extension
 ```
 
-This folder contains the extension’s `package.json`, `tsconfig.json`, and TypeScript source files.
+This folder contains the extension's `package.json`, `tsconfig.json`, and TypeScript source files.
 
 ---
 
@@ -57,7 +53,7 @@ This folder contains the extension’s `package.json`, `tsconfig.json`, and Type
 
 Run:
 
-```
+```bash
 npm install
 npm install --save-dev @types/node
 ```
@@ -66,7 +62,7 @@ This installs:
 
 - TypeScript compiler
 - VS Code type definitions
-- Node type definitions (required for Buffer, process, etc.)
+- Node type definitions (required for `Buffer`, `process`, etc.)
 
 All dependencies are local to this folder. Nothing is installed globally.
 
@@ -76,13 +72,13 @@ All dependencies are local to this folder. Nothing is installed globally.
 
 To compile once:
 
-```
+```bash
 npm run compile
 ```
 
 To compile continuously while editing:
 
-```
+```bash
 npm run watch
 ```
 
@@ -98,11 +94,7 @@ Open the **root** PySilicon repository in VS Code:
 pysilicon/
 ```
 
-Then press:
-
-```
-F5
-```
+Then press **F5**.
 
 This opens a new VS Code window called **Extension Development Host** with the extension loaded.
 
@@ -115,16 +107,16 @@ In the Extension Development Host window:
 1. File → Open Folder…
 2. Select:
 
-```
-pysilicon/examples/vscodedemos/
-```
+   ```
+   pysilicon/examples/vscodedemos/
+   ```
 
 3. Open `myclass.py`
 4. Run the command:
 
-```
-PySilicon: Add Hello Method
-```
+   ```
+   PySilicon: Add Hello Method
+   ```
 
 The file should update in place.
 
@@ -135,15 +127,11 @@ The file should update in place.
 Edit files in:
 
 ```
-pysilicon/pysilicon-extension/src/
+pysilicon-extension/src/
 ```
 
-If you are running `npm run watch`, TypeScript rebuilds automatically.  
-Reload the Extension Development Host window with:
-
-```
-Ctrl+R
-```
+If you are running `npm run watch`, TypeScript rebuilds automatically.
+Reload the Extension Development Host window with **Ctrl+R**.
 
 Changes take effect immediately.
 
@@ -151,10 +139,10 @@ Changes take effect immediately.
 
 ## 8. Common commands
 
-```
-npm install          # install dependencies
-npm run compile      # build once
-npm run watch        # build continuously
-F5                   # launch Extension Development Host
-Ctrl+R               # reload extension in the host window
-```
+| Command | Description |
+|---|---|
+| `npm install` | Install dependencies |
+| `npm run compile` | Build once |
+| `npm run watch` | Build continuously |
+| **F5** | Launch Extension Development Host |
+| **Ctrl+R** | Reload extension in the host window |
