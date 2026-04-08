@@ -1,5 +1,5 @@
 """
-tests/test_timing.py - unit tests for pysilicon.utils.timing and the
+tests/utils/test_timing.py - unit tests for pysilicon.utils.timing and the
 canonical example in examples/timing/basic_timing_diagram.py.
 """
 
@@ -22,7 +22,7 @@ import pytest
 def _load_example_module():
     """Dynamically import examples/timing/basic_timing_diagram.py."""
     example_path = (
-        Path(__file__).parent.parent
+        Path(__file__).parent.parent.parent
         / "examples" / "timing" / "basic_timing_diagram.py"
     )
     spec = importlib.util.spec_from_file_location(
@@ -65,7 +65,7 @@ class TestClkSig:
         from pysilicon.utils.timing import ClkSig
 
         clk = ClkSig(period=10, ncycles=4)
-        # 4 cycles → 8 transitions
+        # 4 cycles -> 8 transitions
         assert len(clk.times) == 8
         assert len(clk.values) == 8
 

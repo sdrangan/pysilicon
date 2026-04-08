@@ -7,25 +7,26 @@ has_children: false
 
 # Basic Timing Diagrams
 
-The `pysilicon.utils.timing` module provides three classes for building and
-visualising timing diagrams in matplotlib:
+In most cases, we will build timing diagrams from traces from a C or RTL simulation.  However, the PySilicon package also provides methods for constructing timing manually from any python data arrays.  This manual creation is used in the teaching material and can also be used for illustrations in scientific articles.
 
-| Class | Purpose |
-|---|---|
-| `ClkSig` | Generates a clock signal with a given period and number of cycles |
-| `SigTimingInfo` | Holds a named sequence of (time, value) transitions for any signal |
-| `TimingDiagram` | Collects signals and renders them as a waveform diagram |
+The basic module is `pysilicon.utils.timing` with three classes for building and visualising timing diagrams in matplotlib:
+
+- `SigTimingInfo`: Holds a named sequence of (time, value) transitions for any signal 
+-  `ClkSig`:  A particular instance of `SigTimingInfo` for aclock signal with a given period and number of cycles
+- `TimingDiagram` :  Collects signals and renders them as a waveform diagram
 
 ## Example
 
-The example below models a simple registered pipeline stage:
+To illustrate, consider visualize the waveforms for a simple registered pipeline stage with four signals:
 
-```
-clk   - 10 ns clock, 4 cycles
-x     - input data, sampled just before each rising edge
-xreg  - registered copy of x (available one cycle later)
-y     - combinational output  y = xreg * xreg
-```
+
+- `clk`:  A 10 ns clock, 4 cycles
+- `x`:   input data, sampled just before each rising edge
+- `xreg`: registered copy of x (available 1 ns after the clock edge)
+- `y`: combinational output  y = xreg * xreg (available 3 ns after `xreg` is stable)
+
+
+These waveforms can be visualzied with the code:
 
 ```python
 from pysilicon.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
@@ -59,7 +60,7 @@ for i, color in enumerate(['blue', 'green']):
         td.add_patch(s, ind=i * 2 + 1, color=color, alpha=0.2)
 ```
 
-### Generated diagram
+Running this code will generate a timing diagram as follows:
 
 ![Basic timing diagram](../_static/timing/basic_timing_diagram.png)
 
