@@ -1,5 +1,5 @@
 """
-basic_timing_diagram.py – canonical runnable example for pysilicon timing utilities.
+basic_timing_diagram.py - canonical runnable example for pysilicon timing utilities.
 
 Generates a minimal timing diagram that illustrates ``ClkSig``, ``SigTimingInfo``,
 and ``TimingDiagram``, then saves the figure(s) to an output directory.
@@ -30,10 +30,10 @@ def save_timing_figures(output_dir: str | Path) -> list[Path]:
 
     The example models a simple registered pipeline stage::
 
-        clk  – 10 ns period, 4 cycles
-        x    – input data, changes a few ns before each rising edge
-        xreg – registered copy of x (available one cycle later)
-        y    – combinational output y = xreg * xreg
+        clk  - 10 ns period, 4 cycles
+        x    - input data, changes a few ns before each rising edge
+        xreg - registered copy of x (available one cycle later)
+        y    - combinational output y = xreg * xreg
 
     Parameters
     ----------

@@ -21,10 +21,10 @@ visualising timing diagrams in matplotlib:
 The example below models a simple registered pipeline stage:
 
 ```
-clk   – 10 ns clock, 4 cycles
-x     – input data, sampled just before each rising edge
-xreg  – registered copy of x (available one cycle later)
-y     – combinational output  y = xreg * xreg
+clk   - 10 ns clock, 4 cycles
+x     - input data, sampled just before each rising edge
+xreg  - registered copy of x (available one cycle later)
+y     - combinational output  y = xreg * xreg
 ```
 
 ```python

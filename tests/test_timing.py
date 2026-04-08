@@ -1,5 +1,5 @@
 """
-tests/test_timing.py – unit tests for pysilicon.utils.timing and the
+tests/test_timing.py - unit tests for pysilicon.utils.timing and the
 canonical example in examples/timing/basic_timing_diagram.py.
 """
 
