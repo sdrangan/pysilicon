@@ -7,6 +7,7 @@ has_children: true
 
 # Guide
 
-Welcome to PySilicon.  This folder will have guides to use the PySilicon functionality as we develop it.  Right now, there is only section, since it is the only component of PySilicon that has been developed:
+Welcome to PySilicon.  This folder will have guides to use the PySilicon functionality as we develop it.
 
-- [Data Schemas](./schemas)
+- [Data Schemas](./schema)
+- [Timing Analysis Tools](./timing)
