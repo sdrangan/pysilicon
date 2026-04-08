@@ -3,11 +3,18 @@ set_top poly
 add_files poly.cpp
 add_files -tb poly_tb.cpp
 
+set script_dir [file dirname [file normalize [info script]]]
+set streamutils_cpp [file join $script_dir "streamutils.cpp"]
+if {![file exists $streamutils_cpp]} {
+    set streamutils_cpp [file join $script_dir "include" "streamutils.cpp"]
+}
+if {[file exists $streamutils_cpp]} {
+    add_files -tb $streamutils_cpp
+}
+
 open_solution -reset "solution1"
 set_part {xc7z020clg484-1}
 create_clock -period 10
-
-set script_dir [file dirname [file normalize [info script]]]
 set data_dir [file join $script_dir "data"]
 
 if {[catch {csim_design -argv "$data_dir"} res]} {

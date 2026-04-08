@@ -20,11 +20,7 @@ namespace streamutils {
 
     struct tlast_status_info {
         static constexpr int count = 3;
-        static constexpr const char* names[count] = {
-            "no_tlast",
-            "tlast_at_end",
-            "tlast_early",
-        };
+        static const char* names[count];
     };
 
     /**

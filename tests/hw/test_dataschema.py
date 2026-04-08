@@ -652,11 +652,15 @@ def test_gen_include_overwrites_existing_file(tmp_path: Path):
 def test_copy_streamutils_hls_emits_tlast_status_enum(tmp_path: Path):
     copy_streamutils(CodeGenConfig(root_dir=tmp_path))
     content = (tmp_path / "streamutils_hls.h").read_text(encoding="utf-8")
+    cpp_content = (tmp_path / "streamutils.cpp").read_text(encoding="utf-8")
 
     assert "enum class tlast_status {" in content
     assert "struct tlast_status_info {" in content
     assert "void flush_axi4_stream_to_tlast(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s) {" in content
-    assert '"no_tlast",' in content
+    assert "static const char* names[count];" in content
+    assert '#include "streamutils_hls.h"' in cpp_content
+    assert "const char* tlast_status_info::names[tlast_status_info::count] = {" in cpp_content
+    assert '"no_tlast",' in cpp_content
     assert "no_tlast," in content
     assert "tlast_at_end," in content
     assert "tlast_early," in content
