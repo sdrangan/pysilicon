@@ -21,13 +21,16 @@ dev = [
     "mypy",
 ]
 
+[project.scripts]
+create-doc-assets = "scripts.create_doc_assets:main"
+
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-# Automatically find the pysilicon package
+# Automatically find the pysilicon package and scripts
 [tool.setuptools.packages.find]
-include = ["pysilicon*"]
+include = ["pysilicon*", "scripts*"]
 
 # Include non-Python files (schemas, templates, docs assets)
 [tool.setuptools]
