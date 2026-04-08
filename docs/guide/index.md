@@ -9,5 +9,6 @@ has_children: true
 
 Welcome to PySilicon.  This folder will have guides to use the PySilicon functionality as we develop it.
 
+- [Installation](./installation/)
 - [Data Schemas](./schema)
 - [Timing Analysis Tools](./timing)
