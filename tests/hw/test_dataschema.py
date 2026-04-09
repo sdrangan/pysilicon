@@ -14,6 +14,7 @@ from pysilicon.hw import (
     EnumField as PublicEnumField,
     FloatField as PublicFloatField,
     IntField as PublicIntField,
+    MemAddr as PublicMemAddr,
 )
 from pysilicon.hw.dataschema import (
     DataArray,
@@ -23,6 +24,7 @@ from pysilicon.hw.dataschema import (
     EnumField,
     FloatField,
     IntField,
+    MemAddr,
 )
 
 
@@ -41,6 +43,7 @@ U16 = IntField.specialize(bitwidth=16, signed=False)
 U8 = IntField.specialize(bitwidth=8, signed=False)
 S16 = IntField.specialize(bitwidth=16, signed=True)
 F32 = FloatField.specialize(bitwidth=32)
+Addr64 = MemAddr.specialize(bitwidth=64)
 ModeField = EnumField.specialize(enum_type=Mode, default=Mode.AUTO)
 CoeffArray = DataArray.specialize(element_type=F32, max_shape=(4,), member_name="coeff")
 ByteArray = DataArray.specialize(element_type=U8, max_shape=(8,), member_name="x")
@@ -106,6 +109,56 @@ def test_intfield_specialize_include_metadata_affects_cache_key():
     assert a is not b
     assert a.include_dir == "a"
     assert b.include_dir == "b"
+
+
+def test_memaddr_specialize_same_args_returns_same_class():
+    a = MemAddr.specialize(bitwidth=64)
+    b = MemAddr.specialize(bitwidth=64)
+
+    assert a is b
+
+
+def test_memaddr_specialize_supports_arbitrary_bitwidths():
+    addr48 = MemAddr.specialize(bitwidth=48)
+    addr128 = MemAddr.specialize(bitwidth=128)
+
+    assert issubclass(addr48, MemAddr)
+    assert issubclass(addr128, MemAddr)
+    assert addr48.get_bitwidth() == 48
+    assert addr128.get_bitwidth() == 128
+    assert addr48.cpp_class_name() == "ap_uint<48>"
+    assert addr128.cpp_class_name() == "ap_uint<128>"
+    assert addr48.signed is False
+    assert addr128.signed is False
+
+
+def test_memaddr_init_value_defaults_to_unsigned_zero():
+    init = Addr64.init_value()
+
+    assert isinstance(init, np.uint64)
+    assert int(init) == 0
+
+
+def test_memaddr_roundtrip_wide_value():
+    Addr96 = MemAddr.specialize(bitwidth=96)
+    raw_value = (1 << 95) + 0x1234_5678_9ABC_DEF0
+
+    addr = Addr96(raw_value)
+    packed = addr.serialize(word_bw=32)
+    restored = Addr96().deserialize(packed, word_bw=32)
+
+    assert packed.dtype == np.uint32
+    assert packed.shape == (3,)
+    assert int(restored.val[0]) == (raw_value & 0xFFFFFFFFFFFFFFFF)
+    assert int(restored.val[1]) == ((raw_value >> 64) & 0xFFFFFFFFFFFFFFFF)
+    assert restored.is_close(addr)
+
+
+def test_memaddr_masks_values_as_unsigned():
+    Addr12 = MemAddr.specialize(bitwidth=12)
+    addr = Addr12(-1)
+
+    assert int(addr.val) == 0xFFF
 
 
 def test_init_value_semantics():
@@ -835,6 +888,7 @@ def test_public_hw_exports_point_to_dataschema2_symbols():
     assert PublicDataSchema is DataSchema
     assert PublicDataField is DataField
     assert PublicIntField is IntField
+    assert PublicMemAddr is MemAddr
     assert PublicFloatField is FloatField
     assert PublicEnumField is EnumField
     assert PublicDataList is DataList

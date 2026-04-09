@@ -1416,6 +1416,250 @@ class IntField(DataField):
             f"(static_cast<unsigned long long>(streamutils::json_parse_number({json_var}, {pos_var})))"
         )
 
+    @classmethod
+    def _gen_write_recursive(
+        cls,
+        word_bw: int,
+        dst_type: str = "array",
+        target: str = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        member_name: str | None = None,
+    ) -> tuple[list[str], int, int]:
+        bitwidth = cls.get_bitwidth()
+        if bitwidth <= word_bw:
+            return super()._gen_write_recursive(
+                word_bw=word_bw,
+                dst_type=dst_type,
+                target=target,
+                ipos0=ipos0,
+                iword0=iword0,
+                prefix=prefix,
+                member_name=member_name,
+            )
+
+        if member_name is None:
+            raise ValueError(f"{cls.__name__} write generation requires a member_name.")
+
+        lines: list[str] = []
+        curr_ipos = ipos0
+        curr_iword = iword0
+        if curr_ipos > 0:
+            if dst_type == "stream":
+                lines.append(f"    {target}.write(w);")
+                lines.append("    w = 0;")
+            elif dst_type == "axi4_stream":
+                lines.append(f"    streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
+                lines.append("    w = 0;")
+            curr_iword += 1
+            curr_ipos = 0
+
+        value_expr = cls.to_uint_expr(f"{prefix}{member_name}")
+        nwords = math.ceil(bitwidth / word_bw)
+        for word_idx in range(nwords):
+            low = word_idx * word_bw
+            high = min(low + word_bw, bitwidth) - 1
+            slice_expr = f"{value_expr}.range({high}, {low})"
+            if dst_type == "array":
+                lines.append(f"    {target}[{curr_iword}] = {slice_expr};")
+            elif dst_type == "stream":
+                lines.append(f"    w = {slice_expr};")
+                lines.append(f"    {target}.write(w);")
+                lines.append("    w = 0;")
+            else:
+                lines.append(f"    w = {slice_expr};")
+                lines.append(f"    streamutils::write_axi4_word<{word_bw}>({target}, w, false);")
+                lines.append("    w = 0;")
+            curr_iword += 1
+
+        return lines, curr_ipos, curr_iword
+
+    @classmethod
+    def _gen_read_recursive(
+        cls,
+        word_bw: int,
+        src_type: str = "array",
+        source: str = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        member_name: str | None = None,
+    ) -> tuple[list[str], int, int]:
+        bitwidth = cls.get_bitwidth()
+        if bitwidth <= word_bw:
+            return super()._gen_read_recursive(
+                word_bw=word_bw,
+                src_type=src_type,
+                source=source,
+                ipos0=ipos0,
+                iword0=iword0,
+                prefix=prefix,
+                member_name=member_name,
+            )
+
+        if member_name is None:
+            raise ValueError(f"{cls.__name__} read generation requires a member_name.")
+
+        lines = [f"    ap_uint<{bitwidth}> field_bits = 0;"]
+        curr_ipos = ipos0
+        curr_iword = iword0
+        if curr_ipos > 0:
+            curr_iword += 1
+            curr_ipos = 0
+
+        nwords = math.ceil(bitwidth / word_bw)
+        for word_idx in range(nwords):
+            low = word_idx * word_bw
+            high = min(low + word_bw, bitwidth) - 1
+            width = high - low + 1
+
+            if src_type == "array":
+                lines.append(
+                    f"    field_bits.range({high}, {low}) = {source}[{curr_iword}].range({width - 1}, 0);"
+                )
+            else:
+                if src_type == "axi4_stream":
+                    lines.extend([
+                        "    if (last) {",
+                        "        tl = streamutils::tlast_status::tlast_early;",
+                        "        return;",
+                        "    }",
+                    ])
+                    lines.append("    {")
+                    lines.append(f"        auto axis_word = {source}.read();")
+                    lines.append("        w = axis_word.data;")
+                    lines.append("        last = axis_word.last;")
+                    lines.append("    }")
+                else:
+                    lines.append(f"    w = {source}.read();")
+                lines.append(f"    field_bits.range({high}, {low}) = w.range({width - 1}, 0);")
+            curr_iword += 1
+
+        lines.append(f"    {prefix}{member_name} = {cls.from_uint_expr('field_bits')};")
+        return cls._scope_local_lines(lines), curr_ipos, curr_iword
+
+    def _serialize_recursive(
+        self,
+        word_bw: int,
+        words: list[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> tuple[int, int]:
+        bitwidth = self.__class__.get_bitwidth()
+        if bitwidth <= word_bw:
+            return super()._serialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=ipos0,
+                iword0=iword0,
+            )
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+        if curr_ipos > 0:
+            curr_iword += 1
+            curr_ipos = 0
+
+        nwords = math.ceil(bitwidth / word_bw)
+        while len(words) <= curr_iword + nwords - 1:
+            words.append(0)
+
+        field_bits = self._value_to_field_bits(self.val) & ((1 << bitwidth) - 1)
+        mask = (1 << word_bw) - 1
+        for word_idx in range(nwords):
+            words[curr_iword] = (field_bits >> (word_idx * word_bw)) & mask
+            curr_iword += 1
+
+        return curr_ipos, curr_iword
+
+    def _deserialize_recursive(
+        self,
+        word_bw: int,
+        words: list[int],
+        ipos0: int = 0,
+        iword0: int = 0,
+    ) -> tuple[int, int]:
+        bitwidth = self.__class__.get_bitwidth()
+        if bitwidth <= word_bw:
+            return super()._deserialize_recursive(
+                word_bw=word_bw,
+                words=words,
+                ipos0=ipos0,
+                iword0=iword0,
+            )
+
+        curr_ipos = ipos0
+        curr_iword = iword0
+        if curr_ipos > 0:
+            curr_iword += 1
+            curr_ipos = 0
+
+        field_bits = 0
+        nwords = math.ceil(bitwidth / word_bw)
+        for word_idx in range(nwords):
+            chunk_low = word_idx * word_bw
+            chunk_width = min(word_bw, bitwidth - chunk_low)
+            mask = (1 << chunk_width) - 1
+            word = 0 if curr_iword >= len(words) else words[curr_iword]
+            field_bits |= (word & mask) << chunk_low
+            curr_iword += 1
+
+        self.val = self._field_bits_to_value(field_bits)
+        return curr_ipos, curr_iword
+
+
+class MemAddr(IntField):
+    """Unsigned address field specialized by bitwidth."""
+
+    bitwidth: ClassVar[int] = 64
+    signed: ClassVar[bool] = False
+    cpp_type: ClassVar[str] = "ap_uint<64>"
+    can_gen_include: ClassVar[bool] = False
+    _specializations: ClassVar[dict[tuple[Any, ...], type[MemAddr]]] = {}
+
+    @classmethod
+    def specialize(cls, bitwidth: int = 64, **kwargs: Any) -> type[MemAddr]:
+        """Return a cached specialized ``MemAddr`` subclass.
+
+        Parameters
+        ----------
+        bitwidth : int, default=64
+            Address width in bits. Must be positive.
+        **kwargs : Any
+            Optional structural metadata overrides such as ``include_dir`` and
+            ``include_filename``.
+
+        Returns
+        -------
+        type[MemAddr]
+            A specialized unsigned address field subclass.
+        """
+        if bitwidth <= 0:
+            raise ValueError("bitwidth must be positive.")
+
+        overrides = cls.validate_specialize_kwargs(kwargs)
+        override_items = tuple(sorted(overrides.items()))
+        key = (cls, int(bitwidth), override_items)
+        cached = cls._specializations.get(key)
+        if cached is not None:
+            return cached
+
+        subclass_name = f"MemAddr{bitwidth}"
+        specialized_attrs = cls.merge_specialize_attrs(
+            {
+                "bitwidth": int(bitwidth),
+                "signed": False,
+                "cpp_type": f"ap_uint<{bitwidth}>",
+                "__module__": cls.__module__,
+                "__doc__": f"Specialized address field: bitwidth={bitwidth}.",
+            },
+            overrides,
+        )
+        specialized = type(subclass_name, (cls,), specialized_attrs)
+        cls._specializations[key] = specialized
+        return specialized
+
 
 class FloatField(DataField):
     """Floating-point scalar field specialized by bitwidth."""
@@ -3662,6 +3906,7 @@ __all__ = [
     "DataSchema",
     "DataField",
     "IntField",
+    "MemAddr",
     "FloatField",
     "EnumField",
     "DataList",

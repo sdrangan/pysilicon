@@ -8,12 +8,14 @@ from .dataschema import (
     EnumField,
     FloatField,
     IntField,
+    MemAddr,
 )
 
 __all__ = [
     "DataSchema",
     "DataField",
     "IntField",
+    "MemAddr",
     "FloatField",
     "EnumField",
     "DataList",
