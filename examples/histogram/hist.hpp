@@ -9,7 +9,7 @@
 #include "include/hist_resp.h"
 #include "include/float32_array_utils.h"
 #include "include/memmgr.hpp"
-#include "uint32_array_utils.h"
+#include "include/uint32_array_utils.h"
 
 static const int max_nbins = 32;
 static const int max_ndata = 1024;
