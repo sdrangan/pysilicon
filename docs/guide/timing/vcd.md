@@ -17,7 +17,7 @@ To capture a VCD file:
 - First run the C/RTL co-simulation of the design.  To run co-simulation from a TCL file, use the command:
 
 ```tcl
-cosim_design -trace_level [all/port]
+cosim_design -trace_level [all | port]
 ```
 
 It is important to set the `trace_level` parameter as this will tell Vitis to trace signals:
@@ -42,61 +42,57 @@ where `vcdfile` is the name of the VCD file with the signal traces.  By default,
 histogram/dump_hist.vcd
 ```
 
-## Viewing the Timing Diagram
-After you have created VCD file, you can see the timing diagram from the [jupyter notebook](https://github.com/sdrangan/hwdesign/tree/main/scalar_fun/notebooks/view_timing.ipynb).
+## Understanding the `xsim_vcd.py` script.
 
-## Understanding the `xsim_vcd.py` function. 
+The script  `xsim_vcd.py` is used to automate the process of adding a VCD trace.  But you may want to know how this function works, in case you need to modify later.  Basically, the `xsim_vcd.py` does these steps automatically:
 
-I wrote the function  `xsim_vcd.py` to automate the process of adding a VCD trace.
-But you may want to know how this function works, in case you need to modify later.
-Basically, the `xsim_vcd.py` does these steps automatically.
-
-* After running the initial simulation, locate the directory where the simulation files are.
+- After running the initial simulation, it locates the directory where the simulation files are.
 For the scalar adder simulation, it will be in something like:
 
 ```bash
 scalar_fun_vitis\hls_component\scalar_fun\hls\sim\verilog
 ```
 
-This large directory contains automatically generated RTL files for the testbench along with simuation files.
-We will modify these files to output a VCD file and re-run the simulation. 
-* In this directory, there will be a file `scalar_fun.tcl` which sets the configuration for the simulation.  Copy the file to a new file `scalar_fun.tcl` and modify as follows:
-   *  Add initial lines at the top of the file (before the `log_wave -r /`) line:
+This large directory contains automatically generated RTL files for the testbench along with simuation files. We will modify these files to output a VCD file and re-run the simulation. 
+- In this directory, there will be a file `scalar_fun.tcl` which sets the configuration for the simulation.  Copy the file to a new file `scalar_fun.tcl` and modify as follows:
+   - Add initial lines at the top of the file (before the `log_wave -r /`) line:
 
-    ```tcl
-    open_vcd
-    log_vcd * 
-    ```
+```tcl
+open_vcd
+log_vcd * 
+```
 
-    * At the eend of the file there is:
-    ```tcl
-    run all
-    quit
-    ```
-    
-    Modify these lines to:
-    ```
-    run all
-    close_vcd
-    quit
-    ```
+    - At the eend of the file there are lines:
 
-* In the same directory, there is a file, `run_xsim.bat`.  
-   * There should be a line like:
+```tcl
+run all
+quit
+```
 
-    ```bash
-    call C:/Xilinx/2025.1/Vivado/bin/xsim  ... -tclbatch scalar_fun.tcl -view add_dataflow_ana.wcfg -protoinst add.protoinst
-    ```
+    These lines are changed to:
+
+```
+run all
+close_vcd
+quit
+```
+
+- In the same directory, there is a file, `run_xsim.bat`.  
+   - There should be a line like:
+
+```bash
+call C:/Xilinx/2025.1/Vivado/bin/xsim  ... -tclbatch scalar_fun.tcl -view add_dataflow_ana.wcfg -protoinst add.protoinst
+```
    
-   * Copy just this line to a new file `run_xsim_vcd.bat` and modify that line to:
+   - The script `xsim_vcd` copies just this line to a new file `run_xsim_vcd.bat` and modifies that line to:
 
-    ```bash
-    cd /d "%~dp0"
-    call C:/Xilinx/2025.1/Vivado/bin/xsim  ... -tclbatch scalar_fun_vcd.tcl -view add_dataflow_ana.wcfg -protoinst add.protoinst
-    ```
+```bash
+cd /d "%~dp0"
+call C:/Xilinx/2025.1/Vivado/bin/xsim  ... -tclbatch scalar_fun_vcd.tcl -view add_dataflow_ana.wcfg -protoinst add.protoinst
+```
 
-    That is, we add a `cd /d` command to make the file callable from a different directory, and we change the `tclbatch` file from `scalar_fun.tcl` to `scalar_fun_vcd.tcl`
-* Go back to the directory `scalar_fun_vitis` Re-run the simulation with 
+    That is, the script add a `cd /d` command to make the file callable from a different directory, and the script changes the `tclbatch` file from `scalar_fun.tcl` to `scalar_fun_vcd.tcl`
+- Go back to the directory `scalar_fun_vitis` Re-run the simulation with 
 
 ```bash
 ./run_xsim_vcd.bat
