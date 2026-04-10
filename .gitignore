@@ -114,6 +114,9 @@ examples/poly/pysilicon_poly_proj
 examples/poly/data
 .hls.failed
 
+# Generated VCD output (use tests/fixtures/poly/timing/ for committed fixtures)
+examples/poly/vcd/
+
 examples/histogram/include/
 examples/histogram/pysilicon_hist_proj/
 examples/histogram/logs/
