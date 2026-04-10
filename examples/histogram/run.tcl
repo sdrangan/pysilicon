@@ -17,16 +17,39 @@ set_part {xc7z020clg484-1}
 create_clock -period 10
 set data_dir [file join $script_dir "data"]
 
+set do_cosim 0
+set trace_level "none"
+
+if {[info exists ::env(PYSILICON_HIST_COSIM)]} {
+    set do_cosim [expr {$::env(PYSILICON_HIST_COSIM) in {1 true TRUE yes YES}}]
+}
+if {[info exists ::env(PYSILICON_HIST_TRACE_LEVEL)]} {
+    set trace_level $::env(PYSILICON_HIST_TRACE_LEVEL)
+}
+
+for {set i 0} {$i < [llength $argv]} {incr i} {
+    set arg [lindex $argv $i]
+    if {$arg eq "--cosim"} {
+        set do_cosim 1
+    } elseif {$arg eq "--trace-level"} {
+        incr i
+        if {$i >= [llength $argv]} {
+            puts "PYSILICON_ERROR: Missing value after --trace-level."
+            exit 1
+        }
+        set trace_level [lindex $argv $i]
+    }
+}
+
+if {$trace_level ni {none port all}} {
+    puts "PYSILICON_ERROR: Unsupported trace level '$trace_level'. Expected one of: none, port, all."
+    exit 1
+}
+
 if {[catch {csim_design -argv "$data_dir"} res]} {
     puts "PYSILICON_ERROR: hist C-Simulation failed."
     puts $res
     exit 1
-}
-
-# Pass --cosim via --tclargs to also run C-synthesis and RTL co-simulation.
-set do_cosim 0
-if {[lsearch $argv "--cosim"] >= 0} {
-    set do_cosim 1
 }
 
 if {$do_cosim} {
@@ -35,7 +58,7 @@ if {$do_cosim} {
         puts $res
         exit 1
     }
-    if {[catch {cosim_design -argv "$data_dir"} res]} {
+    if {[catch {cosim_design -argv "$data_dir" -trace_level $trace_level} res]} {
         puts "PYSILICON_ERROR: hist RTL Co-Simulation failed."
         puts $res
         exit 1

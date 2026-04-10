@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -28,6 +27,7 @@ from pysilicon.hw.memory import AddrUnit, Memory
 EXAMPLE_DIR = Path(__file__).resolve().parent
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
+TRACE_LEVELS = ("none", "port", "all")
 TxIdField = IntField.specialize(bitwidth=16, signed=False)
 NdataField = IntField.specialize(bitwidth=32, signed=False)
 NbinField = IntField.specialize(bitwidth=32, signed=False)
@@ -444,7 +444,7 @@ class HistTest(object):
 
         return HistSimResult(cmd=self.cmd, resp=resp, counts=counts, expected=self.expected)
 
-    def test_vitis(self, cosim: bool = False) -> HistSimResult:
+    def test_vitis(self, cosim: bool = False, trace_level: str = "none") -> HistSimResult:
         """Run the Vitis kernel and testbench, then compare against the Python model.
 
         This method orchestrates the full file-based Vitis simulation workflow:
@@ -460,6 +460,10 @@ class HistTest(object):
         cosim : bool
             If ``True``, also run C-synthesis and RTL co-simulation after the
             C-simulation step.  Default is ``False``.
+        trace_level : str
+            RTL co-simulation trace level passed through to ``cosim_design``.
+            Supported values are ``none``, ``port``, and ``all``. Ignored when
+            ``cosim`` is ``False``.
 
         Returns
         -------
@@ -474,17 +478,69 @@ class HistTest(object):
         if self.cmd is None:
             self.simulate()
 
+        if trace_level not in TRACE_LEVELS:
+            raise ValueError(
+                f"Unsupported trace level '{trace_level}'. Expected one of {TRACE_LEVELS}."
+            )
+
         self.gen_vitis_code()
         data_dir = self.write_input_files()
 
-        tcl_args = ["--cosim"] if cosim else None
-        toolchain.run_vitis_hls(
+        vitis_env = {
+            "PYSILICON_HIST_COSIM": "1" if cosim else "0",
+            "PYSILICON_HIST_TRACE_LEVEL": trace_level,
+        }
+
+        result = toolchain.run_vitis_hls(
             self.example_dir / "run.tcl",
             work_dir=self.example_dir,
-            args=tcl_args,
+            env=vitis_env,
         )
 
-        return self.read_vitis_outputs(data_dir)
+        vitis_result = self.read_vitis_outputs(data_dir)
+
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+
+        return vitis_result
+
+    def generate_vcd(
+        self,
+        output_vcd: str = "dump.vcd",
+        soln: str | None = "solution1",
+        trace_level: str = "*",
+    ) -> Path:
+        """
+        Generate a VCD file by re-running the Vivado RTL simulation.
+
+        Delegates to :func:`pysilicon.scripts.xsim_vcd.run_xsim_vcd`.
+        Requires Vivado/xsim installed on Windows.
+
+        Parameters
+        ----------
+        output_vcd : str
+            Output VCD filename written inside a ``vcd/`` subdirectory.
+        soln : str | None
+            Solution name inside the component directory.
+        trace_level : str
+            VCD trace level (``'*'`` for all signals, ``'port'`` for ports only).
+
+        Returns
+        -------
+        Path
+            Absolute path to the written VCD file.
+        """
+        from pysilicon.scripts.xsim_vcd import run_xsim_vcd
+        return run_xsim_vcd(
+            top="hist",
+            comp="pysilicon_hist_proj",
+            out=output_vcd,
+            soln=soln,
+            trace_level=trace_level,
+            workdir=self.example_dir,
+        )
 
 
 def main() -> None:
@@ -500,6 +556,12 @@ def main() -> None:
 
         # Python + Vitis C-simulation + RTL co-simulation
         python hist_demo.py --cosim
+
+        # Python + Vitis RTL co-simulation with full waveform tracing
+        python hist_demo.py --cosim --trace-level all
+
+        # Python + Vitis RTL co-simulation + generate VCD
+        python hist_demo.py --cosim --trace-level all --generate-vcd
     """
     parser = argparse.ArgumentParser(description="Run the histogram accelerator example.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed for test data generation.")
@@ -509,6 +571,14 @@ def main() -> None:
                         help="Only run the Python side of the example.")
     parser.add_argument("--cosim", action="store_true",
                         help="Also run RTL co-simulation after C-synthesis.")
+    parser.add_argument(
+        "--trace-level",
+        choices=TRACE_LEVELS,
+        default="none",
+        help="RTL co-simulation trace level passed to Vitis. Only used with --cosim.",
+    )
+    parser.add_argument("--generate-vcd", action="store_true",
+                        help="Generate a VCD file after a successful cosim run.")
     args = parser.parse_args()
 
     test = HistTest(seed=args.seed, ndata=args.ndata, nbins=args.nbins)
@@ -525,12 +595,16 @@ def main() -> None:
         return
 
     try:
-        vitis_result = test.test_vitis(cosim=args.cosim)
+        vitis_result = test.test_vitis(cosim=args.cosim, trace_level=args.trace_level)
     except RuntimeError as exc:
         print(f"Vitis run failed: {exc}")
         return
 
     print(f"Vitis simulation matched Python model. counts={vitis_result.counts}")
+
+    if args.generate_vcd:
+        vcd_path = test.generate_vcd()
+        print(f"VCD written to: {vcd_path}")
 
 
 if __name__ == "__main__":
