@@ -1,3 +1,4 @@
+import math
 import re
 from sys import prefix
 import matplotlib.pyplot as plt
@@ -198,13 +199,12 @@ class SigInfo(object):
                 self.numeric_values = np.array(raw_values, dtype=np.uint64)
             else:
                 # Pack each wide integer into k 64-bit words (LSW first)
-                import math
                 k = math.ceil(self.wid / 64)
                 arr = np.zeros((n, k), dtype=np.uint64)
                 _mask64 = (1 << 64) - 1  # Python int mask — avoids overflow
                 for i, val in enumerate(raw_values):
                     for j in range(k):
-                        arr[i, j] = np.uint64((int(val) >> (j * 64)) & _mask64)
+                        arr[i, j] = np.uint64((val >> (j * 64)) & _mask64)
                 self.numeric_values = arr
         else:
             self.numeric_values = np.array(raw_values)
