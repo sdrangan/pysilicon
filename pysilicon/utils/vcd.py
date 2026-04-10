@@ -1,3 +1,4 @@
+import math
 import re
 from sys import prefix
 import matplotlib.pyplot as plt
@@ -162,7 +163,16 @@ class SigInfo(object):
 
     def get_values(self):
         """
-        Converts the signal numeric and display values based on the format.   
+        Converts the signal numeric and display values based on the format.
+
+        For ``numeric_type == 'uint'`` the storage convention matches the
+        pysilicon serialization methods:
+
+        * ``wid <= 32``  → ``np.ndarray`` with dtype ``np.uint32``
+        * ``wid <= 64``  → ``np.ndarray`` with dtype ``np.uint64``
+        * ``wid > 64``   → ``np.ndarray`` with dtype ``np.uint64`` and shape
+          ``(n, k)`` where ``k = ceil(wid / 64)``.  Word 0 holds the least-
+          significant 64 bits (LSW-first order).
         """
 
         # Return if already computed
@@ -170,17 +180,34 @@ class SigInfo(object):
             return
 
         self.disp_values = []
-        self.numeric_values = []
+        raw_values = []
         for v in self.values:
-            d = str(v)  # Default is to  display original value
+            d = str(v)  # Default is to display original value
             num_value = 0
-            if not (v in {'x', 'X', 'z', 'Z'}):                
+            if not (v in {'x', 'X', 'z', 'Z'}):
                 num_value = binary_str_to_numeric(
                     v, self.numeric_type, self.wid)
-                d = self.numeric_fmt_str % num_value                    
-            self.numeric_values.append(num_value)
+                d = self.numeric_fmt_str % num_value
+            raw_values.append(num_value)
             self.disp_values.append(d)
-        self.numeric_values = np.array(self.numeric_values).astype(np.uint32)
+
+        if self.numeric_type == 'uint':
+            n = len(raw_values)
+            if self.wid <= 32:
+                self.numeric_values = np.array(raw_values, dtype=np.uint32)
+            elif self.wid <= 64:
+                self.numeric_values = np.array(raw_values, dtype=np.uint64)
+            else:
+                # Pack each wide integer into k 64-bit words (LSW first)
+                k = math.ceil(self.wid / 64)
+                arr = np.zeros((n, k), dtype=np.uint64)
+                _mask64 = (1 << 64) - 1  # Python int mask — avoids overflow
+                for i, val in enumerate(raw_values):
+                    for j in range(k):
+                        arr[i, j] = np.uint64((val >> (j * 64)) & _mask64)
+                self.numeric_values = arr
+        else:
+            self.numeric_values = np.array(raw_values)
 
     
 
@@ -564,17 +591,25 @@ def resample_signal(
     ----------
     sig_info : SigInfo
         Signal information object.
-    new_times : np.ndarray
+    clk_times : np.ndarray
         Array of new time points to sample the signal at.  Typically these are clock edge times.
 
     Returns
     -------
     resampled_values : np.ndarray
-        Array of signal values at the new time points.
+        Array of signal values at the new time points.  For wide signals
+        (``wid > 64`` with ``numeric_type == 'uint'``), this is a 2-D array
+        of shape ``(len(clk_times), k)`` with dtype ``np.uint64``.
     """    
     sig_times = sig_info.times
     sig_values = sig_info.numeric_values
-    sampled = np.empty_like(clk_times, dtype=sig_values.dtype)
+    m = len(clk_times)
+
+    # Allocate output with the same trailing shape as sig_values
+    if sig_values.ndim == 2:
+        sampled = np.empty((m, sig_values.shape[1]), dtype=sig_values.dtype)
+    else:
+        sampled = np.empty(m, dtype=sig_values.dtype)
 
     j = 0  # pointer into sig_times and sig_values
     current_val = sig_values[0]
