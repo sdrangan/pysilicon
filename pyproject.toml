@@ -22,7 +22,13 @@ dev = [
 ]
 
 [project.scripts]
-create-doc-assets = "scripts.create_doc_assets:main"
+create_doc_assets = "pysilicon.scripts.create_doc_assets:main"
+xsim_vcd = "pysilicon.scripts.xsim_vcd:main"
+collect_overlay = "pysilicon.scripts.collect_overlay:main"
+sv_sim = "pysilicon.scripts.sv_sim:main"
+sv_synth = "pysilicon.scripts.sv_build:run_synth"
+sv_impl  = "pysilicon.scripts.sv_build:run_impl"
+build_lab_autograder = "pysilicon.scripts.build_lab_autograder:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]

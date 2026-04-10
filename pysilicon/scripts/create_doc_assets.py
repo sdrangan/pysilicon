@@ -40,9 +40,9 @@ from pathlib import Path
 from typing import Callable
 
 # ---------------------------------------------------------------------------
-# Repository root (scripts/ lives one level below the root)
+# Repository root (pysilicon/scripts/ lives two levels below the root)
 # ---------------------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
