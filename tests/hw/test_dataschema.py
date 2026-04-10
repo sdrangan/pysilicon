@@ -706,17 +706,32 @@ def test_copy_streamutils_hls_emits_tlast_status_enum(tmp_path: Path):
     copy_streamutils(CodeGenConfig(root_dir=tmp_path))
     content = (tmp_path / "streamutils_hls.h").read_text(encoding="utf-8")
     cpp_content = (tmp_path / "streamutils.cpp").read_text(encoding="utf-8")
+    memmgr_hpp = (tmp_path / "memmgr.hpp").read_text(encoding="utf-8")
+    memmgr_tb_hpp = (tmp_path / "memmgr_tb.hpp").read_text(encoding="utf-8")
 
     assert "enum class tlast_status {" in content
     assert "struct tlast_status_info {" in content
     assert "void flush_axi4_stream_to_tlast(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s) {" in content
     assert "static const char* names[count];" in content
-    assert '#include "streamutils_hls.h"' in cpp_content
-    assert "const char* tlast_status_info::names[tlast_status_info::count] = {" in cpp_content
-    assert '"no_tlast",' in cpp_content
+    assert "legacy compatibility shim" in cpp_content
+    assert "Vitis HLS < 2025.1" in cpp_content
     assert "no_tlast," in content
     assert "tlast_at_end," in content
     assert "tlast_early," in content
+    assert "byte_addr_to_word_index" in memmgr_hpp
+    assert "namespace memmgr" in memmgr_hpp
+    assert "class MemMgr" in memmgr_tb_hpp
+    assert '#include "memmgr.hpp"' in memmgr_tb_hpp
+
+
+def test_copy_streamutils_can_skip_memmgr(tmp_path: Path):
+    copy_streamutils(CodeGenConfig(root_dir=tmp_path, copy_memmgr=False))
+
+    assert (tmp_path / "streamutils_hls.h").exists()
+    assert (tmp_path / "streamutils_tb.h").exists()
+    assert not (tmp_path / "memmgr.hpp").exists()
+    assert not (tmp_path / "memmgr_tb.hpp").exists()
+    assert not (tmp_path / "memmgr.cpp").exists()
 
 
 def test_primitive_field_pack_unpack_helpers_are_empty():

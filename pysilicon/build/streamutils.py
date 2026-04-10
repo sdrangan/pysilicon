@@ -20,6 +20,10 @@ def copy_streamutils(
     or newer and a stale ``streamutils.cpp`` already exists in the output
     directory it is removed so the output remains reproducible.
 
+    When ``cfg.copy_memmgr`` is ``True``, ``memmgr.hpp`` and ``memmgr_tb.hpp``
+    are also copied into the same utility directory. When it is ``False``,
+    stale output copies of those files are removed if present.
+
     Parameters
     ----------
     cfg : CodeGenConfig
@@ -39,6 +43,8 @@ def copy_streamutils(
     src_path_hls = Path(__file__).resolve().with_name("streamutils_hls.h")
     src_path_tb = Path(__file__).resolve().with_name("streamutils_tb.h")
     src_path_cpp = Path(__file__).resolve().with_name("streamutils.cpp")
+    src_path_memmgr_hpp = Path(__file__).resolve().with_name("memmgr.hpp")
+    src_path_memmgr_tb_hpp = Path(__file__).resolve().with_name("memmgr_tb.hpp")
     if not src_path_hls.exists():
         raise FileNotFoundError(f"Could not find source header: {src_path_hls}")
     if not src_path_tb.exists():
@@ -62,6 +68,25 @@ def copy_streamutils(
         if out_file_cpp.exists():
             out_file_cpp.unlink()
         out_cpp = None
+
+    out_file_memmgr_hpp = out_dir / "memmgr.hpp"
+    out_file_memmgr_tb_hpp = out_dir / "memmgr_tb.hpp"
+    if cfg.copy_memmgr:
+        if not src_path_memmgr_hpp.exists():
+            raise FileNotFoundError(f"Could not find source header: {src_path_memmgr_hpp}")
+        if not src_path_memmgr_tb_hpp.exists():
+            raise FileNotFoundError(f"Could not find source header: {src_path_memmgr_tb_hpp}")
+        shutil.copy2(src_path_memmgr_hpp, out_file_memmgr_hpp)
+        shutil.copy2(src_path_memmgr_tb_hpp, out_file_memmgr_tb_hpp)
+    else:
+        if out_file_memmgr_hpp.exists():
+            out_file_memmgr_hpp.unlink()
+        if out_file_memmgr_tb_hpp.exists():
+            out_file_memmgr_tb_hpp.unlink()
+
+        out_file_memmgr_cpp = out_dir / "memmgr.cpp"
+        if out_file_memmgr_cpp.exists():
+            out_file_memmgr_cpp.unlink()
 
     return str(out_file_hls.resolve()), str(out_file_tb.resolve()), out_cpp
 

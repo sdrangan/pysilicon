@@ -8,7 +8,8 @@ class CodeGenConfig(object):
             self, 
             root_dir: str | Path | None = None,
             util_dir: str | Path | None = None,
-            vitis_version: str | None = None) -> None:
+            vitis_version: str | None = None,
+            copy_memmgr: bool = True) -> None:
         """
         Parameters
         ----------
@@ -24,10 +25,15 @@ class CodeGenConfig(object):
             The Vitis HLS version string in ``"YYYY.M"`` format (e.g. ``"2023.1"`` or ``"2025.2"``).
             Used to control which compatibility files are emitted. If ``None``, conservative
             (legacy-compatible) behaviour is assumed.
+        copy_memmgr : bool
+            If ``True`` (default), support files ``memmgr.hpp`` and
+            ``memmgr_tb.hpp`` are copied into ``util_dir`` alongside the
+            streamutils helpers.
         """
         self.root_dir: Path = Path.cwd() if root_dir is None else Path(root_dir)
         self.util_dir: Path = Path(".") if util_dir is None else Path(util_dir)
         self.vitis_version: str | None = vitis_version
+        self.copy_memmgr: bool = copy_memmgr
 
     def vitis_version_tuple(self) -> tuple[int, int] | None:
         """Parse ``vitis_version`` into a ``(major, minor)`` integer tuple.

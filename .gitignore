@@ -114,5 +114,10 @@ examples/poly/pysilicon_poly_proj
 examples/poly/data
 .hls.failed
 
+examples/histogram/include/
+
 
 experiment/
+
+# Allow build directory in pysilicon
+!pysilicon/build/
