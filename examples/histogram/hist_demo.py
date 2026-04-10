@@ -361,9 +361,180 @@ class HistTest(object):
         copy_streamutils(cfg)
         return generated_paths
 
-    def test_vitis(self):
-        """Run the Vitis flow and compare against the Python model."""
-        raise NotImplementedError("HistTest.test_vitis is not implemented yet.")
+    def write_input_files(self, data_dir: Path | None = None) -> Path:
+        """Write test data files for the Vitis testbench.
+
+        Writes ``params.json`` (``tx_id``, ``ndata``, ``nbins``),
+        ``data_array.bin``, and ``edges_array.bin`` (when ``nbins > 1``) to the
+        data directory.  The testbench reads these files, performs memory
+        allocations via ``MemMgr``, and constructs the ``HistCmd`` itself.
+
+        The Python model (``simulate()``) must have been run first so that the
+        input arrays and transaction parameters are known.
+
+        Parameters
+        ----------
+        data_dir : Path | None
+            Directory in which to write the files.  Defaults to
+            ``<example_dir>/data``.
+
+        Returns
+        -------
+        Path
+            The directory containing the written files.
+        """
+        if self.cmd is None or self.data is None:
+            self.simulate()
+
+        if data_dir is None:
+            data_dir = self.example_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write scalar parameters so the testbench can reconstruct the HistCmd.
+        params_path = data_dir / "params.json"
+        params_path.write_text(
+            json.dumps({"tx_id": int(self.cmd.tx_id), "ndata": self.ndata, "nbins": self.nbins},
+                       indent=2),
+            encoding="utf-8",
+        )
+        write_uint32_file(self.data, elem_type=Float32, file_path=data_dir / "data_array.bin",
+                          nwrite=self.ndata)
+        if len(self.bin_edges) > 0:
+            write_uint32_file(self.bin_edges, elem_type=Float32, file_path=data_dir / "edges_array.bin",
+                              nwrite=len(self.bin_edges))
+        return data_dir
+
+    def read_vitis_outputs(self, data_dir: Path) -> HistSimResult:
+        """Read Vitis testbench output files and compare against the Python model.
+
+        Parameters
+        ----------
+        data_dir : Path
+            Directory containing the ``resp_data.bin`` and ``counts_array.bin``
+            files written by the Vitis testbench.
+
+        Returns
+        -------
+        HistSimResult
+            Result bundle with counts and response read from the Vitis output files.
+
+        Raises
+        ------
+        RuntimeError
+            If the response status or histogram counts do not match the Python model.
+        """
+        resp = HistResp().read_uint32_file(data_dir / "resp_data.bin")
+        counts = np.asarray(
+            read_uint32_file(data_dir / "counts_array.bin", elem_type=Uint32Field, shape=self.nbins),
+            dtype=np.uint32,
+        )
+
+        if not resp.is_close(self.resp):
+            raise RuntimeError(
+                f"Response mismatch after Vitis simulation.\n"
+                f"  got:      tx_id={resp.tx_id}, status={resp.status}\n"
+                f"  expected: tx_id={self.resp.tx_id}, status={self.resp.status}"
+            )
+        if not np.array_equal(counts, self.expected):
+            raise RuntimeError(
+                f"Count mismatch after Vitis simulation:\n"
+                f"  got:      {counts}\n"
+                f"  expected: {self.expected}"
+            )
+
+        return HistSimResult(cmd=self.cmd, resp=resp, counts=counts, expected=self.expected)
+
+    def test_vitis(self, cosim: bool = False) -> HistSimResult:
+        """Run the Vitis kernel and testbench, then compare against the Python model.
+
+        This method orchestrates the full file-based Vitis simulation workflow:
+
+        1. Run the Python model (``simulate()``) if not already done.
+        2. Generate Vitis HLS headers via ``gen_vitis_code()``.
+        3. Write binary input files for the C++ testbench via ``write_input_files()``.
+        4. Invoke Vitis HLS C-simulation (and, optionally, RTL co-simulation).
+        5. Read the testbench output files and compare against the Python reference.
+
+        Parameters
+        ----------
+        cosim : bool
+            If ``True``, also run C-synthesis and RTL co-simulation after the
+            C-simulation step.  Default is ``False``.
+
+        Returns
+        -------
+        HistSimResult
+            Result bundle with counts and response read from the Vitis output files.
+
+        Raises
+        ------
+        RuntimeError
+            If the Vitis simulation outputs do not match the Python model.
+        """
+        if self.cmd is None:
+            self.simulate()
+
+        self.gen_vitis_code()
+        data_dir = self.write_input_files()
+
+        tcl_args = ["--cosim"] if cosim else None
+        toolchain.run_vitis_hls(
+            self.example_dir / "run.tcl",
+            work_dir=self.example_dir,
+            args=tcl_args,
+        )
+
+        return self.read_vitis_outputs(data_dir)
+
+
+def main() -> None:
+    """Command-line entry point for the histogram accelerator example.
+
+    Usage examples::
+
+        # Python simulation only
+        python hist_demo.py --skip-vitis
+
+        # Python + Vitis C-simulation
+        python hist_demo.py
+
+        # Python + Vitis C-simulation + RTL co-simulation
+        python hist_demo.py --cosim
+    """
+    parser = argparse.ArgumentParser(description="Run the histogram accelerator example.")
+    parser.add_argument("--seed", type=int, default=7, help="Random seed for test data generation.")
+    parser.add_argument("--ndata", type=int, default=37, help="Number of input data elements.")
+    parser.add_argument("--nbins", type=int, default=6, help="Number of histogram bins.")
+    parser.add_argument("--skip-vitis", action="store_true",
+                        help="Only run the Python side of the example.")
+    parser.add_argument("--cosim", action="store_true",
+                        help="Also run RTL co-simulation after C-synthesis.")
+    args = parser.parse_args()
+
+    test = HistTest(seed=args.seed, ndata=args.ndata, nbins=args.nbins)
+    test.gen_vitis_code()
+
+    result = test.simulate()
+    print(
+        f"Python simulation: tx_id={result.resp.tx_id}, "
+        f"status={result.resp.status.name}, "
+        f"passed={result.passed}"
+    )
+
+    if args.skip_vitis:
+        return
+
+    try:
+        vitis_result = test.test_vitis(cosim=args.cosim)
+    except RuntimeError as exc:
+        print(f"Vitis run failed: {exc}")
+        return
+
+    print(f"Vitis simulation matched Python model. counts={vitis_result.counts}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 
