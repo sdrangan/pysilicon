@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
@@ -113,207 +113,395 @@ SCHEMA_CLASSES = [
     PolyRespFtr,
 ]
 
-"""
-Python Golden model for polynomial evaluation
-"""
-def polynomial_eval(
-    cmd_hdr: PolyCmdHdr,
-    samp_in: npt.NDArray[np.float32],
-) -> tuple[PolyRespHdr, npt.NDArray[np.float32], PolyRespFtr]:
-    resp_hdr = PolyRespHdr()
-    resp_hdr.tx_id = cmd_hdr.tx_id
 
-    coeffs = np.asarray(cmd_hdr.coeffs, dtype=np.float32)
-    x = np.asarray(samp_in, dtype=np.float32)
-    y = np.zeros_like(x)
-    power = np.ones_like(x)
-    for coeff in coeffs:
-        y += coeff * power
-        power *= x
+@dataclass(slots=True)
+class PolySimResult:
+    """Result bundle returned by PolyTest.simulate."""
 
-    resp_ftr = PolyRespFtr()
-    resp_ftr.nsamp_read = len(x)
-    resp_ftr.error = PolyError.NO_ERROR if len(x) == int(cmd_hdr.nsamp) else PolyError.WRONG_NSAMP
+    cmd_hdr: PolyCmdHdr
+    samp_in: npt.NDArray[np.float32]
+    resp_hdr: PolyRespHdr
+    samp_out: npt.NDArray[np.float32]
+    resp_ftr: PolyRespFtr
 
-    return resp_hdr, y, resp_ftr
+    @property
+    def passed(self) -> bool:
+        return self.resp_ftr.error == PolyError.NO_ERROR
 
 
-"""
-Building inputs, generating headers, writing vectors, running Vitis, and validating outputs
-"""
-def build_demo_inputs(nsamp: int = 100) -> tuple[PolyCmdHdr, npt.NDArray[np.float32]]:
-    coeffs = CoeffArray()
-    coeffs.val = np.array([1.0, -2.0, -3.0, 4.0], dtype=np.float32)
+class PolyAccel(object):
+    """
+    Python model for the polynomial accelerator.
 
-    cmd_hdr = PolyCmdHdr()
-    cmd_hdr.tx_id = 42
-    cmd_hdr.coeffs = coeffs.val
-    cmd_hdr.nsamp = nsamp
+    This class implements the core streaming polynomial evaluation logic.
+    In a real implementation this would be synthesized into hardware; here we
+    use NumPy to evaluate a degree-3 polynomial on a vector of input samples.
+    """
 
-    samp_in = np.linspace(0.0, 1.0, nsamp, dtype=np.float32)
-    return cmd_hdr, samp_in
+    def evaluate(
+        self,
+        cmd_hdr: PolyCmdHdr,
+        samp_in: npt.NDArray[np.float32],
+    ) -> tuple[PolyRespHdr, npt.NDArray[np.float32], PolyRespFtr]:
+        """
+        Evaluate the polynomial described by *cmd_hdr* on every element of *samp_in*.
+
+        Parameters
+        ----------
+        cmd_hdr : PolyCmdHdr
+            Command header containing the transaction ID, polynomial coefficients
+            (constant term first), and expected number of samples.
+        samp_in : npt.NDArray[np.float32]
+            Input samples to evaluate.
+
+        Returns
+        -------
+        tuple[PolyRespHdr, npt.NDArray[np.float32], PolyRespFtr]
+            Response header, output samples, and response footer.
+        """
+        resp_hdr = PolyRespHdr()
+        resp_hdr.tx_id = cmd_hdr.tx_id
+
+        coeffs = np.asarray(cmd_hdr.coeffs, dtype=np.float32)
+        x = np.asarray(samp_in, dtype=np.float32)
+        y = np.zeros_like(x)
+        power = np.ones_like(x)
+        for coeff in coeffs:
+            y += coeff * power
+            power *= x
+
+        resp_ftr = PolyRespFtr()
+        resp_ftr.nsamp_read = len(x)
+        resp_ftr.error = PolyError.NO_ERROR if len(x) == int(cmd_hdr.nsamp) else PolyError.WRONG_NSAMP
+
+        return resp_hdr, y, resp_ftr
 
 
-def generate_headers(example_dir: Path) -> None:
-    cfg = CodeGenConfig(root_dir=example_dir, util_dir=INCLUDE_DIR)
-    for schema_class in SCHEMA_CLASSES:
-        out_path = schema_class.gen_include(cfg=cfg, word_bw_supported=WORD_BW_SUPPORTED)
-        print(f"generated {out_path}")
-    out_path = gen_array_utils(Float32, WORD_BW_SUPPORTED, cfg=cfg)
-    print(f"generated {out_path}")
-    copy_streamutils(cfg)
+class PolyTest(object):
+    """Stateful test/demo harness for the polynomial accelerator flow."""
 
+    def __init__(
+        self,
+        nsamp: int = 100,
+        example_dir: Path = EXAMPLE_DIR,
+        include_dir: str = INCLUDE_DIR,
+    ):
+        self.nsamp = max(1, int(nsamp))
+        self.example_dir = Path(example_dir)
+        self.include_dir = include_dir
 
-def write_vectors(example_dir: Path, cmd_hdr: PolyCmdHdr, samp_in: npt.NDArray[np.float32]) -> Path:
-    data_dir = example_dir / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    cmd_hdr.write_uint32_file(data_dir / "cmd_hdr_data.bin")
-    write_uint32_file(samp_in, elem_type=Float32, file_path=data_dir / "samp_in_data.bin", nwrite=cmd_hdr.nsamp)
-    return data_dir
+        self.poly_accel: PolyAccel | None = None
+        self.cmd_hdr: PolyCmdHdr | None = None
+        self.samp_in: npt.NDArray[np.float32] | None = None
+        self.resp_hdr: PolyRespHdr | None = None
+        self.samp_out: npt.NDArray[np.float32] | None = None
+        self.resp_ftr: PolyRespFtr | None = None
 
+    def _build_inputs(self) -> None:
+        """Construct the command header and input sample vector."""
+        coeffs = CoeffArray()
+        coeffs.val = np.array([1.0, -2.0, -3.0, 4.0], dtype=np.float32)
 
-def validate_python_model(data_dir: Path, resp_hdr: PolyRespHdr, samp_out: npt.NDArray[np.float32], resp_ftr: PolyRespFtr) -> None:
-    resp_hdr.write_uint32_file(data_dir / "resp_hdr_data.bin")
-    write_uint32_file(samp_out, elem_type=Float32, file_path=data_dir / "samp_out_data.bin", nwrite=resp_ftr.nsamp_read)
-    resp_ftr.write_uint32_file(data_dir / "resp_ftr_data.bin")
+        self.cmd_hdr = PolyCmdHdr()
+        self.cmd_hdr.tx_id = 42
+        self.cmd_hdr.coeffs = coeffs.val
+        self.cmd_hdr.nsamp = self.nsamp
 
+        self.samp_in = np.linspace(0.0, 1.0, self.nsamp, dtype=np.float32)
 
-def run_vitis(example_dir: Path) -> subprocess.CompletedProcess[str]:
-    return toolchain.run_vitis_hls(example_dir / "run.tcl", work_dir=example_dir)
+    def simulate(self) -> PolySimResult:
+        """
+        Run the Python model and store both inputs and outputs.
 
+        Returns
+        -------
+        PolySimResult
+            Result bundle with the command header, input samples, response
+            header, output samples, and response footer.
+        """
+        self._build_inputs()
 
-def report_vitis_synthesis(example_dir: Path) -> None:
-    try:
-        from pysilicon.utils.csynthparse import CsynthParser
-    except ModuleNotFoundError as exc:
-        print(f"Skipping csynth report parsing: {exc}")
-        return
+        self.poly_accel = PolyAccel()
+        self.resp_hdr, self.samp_out, self.resp_ftr = self.poly_accel.evaluate(
+            self.cmd_hdr, self.samp_in
+        )
 
-    sol_path = example_dir / "pysilicon_poly_proj" / "solution1"
-    if not sol_path.exists():
-        print(f"Skipping csynth report parsing: solution directory not found at {sol_path}")
-        return
+        return PolySimResult(
+            cmd_hdr=self.cmd_hdr,
+            samp_in=self.samp_in,
+            resp_hdr=self.resp_hdr,
+            samp_out=self.samp_out,
+            resp_ftr=self.resp_ftr,
+        )
 
-    try:
-        parser = CsynthParser(sol_path=str(sol_path))
-        parser.get_loop_pipeline_info()
-        parser.get_resources()
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"Skipping csynth report parsing: {exc}")
-        return
+    def gen_vitis_code(self) -> list[Path]:
+        """Generate schema and utility headers needed for the Vitis flow."""
+        cfg = CodeGenConfig(root_dir=self.example_dir, util_dir=self.include_dir)
+        generated_paths: list[Path] = []
+        for schema_class in SCHEMA_CLASSES:
+            generated_paths.append(schema_class.gen_include(cfg=cfg, word_bw_supported=WORD_BW_SUPPORTED))
+        generated_paths.append(gen_array_utils(Float32, WORD_BW_SUPPORTED, cfg=cfg))
+        copy_streamutils(cfg)
+        return generated_paths
 
-    print("\nLatency and Initiation Interval:")
-    if parser.loop_df.empty:
-        print("No loop pipeline information found in csynth.xml.")
-    else:
-        print(parser.loop_df.to_string())
-        non_unit_ii = parser.loop_df[
-            parser.loop_df["PipelineII"].apply(lambda value: isinstance(value, (int, np.integer)) and value > 1)
-        ]
-        if non_unit_ii.empty:
-            print("All reported loops have PipelineII <= 1.")
+    def write_input_files(self, data_dir: Path | None = None) -> Path:
+        """Write binary test-vector files for the Vitis testbench.
+
+        The Python model (``simulate()``) must have been run first.
+
+        Parameters
+        ----------
+        data_dir : Path | None
+            Directory in which to write the files.  Defaults to
+            ``<example_dir>/data``.
+
+        Returns
+        -------
+        Path
+            The directory containing the written files.
+        """
+        if self.cmd_hdr is None or self.samp_in is None or self.resp_hdr is None:
+            self.simulate()
+
+        if data_dir is None:
+            data_dir = self.example_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        self.cmd_hdr.write_uint32_file(data_dir / "cmd_hdr_data.bin")
+        write_uint32_file(
+            self.samp_in,
+            elem_type=Float32,
+            file_path=data_dir / "samp_in_data.bin",
+            nwrite=self.cmd_hdr.nsamp,
+        )
+
+        return data_dir
+
+    def read_vitis_outputs(self, data_dir: Path) -> PolySimResult:
+        """Read Vitis testbench output files and compare against the Python model.
+
+        Parameters
+        ----------
+        data_dir : Path
+            Directory containing the output files written by the Vitis testbench.
+
+        Returns
+        -------
+        PolySimResult
+            Result bundle populated from the Vitis output files.
+
+        Raises
+        ------
+        RuntimeError
+            If any output does not match the Python golden model.
+        """
+        got_resp_hdr = PolyRespHdr().read_uint32_file(data_dir / "resp_hdr_data.bin")
+        got_resp_ftr = PolyRespFtr().read_uint32_file(data_dir / "resp_ftr_data.bin")
+        got_samp_out = np.asarray(
+            read_uint32_file(
+                data_dir / "samp_out_data.bin",
+                elem_type=Float32,
+                shape=int(self.resp_ftr.nsamp_read),
+            ),
+            dtype=np.float32,
+        )
+
+        if not got_resp_hdr.is_close(self.resp_hdr):
+            raise RuntimeError("Response header mismatch after Vitis C-simulation.")
+        if not got_resp_ftr.is_close(self.resp_ftr):
+            raise RuntimeError("Response footer mismatch after Vitis C-simulation.")
+        if not np.allclose(got_samp_out, self.samp_out[: got_samp_out.size], rtol=1e-6, atol=1e-6):
+            raise RuntimeError("Sample output mismatch after Vitis C-simulation.")
+
+        sync_status_path = data_dir / "sync_status.json"
+        if sync_status_path.exists():
+            sync_status = json.loads(sync_status_path.read_text(encoding="utf-8"))
+            expected_sync = {
+                "resp_hdr_tlast": "tlast_at_end",
+                "samp_out_tlast": "tlast_at_end",
+                "resp_ftr_tlast": "tlast_at_end",
+            }
+            if sync_status != expected_sync:
+                raise RuntimeError(
+                    "Output-stream TLAST synchronization mismatch after Vitis C-simulation. "
+                    f"Expected {expected_sync}, got {sync_status}."
+                )
+
+        return PolySimResult(
+            cmd_hdr=self.cmd_hdr,
+            samp_in=self.samp_in,
+            resp_hdr=got_resp_hdr,
+            samp_out=got_samp_out,
+            resp_ftr=got_resp_ftr,
+        )
+
+    def report_synthesis(self) -> None:
+        """Parse and print the Vitis HLS C-synthesis report.
+
+        Raises
+        ------
+        RuntimeError
+            If any synthesized loop has a pipeline initiation interval greater
+            than 1.
+        """
+        try:
+            from pysilicon.utils.csynthparse import CsynthParser
+        except ModuleNotFoundError as exc:
+            print(f"Skipping csynth report parsing: {exc}")
+            return
+
+        sol_path = self.example_dir / "pysilicon_poly_proj" / "solution1"
+        if not sol_path.exists():
+            print(f"Skipping csynth report parsing: solution directory not found at {sol_path}")
+            return
+
+        try:
+            parser = CsynthParser(sol_path=str(sol_path))
+            parser.get_loop_pipeline_info()
+            parser.get_resources()
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Skipping csynth report parsing: {exc}")
+            return
+
+        print("\nLatency and Initiation Interval:")
+        if parser.loop_df.empty:
+            print("No loop pipeline information found in csynth.xml.")
         else:
-            print("Loops with PipelineII > 1:")
-            print(non_unit_ii.to_string())
-            raise RuntimeError(
-                "Vitis synthesis produced loops with PipelineII > 1. "
-                "See the loop pipeline report above."
-            )
+            print(parser.loop_df.to_string())
+            non_unit_ii = parser.loop_df[
+                parser.loop_df["PipelineII"].apply(
+                    lambda value: isinstance(value, (int, np.integer)) and value > 1
+                )
+            ]
+            if non_unit_ii.empty:
+                print("All reported loops have PipelineII <= 1.")
+            else:
+                print("Loops with PipelineII > 1:")
+                print(non_unit_ii.to_string())
+                raise RuntimeError(
+                    "Vitis synthesis produced loops with PipelineII > 1. "
+                    "See the loop pipeline report above."
+                )
 
-    print("\nResource Usage:")
-    if parser.res_df.empty:
-        print("No resource information found in csynth.xml.")
-    else:
-        print(parser.res_df.to_string())
+        print("\nResource Usage:")
+        if parser.res_df.empty:
+            print("No resource information found in csynth.xml.")
+        else:
+            print(parser.res_df.to_string())
 
+    def test_vitis(self, cosim: bool = False) -> PolySimResult:
+        """Run the Vitis kernel and testbench, then compare against the Python model.
 
-def check_vitis_outputs(
-    data_dir: Path,
-    expected_resp_hdr: PolyRespHdr,
-    expected_samp_out: npt.NDArray[np.float32],
-    expected_resp_ftr: PolyRespFtr,
-) -> None:
-    got_resp_hdr = PolyRespHdr().read_uint32_file(data_dir / "resp_hdr_data.bin")
-    got_resp_ftr = PolyRespFtr().read_uint32_file(data_dir / "resp_ftr_data.bin")
-    got_samp_out = np.asarray(
-        read_uint32_file(data_dir / "samp_out_data.bin", elem_type=Float32, shape=int(expected_resp_ftr.nsamp_read)),
-        dtype=np.float32,
-    )
+        This method orchestrates the full file-based Vitis simulation workflow:
 
-    if not got_resp_hdr.is_close(expected_resp_hdr):
-        raise RuntimeError("Response header mismatch after Vitis C-simulation.")
-    if not got_resp_ftr.is_close(expected_resp_ftr):
-        raise RuntimeError("Response footer mismatch after Vitis C-simulation.")
-    if not np.allclose(got_samp_out, expected_samp_out[: got_samp_out.size], rtol=1e-6, atol=1e-6):
-        raise RuntimeError("Sample output mismatch after Vitis C-simulation.")
+        1. Run the Python model (``simulate()``) if not already done.
+        2. Generate Vitis HLS headers via ``gen_vitis_code()``.
+        3. Write binary input files for the C++ testbench via ``write_input_files()``.
+        4. Invoke Vitis HLS C-simulation (and, optionally, RTL co-simulation).
+        5. Read the testbench output files and compare against the Python reference.
+        6. Parse and print the C-synthesis report via ``report_synthesis()``.
 
-    sync_status_path = data_dir / "sync_status.json"
-    if sync_status_path.exists():
-        sync_status = json.loads(sync_status_path.read_text(encoding="utf-8"))
-        expected_sync = {
-            "resp_hdr_tlast": "tlast_at_end",
-            "samp_out_tlast": "tlast_at_end",
-            "resp_ftr_tlast": "tlast_at_end",
-        }
-        if sync_status != expected_sync:
-            raise RuntimeError(
-                "Output-stream TLAST synchronization mismatch after Vitis C-simulation. "
-                f"Expected {expected_sync}, got {sync_status}."
-            )
+        Parameters
+        ----------
+        cosim : bool
+            If ``True``, also run C-synthesis and RTL co-simulation after the
+            C-simulation step.  Default is ``False``.
 
+        Returns
+        -------
+        PolySimResult
+            Result bundle with outputs read from the Vitis testbench.
 
-def maybe_plot(cmd_hdr: PolyCmdHdr, samp_in: npt.NDArray[np.float32], samp_out: npt.NDArray[np.float32]) -> None:
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib is not installed; skipping plot")
-        return
+        Raises
+        ------
+        RuntimeError
+            If the Vitis simulation outputs do not match the Python model.
+        """
+        if self.cmd_hdr is None or self.resp_hdr is None:
+            self.simulate()
 
-    plt.plot(samp_in, samp_out, label=f"tx_id={cmd_hdr.tx_id}")
-    plt.xlabel("Input sample")
-    plt.ylabel("Polynomial output")
-    plt.title("Polynomial evaluation")
-    plt.grid(True)
-    plt.legend()
-    plt.show()
+        self.gen_vitis_code()
+        data_dir = self.write_input_files()
+
+        tcl_args = ["--cosim"] if cosim else None
+        result = toolchain.run_vitis_hls(
+            self.example_dir / "run.tcl",
+            work_dir=self.example_dir,
+            args=tcl_args,
+        )
+
+        vitis_result = self.read_vitis_outputs(data_dir)
+        self.report_synthesis()
+
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+
+        return vitis_result
+
+    def maybe_plot(self) -> None:
+        """Plot the polynomial input/output using matplotlib, if available."""
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("matplotlib is not installed; skipping plot")
+            return
+
+        plt.plot(self.samp_in, self.samp_out, label=f"tx_id={self.cmd_hdr.tx_id}")
+        plt.xlabel("Input sample")
+        plt.ylabel("Polynomial output")
+        plt.title("Polynomial evaluation")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
 
 
 def main() -> None:
+    """Command-line entry point for the polynomial accelerator example.
+
+    Usage examples::
+
+        # Python simulation only
+        python poly_demo.py --skip-vitis
+
+        # Python + Vitis C-simulation
+        python poly_demo.py
+
+        # Python + Vitis C-simulation + RTL co-simulation
+        python poly_demo.py --cosim
+    """
     parser = argparse.ArgumentParser(description="Run the polynomial accelerator example.")
     parser.add_argument("--nsamp", type=int, default=100, help="Number of input samples to generate.")
     parser.add_argument("--skip-vitis", action="store_true", help="Only run the Python side of the example.")
+    parser.add_argument("--cosim", action="store_true", help="Also run RTL co-simulation after C-synthesis.")
     parser.add_argument("--plot", action="store_true", help="Plot the Python golden-model output.")
     args = parser.parse_args()
 
-    generate_headers(EXAMPLE_DIR)
+    test = PolyTest(nsamp=args.nsamp)
+    test.gen_vitis_code()
 
-    cmd_hdr, samp_in = build_demo_inputs(nsamp=args.nsamp)
-    resp_hdr, samp_out, resp_ftr = polynomial_eval(cmd_hdr, samp_in)
-    data_dir = write_vectors(EXAMPLE_DIR, cmd_hdr, samp_in)
-    validate_python_model(data_dir, resp_hdr, samp_out, resp_ftr)
-
-    print(f"wrote example data under {data_dir}")
-    print(f"tx_id={resp_hdr.tx_id}, nsamp={resp_ftr.nsamp_read}, error={resp_ftr.error.name}")
+    result = test.simulate()
+    print(
+        f"Python simulation: tx_id={result.resp_hdr.tx_id}, "
+        f"nsamp={result.resp_ftr.nsamp_read}, "
+        f"error={result.resp_ftr.error.name}, "
+        f"passed={result.passed}"
+    )
 
     if args.plot:
-        maybe_plot(cmd_hdr, samp_in, samp_out)
+        test.maybe_plot()
 
     if args.skip_vitis:
         return
 
     try:
-        result = run_vitis(EXAMPLE_DIR)
+        vitis_result = test.test_vitis(cosim=args.cosim)
     except RuntimeError as exc:
-        print(f"skipping Vitis run: {exc}")
+        print(f"Vitis run failed: {exc}")
         return
 
-    check_vitis_outputs(data_dir, resp_hdr, samp_out, resp_ftr)
-    report_vitis_synthesis(EXAMPLE_DIR)
-    if result.stdout:
-        print(result.stdout)
-    if result.stderr:
-        print(result.stderr)
-    print("Vitis outputs matched the Python golden model.")
+    print(f"Vitis simulation matched Python model. nsamp={vitis_result.resp_ftr.nsamp_read}")
 
 
 if __name__ == "__main__":
