@@ -115,6 +115,8 @@ examples/poly/data
 .hls.failed
 
 examples/histogram/include/
+examples/histogram/pysilicon_hist_proj/
+examples/histogram/logs/
 
 
 experiment/

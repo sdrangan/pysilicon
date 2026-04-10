@@ -76,11 +76,12 @@ def test_run_vitis_hls_result_passed(monkeypatch, tmp_path):
         "message": None,
     }
 
-    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None):
+    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None, env=None):
         assert cmd_list == [str(tmp_path / "vitis-run.bat"), "--mode", "hls", "--tcl", str(tmp_path / "run.tcl"), "--tclargs", "alpha", "beta"]
         assert work_dir == tmp_path
         assert capture_output is True
         assert output_path is None
+        assert env is None
         return expected
 
     monkeypatch.setattr(toolchain, "find_vitis_path", lambda top_dir=None: str(tmp_path / "vitis-run.bat"))
@@ -103,7 +104,8 @@ def test_run_vitis_hls_result_subprocess_error(monkeypatch, tmp_path):
         "message": "Command returned non-zero exit status 1",
     }
 
-    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None):
+    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None, env=None):
+        assert env is None
         return expected
 
     monkeypatch.setattr(toolchain, "find_vitis_path", lambda top_dir=None: str(tmp_path / "vitis-run.bat"))
@@ -138,11 +140,12 @@ def test_subprocess_result_passed(monkeypatch, tmp_path):
         stderr="",
     )
 
-    def fake_run(final_cmd, cwd=None, shell=None, check=None, text=None, capture_output=None):
+    def fake_run(final_cmd, cwd=None, shell=None, check=None, text=None, capture_output=None, env=None):
         assert cwd == tmp_path
         assert check is True
         assert text is True
         assert capture_output is True
+        assert env is None
         return expected
 
     monkeypatch.setattr(toolchain.platform, "system", lambda: "Linux")
@@ -166,9 +169,10 @@ def test_subprocess_result_writes_report_and_forces_capture(monkeypatch, tmp_pat
         stderr="warn\n",
     )
 
-    def fake_run(final_cmd, cwd=None, shell=None, check=None, text=None, capture_output=None):
+    def fake_run(final_cmd, cwd=None, shell=None, check=None, text=None, capture_output=None, env=None):
         assert cwd == tmp_path
         assert capture_output is True
+        assert env is None
         return expected
 
     monkeypatch.setattr(toolchain.platform, "system", lambda: "Linux")
@@ -198,13 +202,14 @@ def test_run_vitis_hls_uses_shared_command_builder(monkeypatch, tmp_path):
         stderr="",
     )
 
-    def fake_run(final_cmd, cwd=None, shell=None, check=None, text=None, capture_output=None):
+    def fake_run(final_cmd, cwd=None, shell=None, check=None, text=None, capture_output=None, env=None):
         assert final_cmd == [str(tmp_path / "vitis-run"), "--mode", "hls", "--tcl", str(tmp_path / "run.tcl"), "--tclargs", "alpha", "beta"]
         assert cwd == tmp_path
         assert shell is False
         assert check is True
         assert text is True
         assert capture_output is False
+        assert env is None
         return expected
 
     monkeypatch.setattr(toolchain, "find_vitis_path", lambda top_dir=None: str(tmp_path / "vitis-run"))
@@ -229,8 +234,9 @@ def test_run_vitis_hls_result_writes_report_file(monkeypatch, tmp_path):
         "message": None,
     }
 
-    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None):
+    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None, env=None):
         assert output_path == report_path
+        assert env is None
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text("status\npassed\n\nmessage\nNone\n\nstderr\nwarn\n\nstdout\nok\n", encoding="utf-8")
         return expected
@@ -255,8 +261,9 @@ def test_run_vitis_hls_result_writes_report_file(monkeypatch, tmp_path):
 
 
 def test_run_vitis_hls_result_forces_capture_when_writing_report(monkeypatch, tmp_path):
-    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None):
+    def fake_subprocess_result(cmd_list, work_dir=None, capture_output=True, output_path=None, env=None):
         assert capture_output is True
+        assert env is None
         return {
             "status": "passed",
             "stdout": "ok\n",

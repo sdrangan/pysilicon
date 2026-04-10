@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -19,6 +20,7 @@ from pysilicon.toolchain import toolchain
 EXAMPLE_DIR = Path(__file__).resolve().parent
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
+TRACE_LEVELS = ("none", "port", "all")
 TxIdField = IntField.specialize(bitwidth=16, signed=False)
 NsampField = IntField.specialize(bitwidth=16, signed=False)
 Float32 = FloatField.specialize(bitwidth=32, include_dir=INCLUDE_DIR)
@@ -389,7 +391,7 @@ class PolyTest(object):
         else:
             print(parser.res_df.to_string())
 
-    def test_vitis(self, cosim: bool = False) -> PolySimResult:
+    def test_vitis(self, cosim: bool = False, trace_level: str = "none") -> PolySimResult:
         """Run the Vitis kernel and testbench, then compare against the Python model.
 
         This method orchestrates the full file-based Vitis simulation workflow:
@@ -406,6 +408,10 @@ class PolyTest(object):
         cosim : bool
             If ``True``, also run C-synthesis and RTL co-simulation after the
             C-simulation step.  Default is ``False``.
+        trace_level : str
+            RTL co-simulation trace level passed through to ``cosim_design``.
+            Supported values are ``none``, ``port``, and ``all``. Ignored when
+            ``cosim`` is ``False``.
 
         Returns
         -------
@@ -420,14 +426,23 @@ class PolyTest(object):
         if self.cmd_hdr is None or self.resp_hdr is None:
             self.simulate()
 
+        if trace_level not in TRACE_LEVELS:
+            raise ValueError(
+                f"Unsupported trace level '{trace_level}'. Expected one of {TRACE_LEVELS}."
+            )
+
         self.gen_vitis_code()
         data_dir = self.write_input_files()
 
-        tcl_args = ["--cosim"] if cosim else None
+        vitis_env = {
+            "PYSILICON_POLY_COSIM": "1" if cosim else "0",
+            "PYSILICON_POLY_TRACE_LEVEL": trace_level,
+        }
+
         result = toolchain.run_vitis_hls(
             self.example_dir / "run.tcl",
             work_dir=self.example_dir,
-            args=tcl_args,
+            env=vitis_env,
         )
 
         vitis_result = self.read_vitis_outputs(data_dir)
@@ -470,11 +485,20 @@ def main() -> None:
 
         # Python + Vitis C-simulation + RTL co-simulation
         python poly_demo.py --cosim
+
+        # Python + Vitis RTL co-simulation with full waveform tracing
+        python poly_demo.py --cosim --trace-level all
     """
     parser = argparse.ArgumentParser(description="Run the polynomial accelerator example.")
     parser.add_argument("--nsamp", type=int, default=100, help="Number of input samples to generate.")
     parser.add_argument("--skip-vitis", action="store_true", help="Only run the Python side of the example.")
     parser.add_argument("--cosim", action="store_true", help="Also run RTL co-simulation after C-synthesis.")
+    parser.add_argument(
+        "--trace-level",
+        choices=TRACE_LEVELS,
+        default="none",
+        help="RTL co-simulation trace level passed to Vitis. Only used with --cosim.",
+    )
     parser.add_argument("--plot", action="store_true", help="Plot the Python golden-model output.")
     args = parser.parse_args()
 
@@ -496,7 +520,7 @@ def main() -> None:
         return
 
     try:
-        vitis_result = test.test_vitis(cosim=args.cosim)
+        vitis_result = test.test_vitis(cosim=args.cosim, trace_level=args.trace_level)
     except RuntimeError as exc:
         print(f"Vitis run failed: {exc}")
         return

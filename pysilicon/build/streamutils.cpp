@@ -5,3 +5,15 @@
 // toolchain versions include this file in your Vitis HLS project alongside
 // streamutils_hls.h so that the out-of-context (C-simulation) build can
 // find the required symbol definitions.
+
+#include "streamutils_hls.h"
+
+namespace streamutils {
+
+const char* tlast_status_info::names[tlast_status_info::count] = {
+	"no_tlast",
+	"tlast_at_end",
+	"tlast_early",
+};
+
+} // namespace streamutils

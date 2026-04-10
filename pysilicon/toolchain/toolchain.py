@@ -170,6 +170,7 @@ def run_vitis_hls(
     work_dir: Optional[Union[str, Path]] = None,
     args: Optional[List[str]] = None,
     capture_output: bool = True,
+    env: Optional[Dict[str, str]] = None,
 ) -> subprocess.CompletedProcess:
     """
     Execute a Vitis HLS TCL script using the discovered Vitis launcher.
@@ -198,6 +199,9 @@ def run_vitis_hls(
         If ``True`` (default), captures stdout/stderr and stores them in the
         returned :class:`subprocess.CompletedProcess`. If ``False``, output is
         inherited by the current process terminal.
+    env : Optional[Dict[str, str]], optional
+        Additional environment variables merged into the subprocess
+        environment before launching Vitis.
 
     Returns
     -------
@@ -215,6 +219,11 @@ def run_vitis_hls(
     cmd_list, default_work_dir = _build_vitis_hls_cmd(tcl_script=tcl_script, args=args)
     final_cmd, use_shell = _build_final_cmd(cmd_list)
 
+    final_env = None
+    if env is not None:
+        final_env = os.environ.copy()
+        final_env.update(env)
+
     return subprocess.run(
         final_cmd,
         cwd=work_dir or default_work_dir,
@@ -222,6 +231,7 @@ def run_vitis_hls(
         check=True,
         text=True,
         capture_output=capture_output,
+        env=final_env,
     )
 
 
@@ -259,6 +269,7 @@ def subprocess_result(
     work_dir: Optional[Union[str, Path]] = None,
     capture_output: bool = True,
     output_path: Optional[Union[str, Path]] = None,
+    env: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Optional[str]]:
     """
     Execute a subprocess command and return a structured result dictionary.
@@ -283,6 +294,9 @@ def subprocess_result(
         simple human-readable format containing the ``status``, ``message``,
         ``stderr``, and ``stdout`` fields. When provided, ``capture_output`` is
         forced to ``True`` so the report file can include subprocess output.
+    env : Optional[Dict[str, str]], optional
+        Additional environment variables merged into the subprocess
+        environment before launching the command.
 
     Returns
     -------
@@ -298,6 +312,10 @@ def subprocess_result(
     """
     effective_capture_output = capture_output or (output_path is not None)
     final_cmd, use_shell = _build_final_cmd(cmd_list)
+    final_env = None
+    if env is not None:
+        final_env = os.environ.copy()
+        final_env.update(env)
 
     try:
         result = subprocess.run(
@@ -307,6 +325,7 @@ def subprocess_result(
             check=True,
             text=True,
             capture_output=effective_capture_output,
+            env=final_env,
         )
         out = {
             "status": "passed",
@@ -341,6 +360,7 @@ def run_vitis_hls_result(
     args: Optional[List[str]] = None,
     capture_output: bool = True,
     output_path: Optional[Union[str, Path]] = None,
+    env: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Optional[str]]:
     """
     Execute a Vitis HLS TCL script and return a structured result dictionary.
@@ -371,6 +391,9 @@ def run_vitis_hls_result(
         ``stderr``, and ``stdout`` fields.
         When provided, ``capture_output`` is forced to ``True`` so the report
         file can include subprocess output.
+    env : Optional[Dict[str, str]], optional
+        Additional environment variables merged into the subprocess
+        environment before launching Vitis.
 
     Returns
     -------
@@ -404,4 +427,5 @@ def run_vitis_hls_result(
         work_dir=work_dir or default_work_dir,
         capture_output=effective_capture_output,
         output_path=output_path,
+        env=env,
     )
