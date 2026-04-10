@@ -11,4 +11,5 @@ Welcome to PySilicon.  This folder will have guides to use the PySilicon functio
 
 - [Installation](./installation/)
 - [Data Schemas](./schema)
+- [Memory Modeling](./memory/)
 - [Timing Analysis Tools](./timing)
