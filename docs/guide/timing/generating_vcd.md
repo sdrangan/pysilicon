@@ -69,7 +69,7 @@ Returns a `pathlib.Path` pointing to the written VCD file.
 from poly_demo import PolyTest
 
 test = PolyTest()
-vcd_path = test.generate_vcd(output_vcd="dump.vcd", trace_level="all")
+vcd_path = test.generate_vcd(output_vcd="dump.vcd", trace_level="*")
 ```
 
 This is equivalent to calling `run_xsim_vcd` with `top="poly"` and
