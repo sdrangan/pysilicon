@@ -509,6 +509,12 @@ class VcdParser(object):
         bursts = []
         current_burst = None
 
+        # Ensure numeric values are computed for all required signals
+        for sig_name in [clk_name, axis_sigs['tdata'], axis_sigs['tvalid'],
+                         axis_sigs['tready'], axis_sigs['tlast']]:
+            if sig_name is not None and sig_name in self.sig_info:
+                self.sig_info[sig_name].get_values()
+
         # Extract clock times and resample AXI-Stream signals
         clk_sig = self.sig_info[clk_name]
         clk_times = extract_clock_times(clk_sig)
