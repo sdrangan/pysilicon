@@ -362,15 +362,20 @@ class HistTest(object):
         return generated_paths
 
     def write_input_files(self, data_dir: Path | None = None) -> Path:
-        """Write cmd, data, and bin-edge input files for the Vitis testbench.
+        """Write test data files for the Vitis testbench.
+
+        Writes ``params.json`` (``tx_id``, ``ndata``, ``nbins``),
+        ``data_array.bin``, and ``edges_array.bin`` (when ``nbins > 1``) to the
+        data directory.  The testbench reads these files, performs memory
+        allocations via ``MemMgr``, and constructs the ``HistCmd`` itself.
 
         The Python model (``simulate()``) must have been run first so that the
-        command descriptor and memory addresses are known.
+        input arrays and transaction parameters are known.
 
         Parameters
         ----------
         data_dir : Path | None
-            Directory in which to write the binary input files.  Defaults to
+            Directory in which to write the files.  Defaults to
             ``<example_dir>/data``.
 
         Returns
@@ -385,7 +390,13 @@ class HistTest(object):
             data_dir = self.example_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        self.cmd.write_uint32_file(data_dir / "cmd_data.bin")
+        # Write scalar parameters so the testbench can reconstruct the HistCmd.
+        params_path = data_dir / "params.json"
+        params_path.write_text(
+            json.dumps({"tx_id": int(self.cmd.tx_id), "ndata": self.ndata, "nbins": self.nbins},
+                       indent=2),
+            encoding="utf-8",
+        )
         write_uint32_file(self.data, elem_type=Float32, file_path=data_dir / "data_array.bin",
                           nwrite=self.ndata)
         if len(self.bin_edges) > 0:
