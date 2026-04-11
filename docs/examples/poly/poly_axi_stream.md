@@ -1,18 +1,21 @@
 ---
-title: Poly AXI4-Stream Timing Analysis
-parent: Timing Analysis Tools
+title: AXI4-Stream Timing Analysis
+parent: Polynomial Accelerator
 nav_order: 4
 has_children: false
 ---
 
-# Poly AXI4-Stream Timing Analysis
+# Polynomial AXI4-Stream Timing Analysis
 
+The polynomial demo includes functions to demonstrate how to perform the 
+timing analysis and waveform viewing of the AXI4-signals.  
 This guide explains how to analyze the AXI4-Stream timing of the `poly`
 Vitis HLS kernel from an existing VCD file — **without** rerunning RTL
-co-simulation.
+co-simulation.  
 
 The source code for everything on this page lives in
-`examples/poly/timing_analysis.py`.
+`examples/poly/timing_analysis.py`. The demo uses
+PySilicon's [AXI4-stream VCD analysis tools](../../guide/timing/axistream.md). 
 
 ## Overview
 

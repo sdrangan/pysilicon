@@ -10,37 +10,84 @@ has_children: false
 The Vitis C/RTL simulation creates a `.wdb` (waveform database)  file with traces of all the signals.  This file is in an AMD proprietary format and cannot be read by other programs,
 although you can see it in the Vivado viewer.  PySilicon provides methods to modify the simulation to export an alternative open-source **VCD** or [**Value Change Dump**](https://en.wikipedia.org/wiki/Value_change_dump) format.  VCD files can be read by many programs including python.
 
-## Generating VCD Files from the command line
+## Pre-Requisites
 
-To capture a VCD file:
-
-- First run the C/RTL co-simulation of the design.  To run co-simulation from a TCL file, use the command:
+Prior to capturing the VCD file, you must first run the C/RTL co-simulation of the design.  To run co-simulation from a TCL file, use the command:
 
 ```tcl
 cosim_design -trace_level [all | port]
 ```
 
-It is important to set the `trace_level` parameter as this will tell Vitis to trace signals:
-- After the RTL co-simulation is completed, [activate the virtual environment](../installation/python.md) for PySilicon package
-- Identify the `component_name` and `top_name` of the project.  For example, in the histogram example in `hwdesign/examples/histogram`, the `component_name` is `pysilicon_hist_proj` and the `top_name` is `solution1`.  
-- Re-run the simulation with VCD with the command from PowerShell or Linux terminal:
+It is important to set the `trace_level` parameter as this will tell Vitis to trace signals.
+
+## Parameters
+
+Next, you will have to identify the following parameters.
+
+| Parameter    | Default           | Description |
+|--------------|-------------------|-------------|
+| `top`        | *(required)*      | Top-level function name |
+| `comp`       | `"hls_component"` | HLS component directory name |
+| `out`        | `"dump.vcd"`      | Output filename (written to `vcd/<out>`) |
+| `soln`       | `"solution1"`     | Solution subdirectory inside `comp` |
+| `trace_level`| `"*"`             | VCD trace level: `"*"` for all signals, `"port"` for port signals only |
+| `workdir`    | CWD               | Working directory containing the `comp` folder |
+
+
+Note that you can get the component and solution name from the directory structure created by Vitis.  Specifically, running Vitis RTL co-sim creates directories of the form:  `<comp>/<soln>`.   For example, in the [polynomial example](../../examples/poly/), the RTL simulation generates a directory:
 
 ```bash
-(env) xsim_vcd --top <top_name> [--comp <component_name>] [--out <vcd_file>]
+pysilicon_poly_proj/solution1
 ```
 
-where `vcdfile` is the name of the VCD file with the signal traces.  By default, `<vcd_file>` is `dump.vcd`.  So, in the case of the histogram example, you would navigate to `hwdesign/examples/histogram` and then run:
+So, `comp` is `pysilicon_hist_proj` and `soln` is `solution1`.   
+
+
+For the value of `top`, this parameter should match the value of `top` used in the RTL simulation.  For example, in the polynomial example, the TCL file has the command `set_top poly`, so `top` is `poly`.
+
+
+## Generating the VCD from the CLI
+
+To then generate the VCD file from the CLI, first activate the virtual environment where pysilicon is installed.  Then run:
 
 ```bash
-(env) xsim_vcd --top pysilicon_hist_proj --comp solution1 --out dump_hist.vcd
+(env) xsim_vcd --top <top> [--comp <comp>] [--soln <soln> ] [--out <out>]
 ```
 
-- Note:  We have not yet created a version of the script `xsim_vcd` for Linux.
-- After running the script, there will be a VCD file with the simulation.  In the example above, it will be 
+So, in the polynomial example this would be:
 
 ```bash
-histogram/dump_hist.vcd
+(env) xsim_vcd --top pysilicon_poly_proj --comp solution1 --out dump_poly.vcd
 ```
+After running the script, there will be a VCD file with the simulation.  In the example above, it will be 
+
+```bash
+poly/vcd/dump_poly.vcd
+```
+
+## Python API
+
+You can also call the function from the `run_xsim_vcd` function that wraps the same logic as the CLI entry point:
+
+```python
+from pysilicon.scripts.xsim_vcd import run_xsim_vcd
+from pathlib import Path
+
+vcd_path = run_xsim_vcd(
+    top="poly",
+    comp="pysilicon_poly_proj",
+    out="dump.vcd",
+    workdir=Path("examples/poly"),
+)
+print(f"VCD written to: {vcd_path}")
+```
+
+
+The `run_xsim_vcd` function returns a `pathlib.Path` pointing to the written VCD file.  It raises the following errors:
+
+- Raises `RuntimeError` on non-Windows platforms
+- Raises `FileNotFoundError` if the simulation directory is not found
+- Raises `RuntimeError` if xsim fails
 
 ## Understanding the `xsim_vcd.py` script.
 
