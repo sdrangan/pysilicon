@@ -217,9 +217,9 @@ class TestUintValues:
 # AXI4-MM burst extraction tests
 # ---------------------------------------------------------------------------
 #
-# VCD structure (timescale 1 ns, clock period 10 ns, time_scale=1e3 in SigInfo):
-#   SigInfo divides raw timestamps by time_scale (1e3), so times in VCD body
-#   are treated as picoseconds; e.g. #5000 → 5.0 ns.
+# VCD structure (timescale 1ps, clock period 10 ns):
+#   SigInfo divides raw timestamps by time_scale (1e3), so timestamps in ps
+#   are converted to ns; e.g. #5000 (5000 ps) → 5.0 ns.
 #
 #   Clock rises at t = 5000, 15000, 25000, 35000, 45000 ps
 #   → cycle indices 0–4 correspond to t_ns = 5, 15, 25, 35, 45 ns.

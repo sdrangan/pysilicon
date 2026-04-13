@@ -677,7 +677,7 @@ class VcdParser(object):
             Name of the clock signal.
         aximm_sigs : dict[str, str]
             Dictionary of AXI4-MM signal names, as returned by
-            :meth:`add_aximm_signals`.
+            :meth:`add_aximm_signals <VcdParser.add_aximm_signals>`.
 
             Write-side keys: ``AWADDR``, ``AWVALID``, ``AWREADY``,
             ``WDATA``, ``WVALID``, ``WREADY``.
