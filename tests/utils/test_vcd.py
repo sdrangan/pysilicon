@@ -20,7 +20,7 @@ import pytest
 
 from vcdvcd import VCDVCD
 
-from pysilicon.utils.vcd import SigInfo, VcdParser
+from pysilicon.utils.vcd import AximmBeatType, SigInfo, VcdParser
 
 
 # ---------------------------------------------------------------------------
@@ -613,3 +613,196 @@ class TestExtractAximmBurstsFull:
         assert len(rb[0]['data']) == 2
         assert int(rb[0]['data'][0]) == 0x03
         assert int(rb[0]['data'][1]) == 0x04
+
+
+_AXIMM_SUSTAINED_AR_VCD = """\
+$timescale 1ps $end
+$scope module top $end
+$var wire 1  A clk     $end
+$var wire 32 B ARADDR  $end
+$var wire 1  C ARVALID $end
+$var wire 1  D ARREADY $end
+$var wire 32 E RDATA   $end
+$var wire 1  F RVALID  $end
+$var wire 1  G RREADY  $end
+$var wire 1  H RLAST   $end
+$upscope $end
+$enddefinitions $end
+#0
+0A
+b00000000000000000000000000110000 B
+1C
+1D
+b00000000000000000000000010101010 E
+0F
+1G
+0H
+#5000
+1A
+#10000
+0A
+#15000
+1A
+#18000
+1F
+1H
+#20000
+0A
+#25000
+1A
+#28000
+0C
+0D
+0F
+0H
+#30000
+0A
+"""
+
+
+@pytest.fixture
+def sustained_ar_parser(tmp_path):
+    p = tmp_path / "sustained_ar.vcd"
+    p.write_text(_AXIMM_SUSTAINED_AR_VCD)
+
+    vcd = VCDVCD(str(p))
+    vp = VcdParser(vcd)
+    vp.add_signal("top.clk", short_name="clk")
+    vp.sig_info["top.clk"].is_clock = True
+    aximm_sigs = {
+        "ARADDR":  "top.ARADDR",
+        "ARVALID": "top.ARVALID",
+        "ARREADY": "top.ARREADY",
+        "RDATA":   "top.RDATA",
+        "RVALID":  "top.RVALID",
+        "RREADY":  "top.RREADY",
+        "RLAST":   "top.RLAST",
+    }
+    for sig in aximm_sigs.values():
+        vp.add_signal(sig)
+    return vp, aximm_sigs
+
+
+_AXIMM_BACK_TO_BACK_AR_VCD = """\
+$timescale 1ps $end
+$scope module top $end
+$var wire 1  A clk     $end
+$var wire 32 B ARADDR  $end
+$var wire 1  C ARVALID $end
+$var wire 1  D ARREADY $end
+$var wire 8  E ARLEN   $end
+$var wire 32 F RDATA   $end
+$var wire 1  G RVALID  $end
+$var wire 1  H RREADY  $end
+$var wire 1  I RLAST   $end
+$upscope $end
+$enddefinitions $end
+#0
+0A
+b00000000000000000000000000010000 B
+1C
+1D
+b00000000 E
+b00000000000000000000000010100001 F
+0G
+1H
+0I
+#5000
+1A
+#8000
+b00000000000000000000000000100000 B
+b00000000000000000000000010100010 F
+#10000
+0A
+#15000
+1A
+#18000
+1G
+1I
+#20000
+0A
+#25000
+1A
+#28000
+b00000000000000000000000010110010 F
+#30000
+0A
+#35000
+1A
+#38000
+0C
+0D
+0G
+0I
+#40000
+0A
+"""
+
+
+@pytest.fixture
+def back_to_back_ar_parser(tmp_path):
+    p = tmp_path / "back_to_back_ar.vcd"
+    p.write_text(_AXIMM_BACK_TO_BACK_AR_VCD)
+
+    vcd = VCDVCD(str(p))
+    vp = VcdParser(vcd)
+    vp.add_signal("top.clk", short_name="clk")
+    vp.sig_info["top.clk"].is_clock = True
+    aximm_sigs = {
+        "ARADDR":  "top.ARADDR",
+        "ARVALID": "top.ARVALID",
+        "ARREADY": "top.ARREADY",
+        "ARLEN":   "top.ARLEN",
+        "RDATA":   "top.RDATA",
+        "RVALID":  "top.RVALID",
+        "RREADY":  "top.RREADY",
+        "RLAST":   "top.RLAST",
+    }
+    for sig in aximm_sigs.values():
+        vp.add_signal(sig)
+    return vp, aximm_sigs
+
+
+class TestExtractAximmBurstsAddressHandshakeDedup:
+    def test_sustained_read_address_handshake_creates_one_burst(self, sustained_ar_parser):
+        vp, aximm_sigs = sustained_ar_parser
+
+        _, rb, _ = vp.extract_aximm_bursts("top.clk", aximm_sigs)
+
+        assert len(rb) == 1
+        assert int(rb[0]["addr"]) == 0x30
+        assert len(rb[0]["data"]) == 1
+        assert int(rb[0]["data"][0]) == 0xAA
+
+    def test_back_to_back_read_addresses_still_create_two_bursts(self, back_to_back_ar_parser):
+        vp, aximm_sigs = back_to_back_ar_parser
+
+        _, rb, _ = vp.extract_aximm_bursts("top.clk", aximm_sigs)
+
+        assert len(rb) == 2
+        assert int(rb[0]["addr"]) == 0x10
+        assert int(rb[1]["addr"]) == 0x20
+        assert int(rb[0]["data"][0]) == 0xA2
+        assert int(rb[1]["data"][0]) == 0xB2
+
+    def test_back_to_back_reads_record_queued_data_phase_start(self, back_to_back_ar_parser):
+        vp, aximm_sigs = back_to_back_ar_parser
+
+        _, rb, _ = vp.extract_aximm_bursts("top.clk", aximm_sigs)
+
+        assert rb[0]["data_start_idx"] is not None
+        assert rb[0]["data_end_idx"] is not None
+        assert rb[0]["queue_wait_cycles"] == 0
+        assert rb[1]["data_start_idx"] is not None
+        assert rb[1]["data_end_idx"] is not None
+        assert rb[1]["data_start_idx"] > rb[1]["start_idx"]
+        assert rb[1]["queue_wait_cycles"] == rb[1]["data_start_idx"] - rb[1]["start_idx"]
+
+    def test_back_to_back_reads_use_enum_backed_beat_types(self, back_to_back_ar_parser):
+        vp, aximm_sigs = back_to_back_ar_parser
+
+        _, rb, _ = vp.extract_aximm_bursts("top.clk", aximm_sigs)
+
+        assert all(isinstance(bt, AximmBeatType) for bt in rb[0]["beat_type"])
+        assert rb[0]["beat_type"][0] is AximmBeatType.IDLE
+        assert AximmBeatType.TRANSFER in rb[0]["beat_type"]

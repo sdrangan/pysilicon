@@ -594,13 +594,13 @@ def test_datalist_gen_include_emits_read_helpers_when_requested(tmp_path: Path):
     assert "template<int word_bw>" in content
     assert "void write_array(ap_uint<word_bw> x[]) const {" in content
     assert "void write_stream(hls::stream<ap_uint<word_bw>> &s) const {" in content
-    assert "void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true) const {" in content
+    assert "void write_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, bool tlast = true) const {" in content
     assert "x[0].range(15, 0) = self->count;" in content
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
     assert "void read_stream(hls::stream<ap_uint<word_bw>> &s) {" in content
-    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, streamutils::tlast_status &tl) {" in content
-    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, streamutils::tlast_status &tl) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s) {" in content
     assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
     assert "last = axis_word.last;" in content
 
@@ -711,7 +711,9 @@ def test_copy_streamutils_hls_emits_tlast_status_enum(tmp_path: Path):
 
     assert "enum class tlast_status {" in content
     assert "struct tlast_status_info {" in content
-    assert "void flush_axi4_stream_to_tlast(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s) {" in content
+    assert "template<int W>" in content
+    assert "using axi4s_word = ap_axis<W, 0, 0, 0>;" in content
+    assert "void flush_axi4_stream_to_tlast(hls::stream<axi4s_word<W>> &s) {" in content
     assert "static const char* names[count];" in content
     assert "legacy compatibility shim" in cpp_content
     assert "Vitis HLS < 2025.1" in cpp_content
@@ -796,7 +798,7 @@ def test_datalist_gen_write_stream_flushes_words():
 def test_datalist_gen_write_axi4_stream_uses_tlast_on_final_word():
     content = Packet.gen_write(word_bw=32, dst_type="axi4_stream")
 
-    assert "void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true) const {" in content
+    assert "void write_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, bool tlast = true) const {" in content
     assert "ap_uint<32> w = 0;" in content
     assert "streamutils::write_axi4_word<32>(s, w, false);" in content
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
@@ -835,8 +837,8 @@ def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
 def test_datalist_gen_read_axi4_stream_uses_data_field():
     content = Packet.gen_read(word_bw=32, src_type="axi4_stream")
 
-    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, streamutils::tlast_status &tl) {" in content
-    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, streamutils::tlast_status &tl) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s) {" in content
     assert "ap_uint<32> w = 0;" in content
     assert "tl = streamutils::tlast_status::no_tlast;" in content
     assert "auto axis_word = s.read();" in content

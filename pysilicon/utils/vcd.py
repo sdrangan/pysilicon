@@ -1,5 +1,6 @@
 import math
 import re
+from enum import IntEnum
 from sys import prefix
 from typing import Literal
 import matplotlib.pyplot as plt
@@ -7,6 +8,14 @@ import numpy as np
 from vcdvcd import VCDVCD
 
 from pysilicon.utils.timing import SigTimingInfo
+
+
+class AximmBeatType(IntEnum):
+    """Per-cycle data-phase status for an extracted AXI-MM burst."""
+
+    TRANSFER = 0
+    IDLE = 1
+    STALL = 2
 
 def binary_str_to_numeric(
         bin_str : str,
@@ -696,10 +705,21 @@ class VcdParser(object):
             - ``'addr'``      : accepted AWADDR value
             - ``'data'``      : np.ndarray of accepted WDATA beats
             - ``'start_idx'`` : clock-edge index of the address phase
+                        - ``'data_start_idx'`` : first clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
+                        - ``'data_end_idx'`` : final clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
             - ``'beat_type'`` : list of per-beat status after the address
-              phase.  0 = transfer (WVALID & WREADY), 1 = idle (WVALID=0),
-              2 = stall (WREADY=0)
+                            phase while this burst is the active burst on the data channel.
+                            Values use :class:`AximmBeatType`: 0 = transfer
+                            (WVALID & WREADY), 1 = idle (WVALID=0), 2 = stall (WREADY=0)
             - ``'tstart'``    : time (ns) of the address phase
+                        - ``'data_tstart'`` : time (ns) of the first cycle represented in
+                            ``beat_type``
+                        - ``'data_tend'`` : time (ns) of the final cycle represented in
+                            ``beat_type``
+                        - ``'queue_wait_cycles'`` : number of cycles between address
+                            acceptance and the start of this burst's data phase
             - ``'awlen'``     : AWLEN value if available, else ``None``
 
         read_bursts : list of dict
@@ -708,10 +728,21 @@ class VcdParser(object):
             - ``'addr'``      : accepted ARADDR value
             - ``'data'``      : np.ndarray of accepted RDATA beats
             - ``'start_idx'`` : clock-edge index of the address phase
+                        - ``'data_start_idx'`` : first clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
+                        - ``'data_end_idx'`` : final clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
             - ``'beat_type'`` : list of per-beat status after the address
-              phase.  0 = transfer (RVALID & RREADY), 1 = idle (RVALID=0),
-              2 = stall (RREADY=0)
+                            phase while this burst is the active burst on the data channel.
+                            Values use :class:`AximmBeatType`: 0 = transfer
+                            (RVALID & RREADY), 1 = idle (RVALID=0), 2 = stall (RREADY=0)
             - ``'tstart'``    : time (ns) of the address phase
+                        - ``'data_tstart'`` : time (ns) of the first cycle represented in
+                            ``beat_type``
+                        - ``'data_tend'`` : time (ns) of the final cycle represented in
+                            ``beat_type``
+                        - ``'queue_wait_cycles'`` : number of cycles between address
+                            acceptance and the start of this burst's data phase
             - ``'arlen'``     : ARLEN value if available, else ``None``
 
         clk_period : float
@@ -764,15 +795,67 @@ class VcdParser(object):
         pending_writes = []
         pending_reads  = []
 
+        def _is_new_addr_handshake(
+                handshake: bool,
+                prev_handshake: bool,
+                addr_now,
+                addr_prev,
+                len_now,
+                len_prev) -> bool:
+            """Return True only for a newly observed address acceptance.
+
+            Address channels in some traces can hold VALID/READY high across
+            multiple cycles. Treating every such cycle as a fresh handshake
+            creates duplicate overlapping bursts. We start a new burst when the
+            accepted handshake is new, or when the accepted address metadata
+            changes while the channel remains accepted across consecutive cycles.
+            """
+            if not handshake:
+                return False
+            if not prev_handshake:
+                return True
+            if addr_now is not None and addr_prev is not None and addr_now != addr_prev:
+                return True
+            if len_now is not None and len_prev is not None and len_now != len_prev:
+                return True
+            return False
+
+        def _append_active_cycle(active: dict, beat_type: AximmBeatType, clk_idx: int) -> None:
+            if active['data_start_idx'] is None:
+                active['data_start_idx'] = clk_idx
+                active['data_tstart'] = clk_times[clk_idx]
+            active['beat_type'].append(beat_type)
+            active['data_end_idx'] = clk_idx
+            active['data_tend'] = clk_times[clk_idx]
+            active['queue_wait_cycles'] = int(active['data_start_idx'] - active['start_idx'])
+
         for i in range(n):
+            prev_i = i - 1
+
             # --- Write address channel ---
-            if (awvalid is not None and awready is not None
-                    and awvalid[i] and awready[i]):
+            aw_handshake = bool(
+                awvalid is not None and awready is not None and awvalid[i] and awready[i]
+            )
+            prev_aw_handshake = bool(
+                i > 0 and awvalid is not None and awready is not None and awvalid[prev_i] and awready[prev_i]
+            )
+            if _is_new_addr_handshake(
+                    aw_handshake,
+                    prev_aw_handshake,
+                    awaddr[i] if awaddr is not None else None,
+                    awaddr[prev_i] if (i > 0 and awaddr is not None) else None,
+                    awlen[i] if awlen is not None else None,
+                    awlen[prev_i] if (i > 0 and awlen is not None) else None):
                 burst = {
                     'addr':      awaddr[i] if awaddr is not None else None,
                     'awlen':     int(awlen[i]) if awlen is not None else None,
                     'start_idx': i,
                     'tstart':    clk_times[i],
+                    'data_start_idx': None,
+                    'data_end_idx': None,
+                    'data_tstart': None,
+                    'data_tend': None,
+                    'queue_wait_cycles': None,
                     'data':      [],
                     'beat_type': [],
                 }
@@ -782,8 +865,8 @@ class VcdParser(object):
             if wvalid is not None and wready is not None and pending_writes:
                 active = pending_writes[0]
                 if wvalid[i] and wready[i]:
+                    _append_active_cycle(active, AximmBeatType.TRANSFER, i)
                     active['data'].append(wdata[i] if wdata is not None else None)
-                    active['beat_type'].append(0)  # transfer
                     # Determine end-of-burst
                     if wlast is not None:
                         is_last = bool(wlast[i])
@@ -797,18 +880,34 @@ class VcdParser(object):
                         pending_writes.pop(0)
                 else:
                     if not wvalid[i]:
-                        active['beat_type'].append(1)  # idle
+                        _append_active_cycle(active, AximmBeatType.IDLE, i)
                     elif not wready[i]:
-                        active['beat_type'].append(2)  # stall
+                        _append_active_cycle(active, AximmBeatType.STALL, i)
 
             # --- Read address channel ---
-            if (arvalid is not None and arready is not None
-                    and arvalid[i] and arready[i]):
+            ar_handshake = bool(
+                arvalid is not None and arready is not None and arvalid[i] and arready[i]
+            )
+            prev_ar_handshake = bool(
+                i > 0 and arvalid is not None and arready is not None and arvalid[prev_i] and arready[prev_i]
+            )
+            if _is_new_addr_handshake(
+                    ar_handshake,
+                    prev_ar_handshake,
+                    araddr[i] if araddr is not None else None,
+                    araddr[prev_i] if (i > 0 and araddr is not None) else None,
+                    arlen[i] if arlen is not None else None,
+                    arlen[prev_i] if (i > 0 and arlen is not None) else None):
                 burst = {
                     'addr':      araddr[i] if araddr is not None else None,
                     'arlen':     int(arlen[i]) if arlen is not None else None,
                     'start_idx': i,
                     'tstart':    clk_times[i],
+                    'data_start_idx': None,
+                    'data_end_idx': None,
+                    'data_tstart': None,
+                    'data_tend': None,
+                    'queue_wait_cycles': None,
                     'data':      [],
                     'beat_type': [],
                 }
@@ -818,8 +917,8 @@ class VcdParser(object):
             if rvalid is not None and rready is not None and pending_reads:
                 active = pending_reads[0]
                 if rvalid[i] and rready[i]:
+                    _append_active_cycle(active, AximmBeatType.TRANSFER, i)
                     active['data'].append(rdata[i] if rdata is not None else None)
-                    active['beat_type'].append(0)  # transfer
                     # Determine end-of-burst
                     if rlast is not None:
                         is_last = bool(rlast[i])
@@ -833,9 +932,9 @@ class VcdParser(object):
                         pending_reads.pop(0)
                 else:
                     if not rvalid[i]:
-                        active['beat_type'].append(1)  # idle
+                        _append_active_cycle(active, AximmBeatType.IDLE, i)
                     elif not rready[i]:
-                        active['beat_type'].append(2)  # stall
+                        _append_active_cycle(active, AximmBeatType.STALL, i)
 
         # Estimate clock period
         clk_diffs = np.diff(clk_times)

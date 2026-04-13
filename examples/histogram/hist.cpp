@@ -67,7 +67,7 @@ void hist(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
         float sample = data_buf[i];
         int bin = 0;
 
-        hist_search:  for (int b = 0; b < max_nbins; b++) {
+        hist_search:  for (int b = 0; b < nbins - 1; ++b) {
 #pragma HLS LOOP_TRIPCOUNT min=1 max=max_nbins
 #pragma HLS PIPELINE II=1
             if (sample >= edge_buf[b]) 

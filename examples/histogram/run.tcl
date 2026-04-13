@@ -46,8 +46,10 @@ proc stage_index {stage} {
         csim { return 0 }
         csynth { return 1 }
         cosim { return 2 }
+        generate_vcd { return 3 }
+        extract_bursts { return 4 }
         default {
-            puts "PYSILICON_ERROR: Unsupported stage '$stage'. Expected one of: csim, csynth, cosim."
+            puts "PYSILICON_ERROR: Unsupported stage '$stage'. Expected one of: csim, csynth, cosim, generate_vcd, extract_bursts."
             exit 1
         }
     }

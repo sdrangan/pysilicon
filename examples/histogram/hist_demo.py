@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from enum import IntEnum
@@ -23,14 +24,17 @@ from pysilicon.hw.arrayutils import (
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField, MemAddr
 from pysilicon.toolchain import toolchain
 from pysilicon.hw.memory import AddrUnit, Memory
+from pysilicon.utils.vcd import AximmBeatType
 
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
 TRACE_LEVELS = ("none", "port", "all")
-STAGES = ("csim", "csynth", "cosim", "generate_vcd")
-VITIS_STAGES = STAGES[:-1]
+STAGES = ("csim", "csynth", "cosim", "generate_vcd", "extract_bursts")
+VITIS_STAGES = ("csim", "csynth", "cosim")
+DEFAULT_MAX_READ_BURST_LENGTH = 16
+DEFAULT_MAX_WRITE_BURST_LENGTH = 16
 TxIdField = IntField.specialize(bitwidth=16, signed=False)
 NdataField = IntField.specialize(bitwidth=32, signed=False)
 NbinField = IntField.specialize(bitwidth=32, signed=False)
@@ -46,6 +50,22 @@ def _stage_index(stage: str) -> int:
 
 def _vcd_trace_level(trace_level: str) -> str:
     return trace_level if trace_level in {"all", "port"} else "*"
+
+
+def _json_scalar(value):
+    if isinstance(value, (np.integer, np.floating)):
+        return value.item()
+    return value
+
+
+def _json_hex_word(value, bitwidth: int) -> str:
+    if bitwidth <= 0:
+        raise ValueError("bitwidth must be positive.")
+
+    int_value = int(_json_scalar(value))
+    mask = (1 << bitwidth) - 1
+    hex_width = (bitwidth + 3) // 4
+    return f"0x{(int_value & mask):0{hex_width}x}"
 
 """
 Parameters
@@ -458,18 +478,251 @@ class HistTest(object):
 
         return HistSimResult(cmd=self.cmd, resp=resp, counts=counts, expected=self.expected)
 
+    def _expected_burst_summary(self) -> dict[str, object]:
+        if self.cmd is None:
+            self.simulate()
+
+        assert self.cmd is not None
+
+        max_read_burst_length, max_write_burst_length = self._detect_axi_max_burst_lengths()
+        bytes_per_word = self.mem_dwidth // 8
+
+        read_regions = [
+            {
+                "name": "data",
+                "addr": int(self.cmd.data_addr),
+                "nwords": int(get_nwords(Float32, word_bw=self.mem_dwidth, shape=self.ndata)),
+            },
+        ]
+        if self.nbins > 1:
+            read_regions.append(
+                {
+                    "name": "bin_edges",
+                    "addr": int(self.cmd.bin_edges_addr),
+                    "nwords": int(get_nwords(Float32, word_bw=self.mem_dwidth, shape=self.nbins - 1)),
+                }
+            )
+
+        write_regions = [
+            {
+                "name": "counts",
+                "addr": int(self.cmd.cnt_addr),
+                "nwords": int(get_nwords(Uint32Field, word_bw=self.mem_dwidth, shape=self.nbins)),
+            }
+        ]
+
+        read_bursts = [
+            burst
+            for region in read_regions
+            for burst in self._split_region_into_bursts(region, max_read_burst_length, bytes_per_word)
+        ]
+        write_bursts = [
+            burst
+            for region in write_regions
+            for burst in self._split_region_into_bursts(region, max_write_burst_length, bytes_per_word)
+        ]
+
+        return {
+            "max_read_burst_length": max_read_burst_length,
+            "max_write_burst_length": max_write_burst_length,
+            "read_burst_count": len(read_bursts),
+            "write_burst_count": len(write_bursts),
+            "read_regions": read_regions,
+            "write_regions": write_regions,
+            "read_bursts": read_bursts,
+            "write_bursts": write_bursts,
+        }
+
+    def _detect_axi_max_burst_lengths(self) -> tuple[int, int]:
+        candidates = [
+            self.example_dir / "pysilicon_hist_proj" / "solution1" / "impl" / "verilog" / "hist.v",
+            self.example_dir / "pysilicon_hist_proj" / "solution1" / "impl" / "vhdl" / "hist.vhd",
+        ]
+        patterns = {
+            "read": [
+                re.compile(r"MAX_READ_BURST_LENGTH\s*=>\s*(\d+)"),
+                re.compile(r"\.MAX_READ_BURST_LENGTH\s*\(\s*(\d+)\s*\)"),
+            ],
+            "write": [
+                re.compile(r"MAX_WRITE_BURST_LENGTH\s*=>\s*(\d+)"),
+                re.compile(r"\.MAX_WRITE_BURST_LENGTH\s*\(\s*(\d+)\s*\)"),
+            ],
+        }
+
+        read_length = DEFAULT_MAX_READ_BURST_LENGTH
+        write_length = DEFAULT_MAX_WRITE_BURST_LENGTH
+
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            text = candidate.read_text(encoding="utf-8", errors="ignore")
+            for pattern in patterns["read"]:
+                match = pattern.search(text)
+                if match is not None:
+                    read_length = int(match.group(1))
+                    break
+            for pattern in patterns["write"]:
+                match = pattern.search(text)
+                if match is not None:
+                    write_length = int(match.group(1))
+                    break
+            if read_length and write_length:
+                break
+
+        return read_length, write_length
+
+    @staticmethod
+    def _split_region_into_bursts(region: dict[str, object], max_burst_length: int, bytes_per_word: int) -> list[dict[str, int | str]]:
+        addr = int(region["addr"])
+        nwords = int(region["nwords"])
+        name = str(region["name"])
+        bursts: list[dict[str, int | str]] = []
+
+        remaining = nwords
+        offset_words = 0
+        while remaining > 0:
+            burst_words = min(remaining, max_burst_length)
+            bursts.append(
+                {
+                    "name": name,
+                    "addr": addr + offset_words * bytes_per_word,
+                    "nwords": burst_words,
+                }
+            )
+            offset_words += burst_words
+            remaining -= burst_words
+
+        return bursts
+
+    @staticmethod
+    def _burst_layout(bursts: list[dict[str, object]], len_key: str) -> list[dict[str, int]]:
+        layout = []
+        for burst in bursts:
+            addr = burst.get("addr")
+            if addr is None:
+                continue
+            raw_len = burst.get(len_key)
+            nwords = len(burst.get("data", []))
+            if raw_len is not None:
+                nwords = int(_json_scalar(raw_len)) + 1
+            layout.append({
+                "addr": int(_json_scalar(addr)),
+                "nwords": int(nwords),
+            })
+        return layout
+
+    @staticmethod
+    def _burst_to_jsonable(burst: dict[str, object], data_bitwidth: int) -> dict[str, object]:
+        beat_types = [int(_json_scalar(value)) for value in burst.get("beat_type", [])]
+        data_values = [_json_scalar(value) for value in np.asarray(burst.get("data", [])).tolist()]
+        return {
+            "addr": None if burst.get("addr") is None else int(_json_scalar(burst["addr"])),
+            "start_idx": int(_json_scalar(burst["start_idx"])),
+            "tstart": float(_json_scalar(burst["tstart"])),
+            "data_start_idx": None if burst.get("data_start_idx") is None else int(_json_scalar(burst["data_start_idx"])),
+            "data_end_idx": None if burst.get("data_end_idx") is None else int(_json_scalar(burst["data_end_idx"])),
+            "data_tstart": None if burst.get("data_tstart") is None else float(_json_scalar(burst["data_tstart"])),
+            "data_tend": None if burst.get("data_tend") is None else float(_json_scalar(burst["data_tend"])),
+            "queue_wait_cycles": None if burst.get("queue_wait_cycles") is None else int(_json_scalar(burst["queue_wait_cycles"])),
+            "beat_type": beat_types,
+            "beat_type_names": [AximmBeatType(value).name.lower() for value in beat_types],
+            "data": data_values,
+            "data_hex": [_json_hex_word(value, data_bitwidth) for value in data_values],
+            "awlen": None if burst.get("awlen") is None else int(_json_scalar(burst["awlen"])),
+            "arlen": None if burst.get("arlen") is None else int(_json_scalar(burst["arlen"])),
+        }
+
+    def extract_bursts(
+        self,
+        vcd_path: str | Path | None = None,
+        output_json: str | Path | None = None,
+    ) -> dict[str, object]:
+        """Extract AXI-MM bursts from the histogram VCD and write a JSON report."""
+        if self.cmd is None:
+            self.simulate()
+
+        from vcdvcd import VCDVCD
+        from pysilicon.utils.vcd import VcdParser
+
+        if vcd_path is None:
+            vcd_path = self.example_dir / "vcd" / "dump.vcd"
+        vcd_path = Path(vcd_path)
+        if not vcd_path.exists():
+            raise FileNotFoundError(f"VCD file not found: {vcd_path}")
+
+        if output_json is None:
+            output_json = vcd_path.with_name("burst_info.json")
+        output_json = Path(output_json)
+
+        vcd = VCDVCD(str(vcd_path), signals=None, store_tvs=True)
+        vp = VcdParser(vcd)
+        clk_sig = vp.add_clock_signal()
+        aximm_sigs, aximm_bw = vp.add_aximm_signals(
+            prefix="m_axi_gmem_",
+            dir="both",
+            lite_only=False,
+            short_name_prefix="gmem_",
+        )
+        write_bursts, read_bursts, clk_period = vp.extract_aximm_bursts(
+            clk_name=clk_sig,
+            aximm_sigs=aximm_sigs,
+        )
+
+        expected = self._expected_burst_summary()
+        report = {
+            "vcd_path": str(vcd_path),
+            "output_json": str(output_json),
+            "clock_signal": clk_sig,
+            "clk_period_ns": float(clk_period),
+            "beat_type_enum": {member.name.lower(): int(member) for member in AximmBeatType},
+            "aximm_bitwidths": {key: int(value) for key, value in aximm_bw.items()},
+            "expected": expected,
+            "actual": {
+                "write_burst_count": len(write_bursts),
+                "read_burst_count": len(read_bursts),
+                "write_bursts": [self._burst_to_jsonable(burst, data_bitwidth=int(aximm_bw["WDATA"])) for burst in write_bursts],
+                "read_bursts": [self._burst_to_jsonable(burst, data_bitwidth=int(aximm_bw["RDATA"])) for burst in read_bursts],
+                "write_burst_layout": self._burst_layout(write_bursts, "awlen"),
+                "read_burst_layout": self._burst_layout(read_bursts, "arlen"),
+            },
+        }
+        report["checks"] = {
+            "write_burst_count_matches": report["actual"]["write_burst_count"] == expected["write_burst_count"],
+            "read_burst_count_matches": report["actual"]["read_burst_count"] == expected["read_burst_count"],
+            "write_burst_layout_matches": report["actual"]["write_burst_layout"] == [
+                {"addr": burst["addr"], "nwords": burst["nwords"]} for burst in expected["write_bursts"]
+            ],
+            "read_burst_layout_matches": report["actual"]["read_burst_layout"] == [
+                {"addr": burst["addr"], "nwords": burst["nwords"]} for burst in expected["read_bursts"]
+            ],
+        }
+        report["validated"] = all(report["checks"].values())
+
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+        if not report["validated"]:
+            raise RuntimeError(
+                "Unexpected AXI-MM burst counts in extracted VCD data. "
+                f"Expected read/write burst counts {expected['read_burst_count']}/{expected['write_burst_count']}, "
+                f"got {report['actual']['read_burst_count']}/{report['actual']['write_burst_count']}. "
+                f"See {output_json}."
+            )
+
+        return report
+
     def test_vitis(
         self,
         start_at: str = "csim",
         through: str = "csim",
         trace_level: str = "none",
         live_output: bool = False,
-    ) -> HistSimResult | None:
+    ) -> HistSimResult | dict[str, object] | None:
         """Run a contiguous stage range of the histogram Vitis flow.
 
         This method orchestrates an inclusive stage range of the file-based
         histogram flow. The supported stages are ``csim``, ``csynth``,
-        ``cosim``, and ``generate_vcd``.
+        ``cosim``, ``generate_vcd``, and ``extract_bursts``.
 
         1. Run the Python model (``simulate()``) if not already done.
         2. If ``start_at == 'csim'``, regenerate Vitis headers and input files.
@@ -477,6 +730,7 @@ class HistTest(object):
         4. When C-simulation or RTL co-simulation is executed, compare the
            produced outputs against the Python reference.
         5. Optionally generate a VCD after the Vitis stages complete.
+        6. Optionally extract AXI-MM bursts from the generated VCD.
 
         Parameters
         ----------
@@ -488,17 +742,19 @@ class HistTest(object):
         trace_level : str
             RTL co-simulation trace level passed through to ``cosim_design``.
             Supported values are ``none``, ``port``, and ``all``. When the
-            stage range includes ``generate_vcd``, ``port`` and ``all`` are
-            passed through directly; ``none`` falls back to ``'*'``.
+            stage range includes ``generate_vcd`` or ``extract_bursts``,
+            ``port`` and ``all`` are passed through directly; ``none`` falls
+            back to ``'*'`` for the VCD step.
         live_output : bool
             If ``True``, stream Vitis stdout/stderr directly to the terminal
             while the subprocess runs instead of buffering it for later.
 
         Returns
         -------
-        HistSimResult | None
+        HistSimResult | dict[str, object] | None
             Result bundle with counts and response read from the Vitis output
             files when the executed range includes ``csim`` or ``cosim``.
+            Returns the burst report for ranges ending in ``extract_bursts``.
             Returns ``None`` for ranges that only execute synthesis and/or VCD
             generation.
 
@@ -531,7 +787,7 @@ class HistTest(object):
             self.gen_vitis_code()
             data_dir = self.write_input_files()
         else:
-            if not project_dir.exists():
+            if start_at in {"csynth", "cosim", "generate_vcd"} and not project_dir.exists():
                 raise RuntimeError(
                     f"Cannot start at '{start_at}' without an existing project at {project_dir}."
                 )
@@ -541,7 +797,7 @@ class HistTest(object):
                     raise RuntimeError(
                         f"Cannot start at '{start_at}' without an existing solution at {solution_dir}."
                     )
-            if start_at in VITIS_STAGES and not data_dir.exists():
+            if start_at in {"csynth", "cosim"} and not data_dir.exists():
                 raise RuntimeError(
                     f"Cannot start at '{start_at}' without existing Vitis input data at {data_dir}."
                 )
@@ -594,9 +850,21 @@ class HistTest(object):
         if vitis_stderr:
             print(vitis_stderr)
 
-        if through == "generate_vcd":
+        vcd_path: Path | None = None
+        generate_vcd_idx = _stage_index("generate_vcd")
+        if start_idx <= generate_vcd_idx <= through_idx:
             vcd_path = self.generate_vcd(trace_level=_vcd_trace_level(trace_level))
             print(f"VCD written to: {vcd_path}")
+
+        if through == "extract_bursts":
+            report = self.extract_bursts(vcd_path=vcd_path)
+            print(
+                "Burst extraction validated. "
+                f"read_bursts={report['actual']['read_burst_count']}, "
+                f"write_bursts={report['actual']['write_burst_count']}"
+            )
+            print(f"Burst report written to: {report['output_json']}")
+            return report
 
         return vitis_result
 
@@ -660,11 +928,17 @@ def main() -> None:
         # Run through VCD generation with full waveform tracing
         python hist_demo.py --through generate_vcd --trace_level all
 
+        # Run through burst extraction and write a JSON report
+        python hist_demo.py --through extract_bursts --trace_level port
+
         # Python + Vitis C-simulation with live Vitis output in the terminal
         python hist_demo.py --live_output
 
         # Generate a VCD from an existing traced co-sim run
         python hist_demo.py --start_at generate_vcd --through generate_vcd
+
+        # Extract bursts from an existing VCD
+        python hist_demo.py --start_at extract_bursts --through extract_bursts
     """
     parser = argparse.ArgumentParser(description="Run the histogram accelerator example.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed for test data generation.")
@@ -724,8 +998,13 @@ def main() -> None:
         print(f"Vitis run failed: {exc}")
         return
 
-    if vitis_result is not None:
+    if isinstance(vitis_result, HistSimResult):
         print(f"Vitis simulation matched Python model. counts={vitis_result.counts}")
+    elif isinstance(vitis_result, dict):
+        print(
+            "Burst extraction report generated. "
+            f"output_json={vitis_result.get('output_json')}"
+        )
 
 
 if __name__ == "__main__":

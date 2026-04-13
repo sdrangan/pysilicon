@@ -48,6 +48,7 @@ print(out_str_sigs)
 
 Note that we use the `short_prefix_name` so that the signal will have a smaller display name on the timinng diagram.  Running this code, will load the `TDATA`, `TVALID`, `TREADY`, and, if used, a `TLAST` signal for each stream.
 
+## Plotting the Timing Diagram
 We can then plot the timing diagram as:
 
 ```python
