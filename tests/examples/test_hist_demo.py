@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -60,6 +61,93 @@ def test_hist_test_gen_test_data_initializes_state_before_simulate() -> None:
 
     assert hist_test.cmd is not None
     assert result.passed is True
+
+
+def test_hist_test_vitis_stage_range_passes_tcl_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _copy_hist_vitis_resources(tmp_path)
+    hist_test = HistTest(seed=11, ndata=41, nbins=7, example_dir=tmp_path)
+    expected_result = hist_test.simulate()
+
+    captured: dict[str, object] = {}
+
+    def fake_gen_vitis_code() -> list[Path]:
+        return []
+
+    def fake_write_input_files(data_dir: Path | None = None) -> Path:
+        target_dir = tmp_path / "data"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return target_dir
+
+    def fake_run_vitis_hls(
+        run_tcl: Path,
+        work_dir: Path,
+        capture_output: bool,
+        env: dict[str, str] | None = None,
+    ):
+        captured["run_tcl"] = run_tcl
+        captured["work_dir"] = work_dir
+        captured["capture_output"] = capture_output
+        captured["env"] = env
+        return SimpleNamespace(stdout="hist csynth ok", stderr="")
+
+    def fake_read_vitis_outputs(data_dir: Path):
+        captured["data_dir"] = data_dir
+        return expected_result
+
+    monkeypatch.setattr(hist_test, "gen_vitis_code", fake_gen_vitis_code)
+    monkeypatch.setattr(hist_test, "write_input_files", fake_write_input_files)
+    monkeypatch.setattr(hist_test, "read_vitis_outputs", fake_read_vitis_outputs)
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fake_run_vitis_hls)
+
+    result = hist_test.test_vitis(start_at="csim", through="csynth")
+
+    assert result is expected_result
+    assert captured["run_tcl"] == tmp_path / "run.tcl"
+    assert captured["work_dir"] == tmp_path
+    assert captured["capture_output"] is True
+    assert captured["data_dir"] == tmp_path / "data"
+    assert captured["env"] == {
+        "PYSILICON_HIST_START_AT": "csim",
+        "PYSILICON_HIST_THROUGH": "csynth",
+        "PYSILICON_HIST_TRACE_LEVEL": "none",
+    }
+
+
+def test_hist_test_vitis_rejects_invalid_stage_range() -> None:
+    hist_test = HistTest()
+
+    with pytest.raises(ValueError, match="must not come after"):
+        hist_test.test_vitis(start_at="cosim", through="csynth")
+
+
+def test_hist_test_generate_vcd_stage_skips_vitis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _copy_hist_vitis_resources(tmp_path)
+    hist_test = HistTest(seed=11, ndata=41, nbins=7, example_dir=tmp_path)
+    project_dir = tmp_path / "pysilicon_hist_proj" / "solution1"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    captured: dict[str, object] = {}
+
+    def fake_generate_vcd(output_vcd: str = "dump.vcd", soln: str | None = "solution1", trace_level: str = "*") -> Path:
+        captured["output_vcd"] = output_vcd
+        captured["soln"] = soln
+        captured["trace_level"] = trace_level
+        return tmp_path / "vcd" / output_vcd
+
+    def fail_run_vitis_hls(*args, **kwargs):
+        raise AssertionError("Vitis should not be invoked for the generate_vcd-only stage.")
+
+    monkeypatch.setattr(hist_test, "generate_vcd", fake_generate_vcd)
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fail_run_vitis_hls)
+
+    result = hist_test.test_vitis(start_at="generate_vcd", through="generate_vcd")
+
+    assert result is None
+    assert captured == {
+        "output_vcd": "dump.vcd",
+        "soln": "solution1",
+        "trace_level": "*",
+    }
 
 
 @pytest.mark.vitis

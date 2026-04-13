@@ -29,10 +29,23 @@ EXAMPLE_DIR = Path(__file__).resolve().parent
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
 TRACE_LEVELS = ("none", "port", "all")
+STAGES = ("csim", "csynth", "cosim", "generate_vcd")
+VITIS_STAGES = STAGES[:-1]
 TxIdField = IntField.specialize(bitwidth=16, signed=False)
 NdataField = IntField.specialize(bitwidth=32, signed=False)
 NbinField = IntField.specialize(bitwidth=32, signed=False)
 Uint32Field = IntField.specialize(bitwidth=32, signed=False, include_dir=INCLUDE_DIR)
+
+
+def _stage_index(stage: str) -> int:
+    try:
+        return STAGES.index(stage)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported stage '{stage}'. Expected one of {STAGES}.") from exc
+
+
+def _vcd_trace_level(trace_level: str) -> str:
+    return trace_level if trace_level in {"all", "port"} else "*"
 
 """
 Parameters
@@ -447,90 +460,143 @@ class HistTest(object):
 
     def test_vitis(
         self,
-        cosim: bool = False,
+        start_at: str = "csim",
+        through: str = "csim",
         trace_level: str = "none",
         live_output: bool = False,
-    ) -> HistSimResult:
-        """Run the Vitis kernel and testbench, then compare against the Python model.
+    ) -> HistSimResult | None:
+        """Run a contiguous stage range of the histogram Vitis flow.
 
-        This method orchestrates the full file-based Vitis simulation workflow:
+        This method orchestrates an inclusive stage range of the file-based
+        histogram flow. The supported stages are ``csim``, ``csynth``,
+        ``cosim``, and ``generate_vcd``.
 
         1. Run the Python model (``simulate()``) if not already done.
-        2. Generate Vitis HLS headers via ``gen_vitis_code()``.
-        3. Write binary input files for the C++ testbench via ``write_input_files()``.
-        4. Invoke Vitis HLS C-simulation (and, optionally, RTL co-simulation).
-        5. Read the testbench output files and compare against the Python reference.
+        2. If ``start_at == 'csim'``, regenerate Vitis headers and input files.
+        3. Run Vitis HLS for the requested inclusive range of stages.
+        4. When C-simulation or RTL co-simulation is executed, compare the
+           produced outputs against the Python reference.
+        5. Optionally generate a VCD after the Vitis stages complete.
 
         Parameters
         ----------
-        cosim : bool
-            If ``True``, also run C-synthesis and RTL co-simulation after the
-            C-simulation step.  Default is ``False``.
+        start_at : str
+            First stage to execute. Defaults to ``'csim'``. Starting at any
+            later stage reuses the existing Vitis project without resetting it.
+        through : str
+            Final stage to execute. Defaults to ``'csim'``.
         trace_level : str
             RTL co-simulation trace level passed through to ``cosim_design``.
-            Supported values are ``none``, ``port``, and ``all``. Ignored when
-            ``cosim`` is ``False``.
+            Supported values are ``none``, ``port``, and ``all``. When the
+            stage range includes ``generate_vcd``, ``port`` and ``all`` are
+            passed through directly; ``none`` falls back to ``'*'``.
         live_output : bool
             If ``True``, stream Vitis stdout/stderr directly to the terminal
             while the subprocess runs instead of buffering it for later.
 
         Returns
         -------
-        HistSimResult
-            Result bundle with counts and response read from the Vitis output files.
+        HistSimResult | None
+            Result bundle with counts and response read from the Vitis output
+            files when the executed range includes ``csim`` or ``cosim``.
+            Returns ``None`` for ranges that only execute synthesis and/or VCD
+            generation.
 
         Raises
         ------
         RuntimeError
-            If the Vitis simulation outputs do not match the Python model.
+            If the requested Vitis project state does not exist or if the Vitis
+            simulation outputs do not match the Python model.
         """
-        if self.cmd is None:
-            self.simulate()
-
         if trace_level not in TRACE_LEVELS:
             raise ValueError(
                 f"Unsupported trace level '{trace_level}'. Expected one of {TRACE_LEVELS}."
             )
 
-        self.gen_vitis_code()
-        data_dir = self.write_input_files()
+        start_idx = _stage_index(start_at)
+        through_idx = _stage_index(through)
+        if start_idx > through_idx:
+            raise ValueError(
+                f"start_at stage '{start_at}' must not come after through stage '{through}'."
+            )
+
+        if self.cmd is None:
+            self.simulate()
+
+        data_dir = self.example_dir / "data"
         logs_dir = self.example_dir / "logs"
         project_dir = self.example_dir / "pysilicon_hist_proj"
 
-        vitis_env = {
-            "PYSILICON_HIST_COSIM": "1" if cosim else "0",
-            "PYSILICON_HIST_TRACE_LEVEL": trace_level,
-        }
-
-        if cosim:
-            print("Performing Vitis C-simulation, C-synthesis, and RTL co-simulation. This may take minutes.")
-            print(f"Trace level: {trace_level}")
+        if start_at == "csim":
+            self.gen_vitis_code()
+            data_dir = self.write_input_files()
         else:
-            print("Performing Vitis C-simulation. This may take minutes.")
+            if not project_dir.exists():
+                raise RuntimeError(
+                    f"Cannot start at '{start_at}' without an existing project at {project_dir}."
+                )
+            if start_at in {"csynth", "cosim", "generate_vcd"}:
+                solution_dir = project_dir / "solution1"
+                if not solution_dir.exists():
+                    raise RuntimeError(
+                        f"Cannot start at '{start_at}' without an existing solution at {solution_dir}."
+                    )
+            if start_at in VITIS_STAGES and not data_dir.exists():
+                raise RuntimeError(
+                    f"Cannot start at '{start_at}' without existing Vitis input data at {data_dir}."
+                )
 
-        try:
-            result = toolchain.run_vitis_hls(
-                self.example_dir / "run.tcl",
-                work_dir=self.example_dir,
-                capture_output=not live_output,
-                env=vitis_env,
+        vitis_result: HistSimResult | None = None
+        vitis_stdout = ""
+        vitis_stderr = ""
+
+        if start_idx <= _stage_index("cosim"):
+            vitis_through = through if through in VITIS_STAGES else "cosim"
+            vitis_through_idx = _stage_index(vitis_through)
+            executed_vitis_stages = VITIS_STAGES[start_idx : vitis_through_idx + 1]
+
+            print(
+                f"Performing Vitis stages {start_at} through {vitis_through}. "
+                "This may take minutes."
             )
-        except subprocess.CalledProcessError as exc:
-            if exc.stdout:
-                print(exc.stdout)
-            if exc.stderr:
-                print(exc.stderr)
-            raise RuntimeError(
-                "Vitis execution failed. "
-                f"See logs under {logs_dir} and generated files under {project_dir}."
-            ) from exc
+            if "cosim" in executed_vitis_stages:
+                print(f"Trace level: {trace_level}")
 
-        vitis_result = self.read_vitis_outputs(data_dir)
+            try:
+                result = toolchain.run_vitis_hls(
+                    self.example_dir / "run.tcl",
+                    work_dir=self.example_dir,
+                    capture_output=not live_output,
+                    env={
+                        "PYSILICON_HIST_START_AT": start_at,
+                        "PYSILICON_HIST_THROUGH": vitis_through,
+                        "PYSILICON_HIST_TRACE_LEVEL": trace_level,
+                    },
+                )
+            except subprocess.CalledProcessError as exc:
+                if exc.stdout:
+                    print(exc.stdout)
+                if exc.stderr:
+                    print(exc.stderr)
+                raise RuntimeError(
+                    "Vitis execution failed. "
+                    f"See logs under {logs_dir} and generated files under {project_dir}."
+                ) from exc
 
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr)
+            vitis_stdout = result.stdout or ""
+            vitis_stderr = result.stderr or ""
+
+            if any(stage in executed_vitis_stages for stage in ("csim", "cosim")):
+                vitis_result = self.read_vitis_outputs(data_dir)
+
+        if vitis_stdout:
+            print(vitis_stdout)
+        if vitis_stderr:
+            print(vitis_stderr)
+
+        if through == "generate_vcd":
+            vcd_path = self.generate_vcd(trace_level=_vcd_trace_level(trace_level))
+            print(f"VCD written to: {vcd_path}")
 
         return vitis_result
 
@@ -577,90 +643,89 @@ def main() -> None:
     Usage examples::
 
         # Python simulation only
-        python hist_demo.py --skip-vitis
+        python hist_demo.py --skip_vitis
 
         # Python + Vitis C-simulation
         python hist_demo.py
 
+        # Python + Vitis C-simulation + C-synthesis
+        python hist_demo.py --through csynth
+
         # Python + Vitis C-simulation + RTL co-simulation
-        python hist_demo.py --cosim
+        python hist_demo.py --through cosim
 
-        # Python + Vitis RTL co-simulation with full waveform tracing
-        python hist_demo.py --cosim --trace-level all
+        # Reuse an existing project to run synthesis and co-simulation only
+        python hist_demo.py --start_at csynth --through cosim
 
-        # Python + Vitis RTL co-simulation + generate VCD
-        python hist_demo.py --cosim --trace-level all --generate-vcd
+        # Run through VCD generation with full waveform tracing
+        python hist_demo.py --through generate_vcd --trace_level all
 
         # Python + Vitis C-simulation with live Vitis output in the terminal
-        python hist_demo.py --live-output
+        python hist_demo.py --live_output
 
         # Generate a VCD from an existing traced co-sim run
-        python hist_demo.py --generate-vcd
+        python hist_demo.py --start_at generate_vcd --through generate_vcd
     """
     parser = argparse.ArgumentParser(description="Run the histogram accelerator example.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed for test data generation.")
     parser.add_argument("--ndata", type=int, default=37, help="Number of input data elements.")
     parser.add_argument("--nbins", type=int, default=6, help="Number of histogram bins.")
-    parser.add_argument("--skip-vitis", action="store_true",
+    parser.add_argument("--skip_vitis", action="store_true",
                         help="Only run the Python side of the example.")
-    parser.add_argument("--cosim", action="store_true",
-                        help="Also run RTL co-simulation after C-synthesis.")
     parser.add_argument(
-        "--trace-level",
-        choices=TRACE_LEVELS,
-        default="none",
-        help="RTL co-simulation trace level passed to Vitis. Only used with --cosim.",
+        "--start_at",
+        choices=STAGES,
+        default="csim",
+        help="First stage to execute. Starting at csim resets the Vitis project.",
     )
     parser.add_argument(
-        "--live-output",
+        "--through",
+        choices=STAGES,
+        default="csim",
+        help="Final stage to execute.",
+    )
+    parser.add_argument(
+        "--trace_level",
+        choices=TRACE_LEVELS,
+        default="none",
+        help="RTL co-simulation trace level passed to Vitis.",
+    )
+    parser.add_argument(
+        "--live_output",
         action="store_true",
         help="Stream Vitis stdout/stderr directly to the terminal while it runs.",
     )
-    parser.add_argument("--generate-vcd", action="store_true",
-                        help="Generate a VCD file after a successful cosim run.")
     args = parser.parse_args()
 
-    test = HistTest(seed=args.seed, ndata=args.ndata, nbins=args.nbins)
-    test.gen_vitis_code()
+    if _stage_index(args.start_at) > _stage_index(args.through):
+        parser.error(f"--start_at {args.start_at} must not come after --through {args.through}.")
 
-    result = test.simulate()
-    print(
-        f"Python simulation: tx_id={result.resp.tx_id}, "
-        f"status={result.resp.status.name}, "
-        f"passed={result.passed}"
-    )
+    test = HistTest(seed=args.seed, ndata=args.ndata, nbins=args.nbins)
+
+    if args.start_at == "csim" or args.skip_vitis:
+        result = test.simulate()
+        print(
+            f"Python simulation: tx_id={result.resp.tx_id}, "
+            f"status={result.resp.status.name}, "
+            f"passed={result.passed}"
+        )
 
     if args.skip_vitis:
         return
 
-    if args.generate_vcd and not args.cosim:
-        try:
-            vcd_path = test.generate_vcd(trace_level=args.trace_level)
-        except (RuntimeError, FileNotFoundError) as exc:
-            print(f"VCD generation failed: {exc}")
-            return
-        print(f"VCD written to: {vcd_path}")
-        return
-
     try:
         vitis_result = test.test_vitis(
-            cosim=args.cosim,
+            start_at=args.start_at,
+            through=args.through,
             trace_level=args.trace_level,
             live_output=args.live_output,
         )
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError) as exc:
         print(f"Vitis run failed: {exc}")
         return
 
-    print(f"Vitis simulation matched Python model. counts={vitis_result.counts}")
-
-    if args.generate_vcd:
-        try:
-            vcd_path = test.generate_vcd(trace_level=args.trace_level)
-        except (RuntimeError, FileNotFoundError) as exc:
-            print(f"VCD generation failed: {exc}")
-            return
-        print(f"VCD written to: {vcd_path}")
+    if vitis_result is not None:
+        print(f"Vitis simulation matched Python model. counts={vitis_result.counts}")
 
 
 if __name__ == "__main__":

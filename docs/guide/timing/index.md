@@ -12,5 +12,5 @@ PySilicon provides some basic package for python processing of timing diagrams r
 - Creating timing and plotting timing diagrams in matplotlib
 - Running Xilinx RTL simulations to produce VCD outputs
 - Extracting information from timing diagrams
-- Python-based nalysis for AXI protocols including AXI-Lite, AXI-Streaming, and AXI memory-mapped
+- Python-based analysis for AXI protocols including AXI-Lite, AXI-Streaming, and AXI memory-mapped
 

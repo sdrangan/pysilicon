@@ -413,7 +413,7 @@ class VcdParser(object):
 
     def add_aximm_signals(
             self,
-            name : str | None = None,
+            prefix : str | None = None,
             dir : Literal['read', 'write', 'both'] = 'both',
             lite_only : bool = False,
             short_name_prefix : str | None = None,
@@ -424,8 +424,8 @@ class VcdParser(object):
         
         Parameters
         ----------
-        name : str | None
-            If provided, only signals containing this substring are considered.
+        prefix : str | None
+            If provided, only signals containing this `prefix{kw}`.
         short_name_prefix : str | None
             If provided, this prefix is added to the short names of the signals.
         dir : Literal['read', 'write', 'both']
@@ -463,20 +463,23 @@ class VcdParser(object):
         axi_sigs = dict()
         for kw in axi4s_keywords:
             axi_sigs[kw] = None
+            tgt = f"{prefix}{kw}" if prefix else kw
+            tgt = tgt.lower()
             for s in self.vcd.signals:
-                if kw in s.lower() and (name is None or name in s):
+                if tgt in s.lower():
                     if axi_sigs[kw] is not None:
                         if ignore_multiple:
                             print(f"Warning: Multiple signals found for AXI4-Stream keyword '{kw}'. Using '{axi_sigs[kw]}' and ignoring '{s}'.")
                             continue
                         else:
-                            raise ValueError(f"Multiple signals found for AXI4-Stream keyword '{kw}'.")
+                            err_str = f"Multiple signals found for AXI4-Stream keyword '{kw}': '{axi_sigs[kw]}' and '{s}'."
+                            raise ValueError(err_str)
                     axi_sigs[kw] = s
                     self.add_signal(s)
                     if short_name_prefix:
-                        short_name = f"{short_name_prefix}_{kw.upper()}"
-                    elif name:
-                        short_name = f"{name}_{kw.upper()}"
+                        short_name = f"{short_name_prefix}{kw.upper()}"
+                    elif prefix:
+                        short_name = f"{prefix}_{kw.upper()}"
                     else:  
                         short_name = kw.upper()
                     self.sig_info[s].short_name = short_name

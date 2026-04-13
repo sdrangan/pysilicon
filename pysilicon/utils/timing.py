@@ -32,7 +32,9 @@ class SigTimingInfo(object):
         self.times = times
         self.values = values
         self.is_clock = is_clock
-        self.two_level = all(v in {'0', '1'} for v in values)
+
+
+        self.two_level = all(v in {'0', '1', 'x', 'z', 'X', 'Z'} for v in values)
 
 class ClkSig(SigTimingInfo):
     def __init__(

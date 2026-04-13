@@ -58,13 +58,22 @@ void hist(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_str
         count_buf[i] = 0;
     }
 
+    // For each sample, find the appropriate bin and increment the count.
+    // Note that only the inner loop that searches for the correct bin is 
+    // pipelined with II=1. 
     for (int i = 0; i < ndata; ++i) {
-#pragma HLS PIPELINE II=1
+#pragma HLS LOOP_TRIPCOUNT min=1 max=max_ndata
+
         float sample = data_buf[i];
         int bin = 0;
-        while (bin < (nbins - 1) && sample >= edge_buf[bin]) {
-            ++bin;
+
+        hist_search:  for (int b = 0; b < max_nbins; b++) {
+#pragma HLS LOOP_TRIPCOUNT min=1 max=max_nbins
+#pragma HLS PIPELINE II=1
+            if (sample >= edge_buf[b]) 
+                bin = b + 1;
         }
+
         count_buf[bin] = count_buf[bin] + 1;
     }
 

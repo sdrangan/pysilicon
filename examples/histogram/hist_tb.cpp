@@ -57,10 +57,10 @@ int main(int argc, char** argv) {
     static mem_word_t mem[MEM_SIZE] = {};
     pysilicon::memmgr::MemMgr<mem_dwidth> mgr(mem, MEM_SIZE);
 
-    // Word counts for each region (float32 and uint32 are each 1 word at mem_dwidth=32).
-    const int nwords_data  = (ndata * 32 + mem_dwidth - 1) / mem_dwidth;
-    const int nwords_edges = (nbins > 1) ? ((nbins - 1) * 32 + mem_dwidth - 1) / mem_dwidth : 1;
-    const int nwords_count = (nbins  * 32 + mem_dwidth - 1) / mem_dwidth;
+    // Word counts for each region in the flat memory array.
+    const int nwords_data  = float32_array_utils::get_nwords<mem_dwidth>(ndata);
+    const int nwords_edges = (nbins > 1) ? float32_array_utils::get_nwords<mem_dwidth>(nbins - 1) : 1;
+    const int nwords_count = uint32_array_utils::get_nwords<mem_dwidth>(nbins);
 
     const int data_word_idx  = mgr.alloc(nwords_data);
     const int edge_word_idx  = mgr.alloc(nwords_edges);
