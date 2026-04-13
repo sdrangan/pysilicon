@@ -391,7 +391,12 @@ class PolyTest(object):
         else:
             print(parser.res_df.to_string())
 
-    def test_vitis(self, cosim: bool = False, trace_level: str = "none") -> PolySimResult:
+    def test_vitis(
+        self,
+        cosim: bool = False,
+        trace_level: str = "none",
+        live_output: bool = False,
+    ) -> PolySimResult:
         """Run the Vitis kernel and testbench, then compare against the Python model.
 
         This method orchestrates the full file-based Vitis simulation workflow:
@@ -412,6 +417,9 @@ class PolyTest(object):
             RTL co-simulation trace level passed through to ``cosim_design``.
             Supported values are ``none``, ``port``, and ``all``. Ignored when
             ``cosim`` is ``False``.
+        live_output : bool
+            If ``True``, stream Vitis stdout/stderr directly to the terminal
+            while the subprocess runs instead of buffering it for later.
 
         Returns
         -------
@@ -442,6 +450,7 @@ class PolyTest(object):
         result = toolchain.run_vitis_hls(
             self.example_dir / "run.tcl",
             work_dir=self.example_dir,
+            capture_output=not live_output,
             env=vitis_env,
         )
 
@@ -545,6 +554,9 @@ def main() -> None:
 
         # Python + Vitis RTL co-simulation with full waveform tracing
         python poly_demo.py --cosim --trace-level all
+
+        # Python + Vitis C-simulation with live Vitis output in the terminal
+        python poly_demo.py --live-output
     """
     parser = argparse.ArgumentParser(description="Run the polynomial accelerator example.")
     parser.add_argument("--nsamp", type=int, default=100, help="Number of input samples to generate.")
@@ -555,6 +567,11 @@ def main() -> None:
         choices=TRACE_LEVELS,
         default="none",
         help="RTL co-simulation trace level passed to Vitis. Only used with --cosim.",
+    )
+    parser.add_argument(
+        "--live-output",
+        action="store_true",
+        help="Stream Vitis stdout/stderr directly to the terminal while it runs.",
     )
     parser.add_argument("--plot", action="store_true", help="Plot the Python golden-model output.")
     args = parser.parse_args()
@@ -577,7 +594,11 @@ def main() -> None:
         return
 
     try:
-        vitis_result = test.test_vitis(cosim=args.cosim, trace_level=args.trace_level)
+        vitis_result = test.test_vitis(
+            cosim=args.cosim,
+            trace_level=args.trace_level,
+            live_output=args.live_output,
+        )
     except RuntimeError as exc:
         print(f"Vitis run failed: {exc}")
         return

@@ -1,6 +1,7 @@
 import math
 import re
 from sys import prefix
+from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 from vcdvcd import VCDVCD
@@ -409,6 +410,101 @@ class VcdParser(object):
             raise ValueError(f"Could not determine bitwidth from TDATA signal '{tdata_sig}'.")   
                   
         return axi_sigs, bitwidth
+
+    def add_aximm_signals(
+            self,
+            name : str | None = None,
+            dir : Literal['read', 'write', 'both'] = 'both',
+            lite_only : bool = False,
+            short_name_prefix : str | None = None,
+            ignore_multiple : bool = False,
+            confirm_exists : bool = True) -> dict[str, str]:
+        """
+        Adds signals that are part of an AXI4-MM interfaces (either AXI4-Lite or AXI4-Full)
+        
+        Parameters
+        ----------
+        name : str | None
+            If provided, only signals containing this substring are considered.
+        short_name_prefix : str | None
+            If provided, this prefix is added to the short names of the signals.
+        dir : Literal['read', 'write', 'both']
+            Direction of the AXI4-MM interface to consider.  
+        lite_only : bool
+            If True, only consider AXI4-Lite signals (i.e., without burst signals 
+            like AWLEN, ARLEN, etc.).  If False, consider all AXI4-MM signals.
+        ignore_multiple : bool
+            If True, if multiple signals are found for an AXI4-Stream keyword, the first one is used and a warning is printed.  If False, an error is raised.
+        confirm_exists : bool
+            If True, an error is raised if any expected signal is not found.  If False, missing signals 
+            are ignored.
+
+        Returns
+        -------
+        axi_sigs : dict[str, str]
+            Dictionary mapping AXI4-Stream keywords to signal names for the signals.
+        bitwidths: dict[str, int]
+            Dictionary mapping AXI4-MM data signal keywords to their bitwidths.
+            The signal keywords are 'RDATA', 'WDATA', 'AWADDR' and 'ARADDR' if they are found.
+        """
+
+
+        # Determine signals to look for
+        axi4s_keywords = []
+        if dir in ['write', 'both']:
+            axi4s_keywords += ['AWADDR', 'AWVALID', 'AWREADY', 'WDATA', 'WVALID', 'WREADY', 'BVALID', 'BREADY']
+            if not lite_only:
+                 axi4s_keywords += ['AWLEN', 'WLAST']
+        if dir in ['read', 'both']:
+            axi4s_keywords += ['ARADDR', 'ARVALID', 'ARREADY', 'RDATA', 'RVALID', 'RREADY', ]
+            if not lite_only:
+                axi4s_keywords += ['ARLEN', 'RLAST']
+
+        axi_sigs = dict()
+        for kw in axi4s_keywords:
+            axi_sigs[kw] = None
+            for s in self.vcd.signals:
+                if kw in s.lower() and (name is None or name in s):
+                    if axi_sigs[kw] is not None:
+                        if ignore_multiple:
+                            print(f"Warning: Multiple signals found for AXI4-Stream keyword '{kw}'. Using '{axi_sigs[kw]}' and ignoring '{s}'.")
+                            continue
+                        else:
+                            raise ValueError(f"Multiple signals found for AXI4-Stream keyword '{kw}'.")
+                    axi_sigs[kw] = s
+                    self.add_signal(s)
+                    if short_name_prefix:
+                        short_name = f"{short_name_prefix}_{kw.upper()}"
+                    elif name:
+                        short_name = f"{name}_{kw.upper()}"
+                    else:  
+                        short_name = kw.upper()
+                    self.sig_info[s].short_name = short_name
+
+            # Check if signal is found, except 'tlast' which is optional.
+            if (axi_sigs[kw] is None) and (confirm_exists):
+                raise ValueError(f"No signal found for AXI4- keyword '{kw}'.")
+            
+        # Get the bitwidth from the TDATA signal.
+        # The signal ends in [N:0], so the width is N+1
+        sig_bwid = ['RDATA', 'WDATA', 'AWADDR', 'ARADDR']  # Signals for which to get bitwidths
+        bitwidths = dict()
+        for sig in sig_bwid:
+            if sig in axi_sigs and axi_sigs[sig] is not None:
+                axi_sig = axi_sigs[sig]
+                parts = axi_sig.split('[')
+                bitwidth = None
+                if len(parts) > 1:
+                    bit_range = parts[-1].strip(']')
+                    msb_lsb = bit_range.split(':')
+                    if len(msb_lsb) == 2:
+                        msb = int(msb_lsb[0])
+                        bitwidth = msb + 1       
+
+                        if bitwidth is None:
+                            raise ValueError(f"Could not determine bitwidth from signal '{axi_sig}'.")
+                        bitwidths[sig] = bitwidth
+        return axi_sigs, bitwidths
 
    
     def full_name(

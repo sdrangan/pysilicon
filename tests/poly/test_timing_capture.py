@@ -55,7 +55,7 @@ class TestModifyTcl:
         modify_tcl(str(tcl_src), str(tcl_dst), trace_level="*")
         content = tcl_dst.read_text()
         assert "open_vcd" in content
-        assert "log_vcd *" in content
+        assert "log_vcd -r /" in content
 
     def test_replaces_quit_with_close_vcd(self, tmp_path: Path) -> None:
         tcl_src = tmp_path / "poly.tcl"
@@ -74,10 +74,14 @@ class TestModifyTcl:
     def test_port_trace_level(self, tmp_path: Path) -> None:
         tcl_src = tmp_path / "poly.tcl"
         tcl_dst = tmp_path / "poly_vcd.tcl"
-        tcl_src.write_text("log_wave -r /\nrun all\nquit\n")
+        tcl_src.write_text(
+            "log_wave [get_objects -filter {type == in_port || type == out_port || type == inout_port || type == port} /apatb_poly_top/AESL_inst_poly/*]\n"
+            "run all\n"
+            "quit\n"
+        )
         modify_tcl(str(tcl_src), str(tcl_dst), trace_level="port")
         content = tcl_dst.read_text()
-        assert "log_vcd port" in content
+        assert "log_vcd [get_objects -filter {type == in_port || type == out_port || type == inout_port || type == port} /apatb_poly_top/AESL_inst_poly/*]" in content
 
 
 class TestCreateVcdBatch:

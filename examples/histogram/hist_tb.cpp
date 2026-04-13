@@ -12,7 +12,7 @@
 #include "include/uint32_array_utils_tb.h"
 
 // Total memory words: enough for max_ndata floats + (max_nbins-1) edge floats + max_nbins count words.
-static const int MEM_SIZE = max_ndata + max_nbins * 2;
+static const int MEM_SIZE = max_mem_words;
 
 int main(int argc, char** argv) {
     const std::string data_dir = (argc > 1) ? argv[1] : "data";

@@ -13,6 +13,7 @@
 
 static const int max_nbins = 32;
 static const int max_ndata = 1024;
+static const int max_mem_words = max_ndata + max_nbins * 2;
 
 // Stream width in bits for the input and output AXI4-Stream interfaces
 static const int stream_dwidth = 32;  

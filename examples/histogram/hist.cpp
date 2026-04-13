@@ -6,8 +6,8 @@ namespace memmgr = pysilicon::memmgr;
 void hist(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream, mem_word_t* mem) {
 #pragma HLS INTERFACE axis port=in_stream
 #pragma HLS INTERFACE axis port=out_stream
-#pragma HLS INTERFACE m_axi port=mem offset=slave bundle=gmem
-#pragma HLS INTERFACE ap_ctrl_none port=return
+#pragma HLS INTERFACE m_axi port=mem offset=slave bundle=gmem depth=max_mem_words
+#pragma HLS INTERFACE ap_ctrl_hs port=return
 
     HistCmd cmd;
     streamutils::tlast_status cmd_tlast = streamutils::tlast_status::no_tlast;

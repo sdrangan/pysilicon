@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -444,7 +445,12 @@ class HistTest(object):
 
         return HistSimResult(cmd=self.cmd, resp=resp, counts=counts, expected=self.expected)
 
-    def test_vitis(self, cosim: bool = False, trace_level: str = "none") -> HistSimResult:
+    def test_vitis(
+        self,
+        cosim: bool = False,
+        trace_level: str = "none",
+        live_output: bool = False,
+    ) -> HistSimResult:
         """Run the Vitis kernel and testbench, then compare against the Python model.
 
         This method orchestrates the full file-based Vitis simulation workflow:
@@ -464,6 +470,9 @@ class HistTest(object):
             RTL co-simulation trace level passed through to ``cosim_design``.
             Supported values are ``none``, ``port``, and ``all``. Ignored when
             ``cosim`` is ``False``.
+        live_output : bool
+            If ``True``, stream Vitis stdout/stderr directly to the terminal
+            while the subprocess runs instead of buffering it for later.
 
         Returns
         -------
@@ -485,17 +494,36 @@ class HistTest(object):
 
         self.gen_vitis_code()
         data_dir = self.write_input_files()
+        logs_dir = self.example_dir / "logs"
+        project_dir = self.example_dir / "pysilicon_hist_proj"
 
         vitis_env = {
             "PYSILICON_HIST_COSIM": "1" if cosim else "0",
             "PYSILICON_HIST_TRACE_LEVEL": trace_level,
         }
 
-        result = toolchain.run_vitis_hls(
-            self.example_dir / "run.tcl",
-            work_dir=self.example_dir,
-            env=vitis_env,
-        )
+        if cosim:
+            print("Performing Vitis C-simulation, C-synthesis, and RTL co-simulation. This may take minutes.")
+            print(f"Trace level: {trace_level}")
+        else:
+            print("Performing Vitis C-simulation. This may take minutes.")
+
+        try:
+            result = toolchain.run_vitis_hls(
+                self.example_dir / "run.tcl",
+                work_dir=self.example_dir,
+                capture_output=not live_output,
+                env=vitis_env,
+            )
+        except subprocess.CalledProcessError as exc:
+            if exc.stdout:
+                print(exc.stdout)
+            if exc.stderr:
+                print(exc.stderr)
+            raise RuntimeError(
+                "Vitis execution failed. "
+                f"See logs under {logs_dir} and generated files under {project_dir}."
+            ) from exc
 
         vitis_result = self.read_vitis_outputs(data_dir)
 
@@ -562,6 +590,12 @@ def main() -> None:
 
         # Python + Vitis RTL co-simulation + generate VCD
         python hist_demo.py --cosim --trace-level all --generate-vcd
+
+        # Python + Vitis C-simulation with live Vitis output in the terminal
+        python hist_demo.py --live-output
+
+        # Generate a VCD from an existing traced co-sim run
+        python hist_demo.py --generate-vcd
     """
     parser = argparse.ArgumentParser(description="Run the histogram accelerator example.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed for test data generation.")
@@ -576,6 +610,11 @@ def main() -> None:
         choices=TRACE_LEVELS,
         default="none",
         help="RTL co-simulation trace level passed to Vitis. Only used with --cosim.",
+    )
+    parser.add_argument(
+        "--live-output",
+        action="store_true",
+        help="Stream Vitis stdout/stderr directly to the terminal while it runs.",
     )
     parser.add_argument("--generate-vcd", action="store_true",
                         help="Generate a VCD file after a successful cosim run.")
@@ -594,8 +633,21 @@ def main() -> None:
     if args.skip_vitis:
         return
 
+    if args.generate_vcd and not args.cosim:
+        try:
+            vcd_path = test.generate_vcd(trace_level=args.trace_level)
+        except (RuntimeError, FileNotFoundError) as exc:
+            print(f"VCD generation failed: {exc}")
+            return
+        print(f"VCD written to: {vcd_path}")
+        return
+
     try:
-        vitis_result = test.test_vitis(cosim=args.cosim, trace_level=args.trace_level)
+        vitis_result = test.test_vitis(
+            cosim=args.cosim,
+            trace_level=args.trace_level,
+            live_output=args.live_output,
+        )
     except RuntimeError as exc:
         print(f"Vitis run failed: {exc}")
         return
@@ -603,7 +655,11 @@ def main() -> None:
     print(f"Vitis simulation matched Python model. counts={vitis_result.counts}")
 
     if args.generate_vcd:
-        vcd_path = test.generate_vcd()
+        try:
+            vcd_path = test.generate_vcd(trace_level=args.trace_level)
+        except (RuntimeError, FileNotFoundError) as exc:
+            print(f"VCD generation failed: {exc}")
+            return
         print(f"VCD written to: {vcd_path}")
 
 
