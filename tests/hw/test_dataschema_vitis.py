@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.codegen.build import CodeGenConfig
-from pysilicon.codegen.streamutils import copy_streamutils
+from pysilicon.build.build import CodeGenConfig
+from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw.dataschema import DataArray, DataList, FloatField, IntField
-from pysilicon.xilinxutils import toolchain
+from pysilicon.toolchain import toolchain
 
 
 S16 = IntField.specialize(bitwidth=16, signed=True)
@@ -175,7 +175,7 @@ def test_dataschema2_python_to_vitis_serialization(
 
     cpp_src = (
         SERIALIZE_CPP_PATH.read_text(encoding="utf-8")
-        .replace("__HEADER__", packet_type.resolved_include_filename())
+        .replace("__HEADER__", packet_type.resolved_tb_include_filename())
         .replace("__EXTRA_INCLUDES__", "")
         .replace("__PACKET_CLASS__", packet_type.__name__)
         .replace("__WORD_BW__", str(word_bw))
@@ -225,7 +225,7 @@ def test_dataschema2_vitis_to_python_serialization(
 
     cpp_src = (
         DESERIALIZE_CPP_PATH.read_text(encoding="utf-8")
-        .replace("__HEADER__", packet_type.resolved_include_filename())
+        .replace("__HEADER__", packet_type.resolved_tb_include_filename())
         .replace("__EXTRA_INCLUDES__", "")
         .replace("__PACKET_CLASS__", packet_type.__name__)
         .replace("__WORD_BW__", str(word_bw))
@@ -268,7 +268,7 @@ def test_streamutils_read_uint32_file_loopback(tmp_path: Path):
 
     cpp_src = (
         UINT32_FILE_READ_CPP_PATH.read_text(encoding="utf-8")
-        .replace("__HEADER__", DemoPacket.resolved_include_filename())
+        .replace("__HEADER__", DemoPacket.resolved_tb_include_filename())
         .replace("__EXTRA_INCLUDES__", "")
         .replace("__PACKET_CLASS__", DemoPacket.__name__)
         .replace("__READ_CALL__", 'streamutils::read_uint32_file(pkt, in_bin_path)')
@@ -304,7 +304,7 @@ def test_streamutils_read_uint32_file_len_loopback(tmp_path: Path):
 
     cpp_src = (
         UINT32_FILE_READ_CPP_PATH.read_text(encoding="utf-8")
-        .replace("__HEADER__", DynSampData.resolved_include_filename())
+        .replace("__HEADER__", DynSampData.resolved_tb_include_filename())
         .replace("__EXTRA_INCLUDES__", "")
         .replace("__PACKET_CLASS__", DynSampData.__name__)
         .replace("__READ_CALL__", f'streamutils::read_uint32_file_len(pkt, in_bin_path, {nread})')

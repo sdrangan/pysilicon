@@ -27,13 +27,22 @@ dev = [
     "PyYAML>=6.0",
 ]
 
+[project.scripts]
+create_doc_assets = "pysilicon.scripts.create_doc_assets:main"
+xsim_vcd = "pysilicon.scripts.xsim_vcd:main"
+collect_overlay = "pysilicon.scripts.collect_overlay:main"
+sv_sim = "pysilicon.scripts.sv_sim:main"
+sv_synth = "pysilicon.scripts.sv_build:run_synth"
+sv_impl  = "pysilicon.scripts.sv_build:run_impl"
+build_lab_autograder = "pysilicon.scripts.build_lab_autograder:main"
+
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-# Automatically find the pysilicon package
+# Automatically find the pysilicon package and scripts
 [tool.setuptools.packages.find]
-include = ["pysilicon*"]
+include = ["pysilicon*", "scripts*"]
 
 # Include non-Python files (schemas, templates, docs assets)
 [tool.setuptools]

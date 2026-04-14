@@ -15,7 +15,8 @@
 #include <ap_axi_sdata.h>
 #endif
 #include <iostream>
-#include "streamutils.h"
+#include "streamutils_hls.h"
+#include "streamutils_tb.h"
 
 class SampleIn {
 public:

@@ -4,7 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.codegen.build import CodeGenConfig
+from pysilicon.build.build import CodeGenConfig
+from pysilicon.build.streamutils import copy_streamutils
 from pysilicon.hw import (
     DataArray as PublicDataArray,
     DataField as PublicDataField,
@@ -13,6 +14,7 @@ from pysilicon.hw import (
     EnumField as PublicEnumField,
     FloatField as PublicFloatField,
     IntField as PublicIntField,
+    MemAddr as PublicMemAddr,
 )
 from pysilicon.hw.dataschema import (
     DataArray,
@@ -22,6 +24,7 @@ from pysilicon.hw.dataschema import (
     EnumField,
     FloatField,
     IntField,
+    MemAddr,
 )
 
 
@@ -40,6 +43,7 @@ U16 = IntField.specialize(bitwidth=16, signed=False)
 U8 = IntField.specialize(bitwidth=8, signed=False)
 S16 = IntField.specialize(bitwidth=16, signed=True)
 F32 = FloatField.specialize(bitwidth=32)
+Addr64 = MemAddr.specialize(bitwidth=64)
 ModeField = EnumField.specialize(enum_type=Mode, default=Mode.AUTO)
 CoeffArray = DataArray.specialize(element_type=F32, max_shape=(4,), member_name="coeff")
 ByteArray = DataArray.specialize(element_type=U8, max_shape=(8,), member_name="x")
@@ -67,6 +71,14 @@ class PacketWithArray(DataList):
     elements = {
         "count": U16,
         "coeffs": CoeffArray,
+    }
+
+
+class MultiArrayPacket(DataList):
+    elements = {
+        "a": CoeffArray,
+        "b": CoeffArray,
+        "uab": CoeffArray,
     }
 
 
@@ -99,6 +111,56 @@ def test_intfield_specialize_include_metadata_affects_cache_key():
     assert b.include_dir == "b"
 
 
+def test_memaddr_specialize_same_args_returns_same_class():
+    a = MemAddr.specialize(bitwidth=64)
+    b = MemAddr.specialize(bitwidth=64)
+
+    assert a is b
+
+
+def test_memaddr_specialize_supports_arbitrary_bitwidths():
+    addr48 = MemAddr.specialize(bitwidth=48)
+    addr128 = MemAddr.specialize(bitwidth=128)
+
+    assert issubclass(addr48, MemAddr)
+    assert issubclass(addr128, MemAddr)
+    assert addr48.get_bitwidth() == 48
+    assert addr128.get_bitwidth() == 128
+    assert addr48.cpp_class_name() == "ap_uint<48>"
+    assert addr128.cpp_class_name() == "ap_uint<128>"
+    assert addr48.signed is False
+    assert addr128.signed is False
+
+
+def test_memaddr_init_value_defaults_to_unsigned_zero():
+    init = Addr64.init_value()
+
+    assert isinstance(init, np.uint64)
+    assert int(init) == 0
+
+
+def test_memaddr_roundtrip_wide_value():
+    Addr96 = MemAddr.specialize(bitwidth=96)
+    raw_value = (1 << 95) + 0x1234_5678_9ABC_DEF0
+
+    addr = Addr96(raw_value)
+    packed = addr.serialize(word_bw=32)
+    restored = Addr96().deserialize(packed, word_bw=32)
+
+    assert packed.dtype == np.uint32
+    assert packed.shape == (3,)
+    assert int(restored.val[0]) == (raw_value & 0xFFFFFFFFFFFFFFFF)
+    assert int(restored.val[1]) == ((raw_value >> 64) & 0xFFFFFFFFFFFFFFFF)
+    assert restored.is_close(addr)
+
+
+def test_memaddr_masks_values_as_unsigned():
+    Addr12 = MemAddr.specialize(bitwidth=12)
+    addr = Addr12(-1)
+
+    assert int(addr.val) == 0xFFF
+
+
 def test_init_value_semantics():
     uint16_type = IntField.specialize(bitwidth=16, signed=False)
     float32_type = FloatField.specialize(bitwidth=32)
@@ -121,14 +183,17 @@ def test_enumfield_defaults_follow_enum_type_metadata():
 
     assert mode_field.cpp_class_name() == "Mode"
     assert mode_field.resolved_include_filename() == "mode.h"
+    assert mode_field.resolved_tb_include_filename() == "mode_tb.h"
     assert opcode_field.cpp_class_name() == "OpCode"
     assert opcode_field.resolved_include_filename() == "op_code.h"
+    assert opcode_field.resolved_tb_include_filename() == "op_code_tb.h"
 
 
 def test_enumfield_gen_include_emits_guard_and_members(tmp_path: Path):
     mode_field = EnumField.specialize(enum_type=Mode)
     out_path = mode_field.gen_include(cfg=CodeGenConfig(root_dir=tmp_path))
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "mode_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "mode.h"
     assert "#ifndef MODE_H" in content
@@ -138,6 +203,7 @@ def test_enumfield_gen_include_emits_guard_and_members(tmp_path: Path):
     assert "ON = 1," in content
     assert "AUTO = 2," in content
     assert "#endif // MODE_H" in content
+    assert '#include "mode.h"' in tb_content
 
 
 def test_enumfield_explicit_overrides_win():
@@ -149,6 +215,7 @@ def test_enumfield_explicit_overrides_win():
 
     assert mode_field.cpp_class_name() == "CustomMode"
     assert mode_field.resolved_include_filename() == "custom_mode.h"
+    assert mode_field.resolved_tb_include_filename() == "custom_mode_tb.h"
 
 
 def test_inline_enum_specialization_keeps_expected_metadata():
@@ -160,6 +227,7 @@ def test_inline_enum_specialization_keeps_expected_metadata():
     mode_schema = Instruction.elements["mode"]
     assert mode_schema.cpp_class_name() == "Mode"
     assert mode_schema.resolved_include_filename() == "mode.h"
+    assert mode_schema.resolved_tb_include_filename() == "mode_tb.h"
 
 
 def test_datalist_get_dependencies_only_returns_generated_types():
@@ -324,7 +392,7 @@ def test_dataarray_gen_include_emits_nwords_len_for_dynamic(tmp_path: Path):
 
     assert out_path == tmp_path / "u_int8_array.h"
     assert "static int nwords_len(int n0=1) {" in content
-    assert "if constexpr (word_bw == 32) {" in content
+    assert "static int nwords_len_impl(word_bw_tag<32>, int n0=1) {" in content
     assert "const int n0_eff = (n0 < 0) ? 0 : ((n0 > 16) ? 16 : n0);" in content
     assert "return (n_total + 4 - 1) / 4;" in content
 
@@ -481,9 +549,11 @@ def test_datalist_get_dependencies_works_with_metadata_form():
 def test_datalist_gen_include_emits_dependency_includes_and_members(tmp_path: Path):
     out_path = Packet.gen_include(cfg=CodeGenConfig(root_dir=tmp_path))
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "packet.h"
-    assert '#include "streamutils.h"' in content
+    assert '#include "streamutils_hls.h"' in content
+    assert '#include "streamutils_tb.h"' not in content
     assert "#ifndef PACKET_H" in content
     assert '#include "mode.h"' in content
     assert '#include "complex.h"' in content
@@ -495,11 +565,14 @@ def test_datalist_gen_include_emits_dependency_includes_and_members(tmp_path: Pa
     assert "static constexpr int bitwidth = 82;" in content
     assert "static ap_uint<bitwidth> pack_to_uint(const Packet& data) {" in content
     assert "static Packet unpack_from_uint(const ap_uint<bitwidth>& packed) {" in content
-    assert "void dump_json(std::ostream& os, int indent = 2, int level = 0) const {" in content
-    assert "void load_json(std::istream& is) {" in content
-    assert "void dump_json_file(const char* file_path, int indent = 2) const {" in content
-    assert "void load_json_file(const char* file_path) {" in content
     assert "#endif // PACKET_H" in content
+    assert '#include "streamutils_tb.h"' in tb_content
+    assert '#include "mode_tb.h"' in tb_content
+    assert '#include "complex_tb.h"' in tb_content
+    assert "inline void Packet::dump_json(std::ostream& os, int indent, int level) const {" in tb_content
+    assert "inline void Packet::load_json(std::istream& is) {" in tb_content
+    assert "inline void Packet::dump_json_file(const char* file_path, int indent) const {" in tb_content
+    assert "inline void Packet::load_json_file(const char* file_path) {" in tb_content
 
 
 def test_datalist_gen_include_emits_inline_and_block_comments(tmp_path: Path):
@@ -521,14 +594,15 @@ def test_datalist_gen_include_emits_read_helpers_when_requested(tmp_path: Path):
     assert "template<int word_bw>" in content
     assert "void write_array(ap_uint<word_bw> x[]) const {" in content
     assert "void write_stream(hls::stream<ap_uint<word_bw>> &s) const {" in content
-    assert "void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true) const {" in content
-    assert "x[0].range(15, 0) = this->count;" in content
+    assert "void write_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, bool tlast = true) const {" in content
+    assert "x[0].range(15, 0) = self->count;" in content
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
     assert "void read_stream(hls::stream<ap_uint<word_bw>> &s) {" in content
-    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
-    assert "this->count = (ap_uint<16>)(x[0].range(15, 0));" in content
-    assert "w = s.read().data;" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, streamutils::tlast_status &tl) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s) {" in content
+    assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
+    assert "last = axis_word.last;" in content
 
 
 def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path: Path):
@@ -537,16 +611,19 @@ def test_datalist_gen_include_emits_nwords_helper_and_json_nested_calls(tmp_path
         word_bw_supported=[32, 64],
     )
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "packet.h"
     assert "template<int word_bw>" in content
     assert "static constexpr int nwords() {" in content
-    assert "if constexpr (word_bw == 32) {" in content
+    assert "struct word_bw_tag {};" in content
+    assert "static constexpr int nwords_value(word_bw_tag<32>) {" in content
     assert "return 4;" in content
-    assert "else if constexpr (word_bw == 64) {" in content
+    assert "static constexpr int nwords_value(word_bw_tag<64>) {" in content
     assert "return 2;" in content
-    assert "this->z.dump_json(os, step, level + 1);" in content
-    assert "this->z.load_json(json_text, pos);" in content
+    assert "return nwords_value(word_bw_tag<word_bw>{});" in content
+    assert "this->z.dump_json(os, step, level + 1);" in tb_content
+    assert "this->z.load_json(json_text, pos);" in tb_content
 
 
 def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp_path: Path):
@@ -555,14 +632,32 @@ def test_datalist_with_dataarray_field_uses_nested_storage_member_in_codegen(tmp
         word_bw_supported=[32, 64],
     )
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_with_array_tb.h").read_text(encoding="utf-8")
 
-    assert "this->coeffs.coeff[i0]" in content
-    assert "this->coeffs.coeff[i + 0]" in content
-    assert "this->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
-    assert "os << this->coeffs.coeff[i0];" in content
-    assert "this->coeffs.coeff[i0] =" in content
-    assert "streamutils::json_parse_number(json_text, pos)" in content
-    assert content.index("const int n0_eff = 4;") < content.index("const int total_words = (n0_eff + 2 - 1) / 2;")
+    assert "self->coeffs.coeff[i0]" in content
+    assert "self->coeffs.coeff[i + 0]" in content
+    assert "self->coeffs.coeff[i0] = streamutils::uint_to_float((uint32_t)(x[in_idx]));" in content
+    assert "os << this->coeffs.coeff[i0];" in tb_content
+    assert "this->coeffs.coeff[i0] =" in tb_content
+    assert "streamutils::json_parse_number(json_text, pos)" in tb_content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 1;" in content
+    assert "const int total_words = (n0_eff + 2 - 1) / 2;" not in content
+    assert "const bool last =" not in content
+    assert "n0_eff_self_" not in content
+
+
+def test_datalist_with_multiple_dataarray_fields_uses_unique_codegen_locals(tmp_path: Path):
+    out_path = MultiArrayPacket.gen_include(
+        cfg=CodeGenConfig(root_dir=tmp_path),
+        word_bw_supported=[32],
+    )
+    content = out_path.read_text(encoding="utf-8")
+
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 0;\n            for (int i0 = 0; i0 < n0_eff; ++i0) {" in content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 4;\n            for (int i0 = 0; i0 < n0_eff; ++i0) {" in content
+    assert "        {\n            const int n0_eff = 4;\n            int out_idx = 8;\n            for (int i0 = 0; i0 < n0_eff; ++i0) {" in content
+    assert "n0_eff_self_" not in content
+    assert "out_idx_self_" not in content
 
 
 def test_gen_include_rejects_non_positive_word_widths():
@@ -579,18 +674,22 @@ def test_gen_include_writes_under_cfg_root_and_include_dir(tmp_path: Path):
 
     out_path = Instruction.gen_include(cfg=CodeGenConfig(root_dir=tmp_path))
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "isa" / "instruction_tb.h").read_text(encoding="utf-8")
 
     assert out_path == tmp_path / "isa" / "instruction.h"
     assert out_path.exists()
-    assert '#include "../streamutils.h"' in content
+    assert '#include "../streamutils_hls.h"' in content
+    assert '#include "../streamutils_tb.h"' in tb_content
 
 
 def test_gen_include_uses_cfg_util_dir_for_streamutils_include(tmp_path: Path):
     cfg = CodeGenConfig(root_dir=tmp_path, util_dir="common")
     out_path = Packet.gen_include(cfg=cfg)
     content = out_path.read_text(encoding="utf-8")
+    tb_content = (tmp_path / "packet_tb.h").read_text(encoding="utf-8")
 
-    assert '#include "common/streamutils.h"' in content
+    assert '#include "common/streamutils_hls.h"' in content
+    assert '#include "common/streamutils_tb.h"' in tb_content
 
 
 def test_gen_include_overwrites_existing_file(tmp_path: Path):
@@ -601,6 +700,40 @@ def test_gen_include_overwrites_existing_file(tmp_path: Path):
 
     assert written_path == out_path
     assert "stale" not in out_path.read_text(encoding="utf-8")
+
+
+def test_copy_streamutils_hls_emits_tlast_status_enum(tmp_path: Path):
+    copy_streamutils(CodeGenConfig(root_dir=tmp_path))
+    content = (tmp_path / "streamutils_hls.h").read_text(encoding="utf-8")
+    cpp_content = (tmp_path / "streamutils.cpp").read_text(encoding="utf-8")
+    memmgr_hpp = (tmp_path / "memmgr.hpp").read_text(encoding="utf-8")
+    memmgr_tb_hpp = (tmp_path / "memmgr_tb.hpp").read_text(encoding="utf-8")
+
+    assert "enum class tlast_status {" in content
+    assert "struct tlast_status_info {" in content
+    assert "template<int W>" in content
+    assert "using axi4s_word = ap_axis<W, 0, 0, 0>;" in content
+    assert "void flush_axi4_stream_to_tlast(hls::stream<axi4s_word<W>> &s) {" in content
+    assert "static const char* names[count];" in content
+    assert "legacy compatibility shim" in cpp_content
+    assert "Vitis HLS < 2025.1" in cpp_content
+    assert "no_tlast," in content
+    assert "tlast_at_end," in content
+    assert "tlast_early," in content
+    assert "byte_addr_to_word_index" in memmgr_hpp
+    assert "namespace memmgr" in memmgr_hpp
+    assert "class MemMgr" in memmgr_tb_hpp
+    assert '#include "memmgr.hpp"' in memmgr_tb_hpp
+
+
+def test_copy_streamutils_can_skip_memmgr(tmp_path: Path):
+    copy_streamutils(CodeGenConfig(root_dir=tmp_path, copy_memmgr=False))
+
+    assert (tmp_path / "streamutils_hls.h").exists()
+    assert (tmp_path / "streamutils_tb.h").exists()
+    assert not (tmp_path / "memmgr.hpp").exists()
+    assert not (tmp_path / "memmgr_tb.hpp").exists()
+    assert not (tmp_path / "memmgr.cpp").exists()
 
 
 def test_primitive_field_pack_unpack_helpers_are_empty():
@@ -637,14 +770,15 @@ def test_datalist_gen_write_array_emits_expected_slices():
 
     assert "template<int word_bw>" in content
     assert "void write_array(ap_uint<word_bw> x[]) const {" in content
-    assert "if constexpr (word_bw == 32) {" in content
+    assert "static void write_array_impl(word_bw_tag<32>, const Packet* self, ap_uint<32> x[]) {" in content
+    assert "write_array_impl(word_bw_tag<word_bw>{}, this, x);" in content
     assert "x[0] = 0;" in content
-    assert "x[0].range(15, 0) = this->count;" in content
-    assert "x[1] = streamutils::float_to_uint(this->gain);" in content
+    assert "x[0].range(15, 0) = self->count;" in content
+    assert "x[1] = streamutils::float_to_uint(self->gain);" in content
     assert "x[2] = 0;" in content
-    assert "x[2].range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(this->mode));" in content
-    assert "x[2].range(17, 2) = this->z.real;" in content
-    assert "x[3].range(15, 0) = this->z.imag;" in content
+    assert "x[2].range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(self->mode));" in content
+    assert "x[2].range(17, 2) = self->z.real;" in content
+    assert "x[3].range(15, 0) = self->z.imag;" in content
 
 
 def test_datalist_gen_write_stream_flushes_words():
@@ -652,19 +786,19 @@ def test_datalist_gen_write_stream_flushes_words():
 
     assert "void write_stream(hls::stream<ap_uint<word_bw>> &s) const {" in content
     assert "ap_uint<32> w = 0;" in content
-    assert "w.range(15, 0) = this->count;" in content
+    assert "w.range(15, 0) = self->count;" in content
     assert "s.write(w);" in content
     assert "w = 0;" in content
-    assert "w = streamutils::float_to_uint(this->gain);" in content
-    assert "w.range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(this->mode));" in content
-    assert "w.range(17, 2) = this->z.real;" in content
-    assert "w.range(15, 0) = this->z.imag;" in content
+    assert "w = streamutils::float_to_uint(self->gain);" in content
+    assert "w.range(1, 0) = (ap_uint<2>)(static_cast<unsigned int>(self->mode));" in content
+    assert "w.range(17, 2) = self->z.real;" in content
+    assert "w.range(15, 0) = self->z.imag;" in content
 
 
 def test_datalist_gen_write_axi4_stream_uses_tlast_on_final_word():
     content = Packet.gen_write(word_bw=32, dst_type="axi4_stream")
 
-    assert "void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true) const {" in content
+    assert "void write_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, bool tlast = true) const {" in content
     assert "ap_uint<32> w = 0;" in content
     assert "streamutils::write_axi4_word<32>(s, w, false);" in content
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
@@ -680,12 +814,13 @@ def test_datalist_gen_read_array_emits_expected_slices():
 
     assert "template<int word_bw>" in content
     assert "void read_array(const ap_uint<word_bw> x[]) {" in content
-    assert "if constexpr (word_bw == 32) {" in content
-    assert "this->count = (ap_uint<16>)(x[0].range(15, 0));" in content
-    assert "this->gain = streamutils::uint_to_float((uint32_t)(x[1]));" in content
-    assert "this->mode = static_cast<Mode>(static_cast<unsigned int>(x[2].range(1, 0)));" in content
-    assert "this->z.real = (ap_int<16>)(x[2].range(17, 2));" in content
-    assert "this->z.imag = (ap_int<16>)(x[3].range(15, 0));" in content
+    assert "static void read_array_impl(word_bw_tag<32>, Packet* self, const ap_uint<32> x[]) {" in content
+    assert "read_array_impl(word_bw_tag<word_bw>{}, this, x);" in content
+    assert "self->count = (ap_uint<16>)(x[0].range(15, 0));" in content
+    assert "self->gain = streamutils::uint_to_float((uint32_t)(x[1]));" in content
+    assert "self->mode = static_cast<Mode>(static_cast<unsigned int>(x[2].range(1, 0)));" in content
+    assert "self->z.real = (ap_int<16>)(x[2].range(17, 2));" in content
+    assert "self->z.imag = (ap_int<16>)(x[3].range(15, 0));" in content
 
 
 def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
@@ -694,18 +829,34 @@ def test_datalist_gen_read_stream_emits_word_reads_at_boundaries():
     assert "void read_stream(hls::stream<ap_uint<word_bw>> &s) {" in content
     assert "ap_uint<32> w = 0;" in content
     assert "w = s.read();" in content
-    assert "this->count = (ap_uint<16>)(w.range(15, 0));" in content
-    assert "this->gain = streamutils::uint_to_float((uint32_t)(w));" in content
-    assert "this->mode = static_cast<Mode>(static_cast<unsigned int>(w.range(1, 0)));" in content
+    assert "self->count = (ap_uint<16>)(w.range(15, 0));" in content
+    assert "self->gain = streamutils::uint_to_float((uint32_t)(w));" in content
+    assert "self->mode = static_cast<Mode>(static_cast<unsigned int>(w.range(1, 0)));" in content
 
 
 def test_datalist_gen_read_axi4_stream_uses_data_field():
     content = Packet.gen_read(word_bw=32, src_type="axi4_stream")
 
-    assert "void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s, streamutils::tlast_status &tl) {" in content
+    assert "void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>> &s) {" in content
     assert "ap_uint<32> w = 0;" in content
-    assert "w = s.read().data;" in content
-    assert "this->gain = streamutils::uint_to_float((uint32_t)(w));" in content
+    assert "tl = streamutils::tlast_status::no_tlast;" in content
+    assert "auto axis_word = s.read();" in content
+    assert "w = axis_word.data;" in content
+    assert "last = axis_word.last;" in content
+    assert "tl = streamutils::tlast_status::tlast_at_end;" in content
+    assert "self->gain = streamutils::uint_to_float((uint32_t)(w));" in content
+
+
+def test_dataarray_gen_read_axi4_stream_nested_schema_avoids_return_in_loop():
+    PacketArray = DataArray.specialize(element_type=Packet, max_shape=(2,), member_name="pkt")
+
+    content = PacketArray.gen_read(word_bw=32, src_type="axi4_stream")
+
+    assert "    {\n        const int n0_eff = 2;\n        int in_idx = 0;\n        int elem_count = 0;\n        bool stop = false;" in content
+    assert "for (int i0 = 0; i0 < n0_eff && !stop; ++i0) {" in content
+    assert "stop = true;" in content
+    assert "tl = (elem_count < (n0_eff)) ? streamutils::tlast_status::tlast_early : streamutils::tlast_status::tlast_at_end;" in content
 
 
 def test_gen_read_requires_word_width_configuration():
@@ -754,6 +905,7 @@ def test_public_hw_exports_point_to_dataschema2_symbols():
     assert PublicDataSchema is DataSchema
     assert PublicDataField is DataField
     assert PublicIntField is IntField
+    assert PublicMemAddr is MemAddr
     assert PublicFloatField is FloatField
     assert PublicEnumField is EnumField
     assert PublicDataList is DataList
@@ -765,6 +917,7 @@ def test_root_include_dir_resolves_to_filename_only():
         elements = {}
 
     assert Instruction.include_path() == "instruction.h"
+    assert Instruction.tb_include_path() == "instruction_tb.h"
 
 
 def test_dataarray_subclass_include_uses_class_name_not_member_name(tmp_path: Path):
@@ -785,6 +938,7 @@ def test_non_root_include_dir_resolves_to_dir_filename():
         elements = {}
 
     assert Instruction.include_path() == "isa/instruction.h"
+    assert Instruction.tb_include_path() == "isa/instruction_tb.h"
 
 
 def test_relative_include_path_uses_current_header_directory():
@@ -797,6 +951,7 @@ def test_relative_include_path_uses_current_header_directory():
         elements = {}
 
     assert Instruction.relative_include_path_to(CommonMode) == "../common/common_mode.h"
+    assert Instruction.relative_tb_include_path_to(CommonMode) == "../common/common_mode_tb.h"
 
 
 def test_invalid_specialize_kwargs_are_rejected():

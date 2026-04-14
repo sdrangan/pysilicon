@@ -26,7 +26,7 @@ At this stage, PySilicon is still an early project and much of this vision has n
 
 If you're new to PySilicon, begin with:
 
-- [Installation](./installation/index.md) — how to install PySilicon from source.
+- [Installation](./guide/installation/) — how to install PySilicon from source.
 - [Overview](./overview/) — conceptual background, motivation, and examples.
 - [Architecture](./architecture/) — system design, simulation, synthesis, testing, and generated interfaces.
 
