@@ -121,6 +121,11 @@ examples/histogram/include/
 examples/histogram/pysilicon_hist_proj/
 examples/histogram/logs/
 
+examples/conv2d/include/
+examples/conv2d/pysilicon_conv2d_proj/
+examples/conv2d/logs/
+examples/conv2d/data/
+
 
 experiment/
 

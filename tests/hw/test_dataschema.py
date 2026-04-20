@@ -203,7 +203,14 @@ def test_enumfield_gen_include_emits_guard_and_members(tmp_path: Path):
     assert "ON = 1," in content
     assert "AUTO = 2," in content
     assert "#endif // MODE_H" in content
+    assert "enum_to_string(Mode value)" not in content
     assert '#include "mode.h"' in tb_content
+    assert "inline const char* enum_to_string(Mode value) {" in tb_content
+    assert 'case Mode::OFF:' in tb_content
+    assert 'return "OFF";' in tb_content
+    assert 'case Mode::AUTO:' in tb_content
+    assert 'return "AUTO";' in tb_content
+    assert 'return "UNKNOWN";' in tb_content
 
 
 def test_enumfield_explicit_overrides_win():

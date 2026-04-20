@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from enum import IntEnum
@@ -22,8 +25,9 @@ from pysilicon.hw.arrayutils import (
     write_uint32_file,
 )
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField, MemAddr
-from pysilicon.toolchain import toolchain
 from pysilicon.hw.memory import AddrUnit, Memory
+from pysilicon.toolchain import toolchain
+from pysilicon.toolchain.stagetest import StageTest
 from pysilicon.utils.vcd import AximmBeatType
 
 
@@ -33,6 +37,8 @@ WORD_BW_SUPPORTED = [32, 64]
 TRACE_LEVELS = ("none", "port", "all")
 STAGES = ("csim", "csynth", "cosim", "generate_vcd", "extract_bursts")
 VITIS_STAGES = ("csim", "csynth", "cosim")
+STAGE_FLOW = StageTest.from_names(STAGES)
+VITIS_STAGE_FLOW = StageTest.from_names(VITIS_STAGES)
 DEFAULT_MAX_READ_BURST_LENGTH = 16
 DEFAULT_MAX_WRITE_BURST_LENGTH = 16
 TxIdField = IntField.specialize(bitwidth=16, signed=False)
@@ -42,14 +48,29 @@ Uint32Field = IntField.specialize(bitwidth=32, signed=False, include_dir=INCLUDE
 
 
 def _stage_index(stage: str) -> int:
-    try:
-        return STAGES.index(stage)
-    except ValueError as exc:
-        raise ValueError(f"Unsupported stage '{stage}'. Expected one of {STAGES}.") from exc
+    return STAGE_FLOW.stage_index(stage)
 
 
 def _vcd_trace_level(trace_level: str) -> str:
     return trace_level if trace_level in {"all", "port"} else "*"
+
+
+def _remove_path_if_exists(path: Path) -> None:
+    def _handle_remove_readonly(func, target, excinfo):
+        _ = excinfo
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
+    if not path.exists():
+        return
+    if path.is_file() or path.is_symlink():
+        try:
+            path.unlink()
+        except PermissionError:
+            os.chmod(path, stat.S_IWRITE)
+            path.unlink()
+        return
+    shutil.rmtree(path, onexc=_handle_remove_readonly)
 
 
 def _json_scalar(value):
@@ -717,6 +738,7 @@ class HistTest(object):
         through: str = "csim",
         trace_level: str = "none",
         live_output: bool = False,
+        reset_includes: bool = False,
     ) -> HistSimResult | dict[str, object] | None:
         """Run a contiguous stage range of the histogram Vitis flow.
 
@@ -748,6 +770,9 @@ class HistTest(object):
         live_output : bool
             If ``True``, stream Vitis stdout/stderr directly to the terminal
             while the subprocess runs instead of buffering it for later.
+        reset_includes : bool
+            If ``True`` and ``start_at == 'csim'``, also delete the generated
+            ``include/`` directory before regenerating the Vitis helper headers.
 
         Returns
         -------
@@ -769,12 +794,9 @@ class HistTest(object):
                 f"Unsupported trace level '{trace_level}'. Expected one of {TRACE_LEVELS}."
             )
 
+        start_at, through = STAGE_FLOW.validate_range(start_at, through)
         start_idx = _stage_index(start_at)
         through_idx = _stage_index(through)
-        if start_idx > through_idx:
-            raise ValueError(
-                f"start_at stage '{start_at}' must not come after through stage '{through}'."
-            )
 
         if self.cmd is None:
             self.simulate()
@@ -784,6 +806,10 @@ class HistTest(object):
         project_dir = self.example_dir / "pysilicon_hist_proj"
 
         if start_at == "csim":
+            _remove_path_if_exists(project_dir)
+            _remove_path_if_exists(logs_dir)
+            if reset_includes:
+                _remove_path_if_exists(self.example_dir / self.include_dir)
             self.gen_vitis_code()
             data_dir = self.write_input_files()
         else:
@@ -808,8 +834,7 @@ class HistTest(object):
 
         if start_idx <= _stage_index("cosim"):
             vitis_through = through if through in VITIS_STAGES else "cosim"
-            vitis_through_idx = _stage_index(vitis_through)
-            executed_vitis_stages = VITIS_STAGES[start_idx : vitis_through_idx + 1]
+            executed_vitis_stages = VITIS_STAGE_FLOW.range_names(start_at, vitis_through)
 
             print(
                 f"Performing Vitis stages {start_at} through {vitis_through}. "
@@ -950,7 +975,12 @@ def main() -> None:
         "--start_at",
         choices=STAGES,
         default="csim",
-        help="First stage to execute. Starting at csim resets the Vitis project.",
+        help="First stage to execute. Starting at csim clears the Vitis project and logs.",
+    )
+    parser.add_argument(
+        "--reset-includes",
+        action="store_true",
+        help="When starting at csim, also delete the generated include directory before regenerating it.",
     )
     parser.add_argument(
         "--through",
@@ -993,6 +1023,7 @@ def main() -> None:
             through=args.through,
             trace_level=args.trace_level,
             live_output=args.live_output,
+            reset_includes=args.reset_includes,
         )
     except (RuntimeError, ValueError) as exc:
         print(f"Vitis run failed: {exc}")

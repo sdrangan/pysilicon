@@ -122,6 +122,108 @@ def test_hist_test_vitis_stage_range_passes_tcl_args(tmp_path: Path, monkeypatch
     }
 
 
+def test_hist_test_vitis_csim_clears_project_and_logs_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _copy_hist_vitis_resources(tmp_path)
+    hist_test = HistTest(seed=11, ndata=41, nbins=7, example_dir=tmp_path)
+    expected_result = hist_test.simulate()
+
+    project_dir = tmp_path / "pysilicon_hist_proj"
+    logs_dir = tmp_path / "logs"
+    include_dir = tmp_path / "include"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    include_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "stale.txt").write_text("project", encoding="utf-8")
+    (logs_dir / "stale.txt").write_text("logs", encoding="utf-8")
+    (include_dir / "stale.txt").write_text("include", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def fake_gen_vitis_code() -> list[Path]:
+        captured["project_exists"] = project_dir.exists()
+        captured["logs_exists"] = logs_dir.exists()
+        captured["include_exists"] = include_dir.exists()
+        captured["include_stale_exists"] = (include_dir / "stale.txt").exists()
+        return []
+
+    def fake_write_input_files(data_dir: Path | None = None) -> Path:
+        target_dir = tmp_path / "data"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return target_dir
+
+    def fake_run_vitis_hls(run_tcl: Path, work_dir: Path, capture_output: bool, env: dict[str, str] | None = None):
+        return SimpleNamespace(stdout="hist csim ok", stderr="")
+
+    def fake_read_vitis_outputs(data_dir: Path):
+        return expected_result
+
+    monkeypatch.setattr(hist_test, "gen_vitis_code", fake_gen_vitis_code)
+    monkeypatch.setattr(hist_test, "write_input_files", fake_write_input_files)
+    monkeypatch.setattr(hist_test, "read_vitis_outputs", fake_read_vitis_outputs)
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fake_run_vitis_hls)
+
+    result = hist_test.test_vitis(start_at="csim", through="csim")
+
+    assert result is expected_result
+    assert captured == {
+        "project_exists": False,
+        "logs_exists": False,
+        "include_exists": True,
+        "include_stale_exists": True,
+    }
+
+
+def test_hist_test_vitis_csim_reset_includes_clears_include_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _copy_hist_vitis_resources(tmp_path)
+    hist_test = HistTest(seed=11, ndata=41, nbins=7, example_dir=tmp_path)
+    expected_result = hist_test.simulate()
+
+    project_dir = tmp_path / "pysilicon_hist_proj"
+    logs_dir = tmp_path / "logs"
+    include_dir = tmp_path / "include"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    include_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "stale.txt").write_text("project", encoding="utf-8")
+    (logs_dir / "stale.txt").write_text("logs", encoding="utf-8")
+    (include_dir / "stale.txt").write_text("include", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def fake_gen_vitis_code() -> list[Path]:
+        captured["project_exists"] = project_dir.exists()
+        captured["logs_exists"] = logs_dir.exists()
+        captured["include_exists"] = include_dir.exists()
+        captured["include_stale_exists"] = (include_dir / "stale.txt").exists()
+        return []
+
+    def fake_write_input_files(data_dir: Path | None = None) -> Path:
+        target_dir = tmp_path / "data"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return target_dir
+
+    def fake_run_vitis_hls(run_tcl: Path, work_dir: Path, capture_output: bool, env: dict[str, str] | None = None):
+        return SimpleNamespace(stdout="hist csim ok", stderr="")
+
+    def fake_read_vitis_outputs(data_dir: Path):
+        return expected_result
+
+    monkeypatch.setattr(hist_test, "gen_vitis_code", fake_gen_vitis_code)
+    monkeypatch.setattr(hist_test, "write_input_files", fake_write_input_files)
+    monkeypatch.setattr(hist_test, "read_vitis_outputs", fake_read_vitis_outputs)
+    monkeypatch.setattr(toolchain, "run_vitis_hls", fake_run_vitis_hls)
+
+    result = hist_test.test_vitis(start_at="csim", through="csim", reset_includes=True)
+
+    assert result is expected_result
+    assert captured == {
+        "project_exists": False,
+        "logs_exists": False,
+        "include_exists": False,
+        "include_stale_exists": False,
+    }
+
+
 def test_hist_test_vitis_rejects_invalid_stage_range() -> None:
     hist_test = HistTest()
 
@@ -317,11 +419,12 @@ def test_hist_main_reports_burst_report_without_accessing_counts(
         def simulate(self):
             raise AssertionError("simulate should not be called when starting at extract_bursts")
 
-        def test_vitis(self, start_at: str, through: str, trace_level: str, live_output: bool):
+        def test_vitis(self, start_at: str, through: str, trace_level: str, live_output: bool, reset_includes: bool):
             assert start_at == "extract_bursts"
             assert through == "extract_bursts"
             assert trace_level == "none"
             assert live_output is True
+            assert reset_includes is False
             return report
 
     monkeypatch.setattr(hist_demo, "HistTest", FakeHistTest)
@@ -366,9 +469,10 @@ def test_hist_main_reports_counts_for_hist_sim_result(
         def simulate(self):
             return sim_result
 
-        def test_vitis(self, start_at: str, through: str, trace_level: str, live_output: bool):
+        def test_vitis(self, start_at: str, through: str, trace_level: str, live_output: bool, reset_includes: bool):
             assert start_at == "csim"
             assert through == "csim"
+            assert reset_includes is False
             return sim_result
 
     monkeypatch.setattr(hist_demo, "HistTest", FakeHistTest)
