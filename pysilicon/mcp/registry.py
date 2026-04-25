@@ -26,6 +26,7 @@ from typing import Any, Callable
 from mcp.server.fastmcp import FastMCP
 
 from pysilicon.mcp.schema_examples import get_schema_example, list_schema_examples
+from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema
 
 
 # ---------------------------------------------------------------------------
@@ -200,4 +201,53 @@ REGISTRY.add(
         "additionalProperties": False,
     },
     fn=get_schema_example,
+)
+
+REGISTRY.add(
+    name="pysilicon_get_schema_draft_plan",
+    description=(
+        "Return a deterministic step-by-step workflow for drafting a new "
+        "pysilicon schema from a natural-language request. This helper does "
+        "not search, rank, or recommend specific example IDs."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "task": {
+                "type": ["string", "null"],
+                "description": "Optional natural-language description of the schema the user wants to draft.",
+            },
+            "workspace_root": {
+                "type": ["string", "null"],
+                "description": "Optional workspace root path accepted for consistency with other helper tools.",
+            },
+        },
+        "required": ["task", "workspace_root"],
+        "additionalProperties": False,
+    },
+    fn=get_schema_draft_plan,
+)
+
+REGISTRY.add(
+    name="pysilicon_validate_schema",
+    description=(
+        "Validate drafted pysilicon schema source text deterministically and "
+        "return structured errors, warnings, and extracted schema metadata."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "schema": {
+                "type": "string",
+                "description": "Drafted pysilicon schema source text to validate.",
+            },
+            "workspace_root": {
+                "type": ["string", "null"],
+                "description": "Optional workspace root path for contextual location reporting.",
+            },
+        },
+        "required": ["schema", "workspace_root"],
+        "additionalProperties": False,
+    },
+    fn=validate_schema,
 )

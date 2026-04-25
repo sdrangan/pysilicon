@@ -7,6 +7,7 @@ import pytest
 
 from pysilicon.mcp.schema_examples import get_schema_example, list_schema_examples
 from pysilicon.mcp.registry import REGISTRY, ToolRegistry
+from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema
 
 
 # ---------------------------------------------------------------------------
@@ -109,18 +110,21 @@ def test_get_schema_example_poly_resp_ftr_includes_enum_support():
 
 
 def test_registry_has_expected_tools():
-    names = {s["name"] for s in REGISTRY.tool_schemas()}
+    names = {s["function"]["name"] for s in REGISTRY.tool_schemas()}
     assert "pysilicon_list_schema_examples" in names
     assert "pysilicon_get_schema_example" in names
+    assert "pysilicon_get_schema_draft_plan" in names
+    assert "pysilicon_validate_schema" in names
 
 
 def test_registry_tool_schemas_are_openai_style():
     for schema in REGISTRY.tool_schemas():
         assert schema["type"] == "function"
-        assert "name" in schema
-        assert "description" in schema
-        assert "parameters" in schema
-        assert schema["parameters"]["type"] == "object"
+        assert "function" in schema
+        assert "name" in schema["function"]
+        assert "description" in schema["function"]
+        assert "parameters" in schema["function"]
+        assert schema["function"]["parameters"]["type"] == "object"
 
 
 def test_registry_dispatch_list_schema_examples():
@@ -134,6 +138,117 @@ def test_registry_dispatch_get_schema_example():
         "pysilicon_get_schema_example", {"example_id": "hist_cmd"}
     )
     assert result["id"] == "hist_cmd"
+
+
+def test_get_schema_draft_plan_final_step_recommends_validation():
+    result = get_schema_draft_plan(task="Need a DMA command schema")
+
+    assert result["steps"][-1]["goal"] == "Validate the schema and record assumptions"
+    assert result["steps"][-1]["recommended_tools"] == ["pysilicon_validate_schema"]
+    assert "structural or typing issues" in result["steps"][-1]["instructions"]
+
+
+def test_get_schema_draft_plan_first_step_uses_registered_tool_names():
+    result = get_schema_draft_plan()
+
+    assert result["steps"][0]["recommended_tools"] == [
+        "pysilicon_list_schema_examples",
+        "pysilicon_get_schema_example",
+    ]
+
+
+def test_get_schema_draft_plan_first_step_uses_workspace_root_when_provided():
+    result = get_schema_draft_plan(workspace_root="c:/demo/workspace")
+
+    assert "Check the workspace at c:/demo/workspace" in result["steps"][0]["instructions"]
+    assert "pysilicon_list_schema_examples" in result["steps"][0]["instructions"]
+
+
+def test_get_schema_draft_plan_first_step_uses_only_example_tools_without_workspace_root():
+    result = get_schema_draft_plan()
+
+    assert result["steps"][0]["instructions"] == (
+        "Use pysilicon_list_schema_examples and pysilicon_get_schema_example "
+        "to review comparable patterns before drafting new code."
+    )
+
+
+def test_validate_schema_accepts_valid_datalist_source():
+    result = validate_schema(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataList, IntField",
+                "U16 = IntField.specialize(bitwidth=16, signed=False)",
+                "class DemoPacket(DataList):",
+                "    elements = {",
+                "        'count': U16,",
+                "    }",
+            ]
+        )
+    )
+
+    assert result["valid"] is True
+    assert result["errors"] == []
+    assert result["schema_info"] == {
+        "name": "DemoPacket",
+        "kind": "DataList",
+        "field_count": 1,
+        "field_names": ["count"],
+    }
+
+
+def test_validate_schema_reports_syntax_error_location():
+    result = validate_schema(
+        "class Broken(DataList)\n    pass",
+        workspace_root="demo_workspace",
+    )
+
+    assert result["valid"] is False
+    assert result["errors"][0]["code"] == "syntax_error"
+    assert result["errors"][0]["location"]["line"] == 1
+    assert result["errors"][0]["location"]["path"] == "demo_workspace"
+    assert result["schema_info"] is None
+
+
+def test_validate_schema_reports_invalid_elements_definition():
+    result = validate_schema(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataList, IntField",
+                "U16 = IntField.specialize(bitwidth=16, signed=False)",
+                "class Broken(DataList):",
+                "    elements = {",
+                "        'count': {'description': 'missing schema'},",
+                "    }",
+            ]
+        )
+    )
+
+    assert result["valid"] is False
+    assert result["errors"][0]["code"] == "schema_validation_error"
+    assert "must define a 'schema' entry" in result["errors"][0]["message"]
+    assert result["schema_info"]["name"] == "Broken"
+
+
+def test_registry_dispatch_validate_schema():
+    result = REGISTRY.dispatch(
+        "pysilicon_validate_schema",
+        {
+            "schema": "\n".join(
+                [
+                    "from pysilicon.hw import DataArray, IntField",
+                    "U8 = IntField.specialize(bitwidth=8, signed=False)",
+                    "class Payload(DataArray):",
+                    "    element_type = U8",
+                    "    max_shape = (4,)",
+                    "    static = True",
+                ]
+            )
+        },
+    )
+
+    assert result["valid"] is True
+    assert result["schema_info"]["kind"] == "DataArray"
 
 
 def test_registry_dispatch_unknown_tool_raises_value_error():
