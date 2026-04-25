@@ -29,6 +29,8 @@ sv_sim = "pysilicon.scripts.sv_sim:main"
 sv_synth = "pysilicon.scripts.sv_build:run_synth"
 sv_impl  = "pysilicon.scripts.sv_build:run_impl"
 build_lab_autograder = "pysilicon.scripts.build_lab_autograder:main"
+pysilicon_mcp_setup = "pysilicon.scripts.pysilicon_mcp_setup:main"
+pysilicon_mcp_server = "pysilicon.mcp.server:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]

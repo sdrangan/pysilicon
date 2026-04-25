@@ -88,6 +88,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# MCP files
+!**/mcp/resources/*.json
+
 # Jupyter Notebook checkpoints
 **/.ipynb_checkpoints/
 **/.ipynb_checkpoints/* 
