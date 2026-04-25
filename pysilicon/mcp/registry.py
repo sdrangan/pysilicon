@@ -108,19 +108,23 @@ class ToolRegistry:
 
             {
                 "type": "function",
-                "name": "<tool-name>",
-                "description": "...",
-                "strict": True,
-                "parameters": { <JSON Schema object> },
+                "function": {
+                    "name": "<tool-name>",
+                    "description": "...",
+                    "strict": True,
+                    "parameters": { <JSON Schema object> },
+                },
             }
         """
         return [
             {
                 "type": "function",
-                "name": t.name,
-                "description": t.description,
-                "strict": True,
-                "parameters": t.parameters,
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "strict": True,
+                    "parameters": t.parameters,
+                },
             }
             for t in self._tools.values()
         ]
