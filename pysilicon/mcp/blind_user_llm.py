@@ -103,70 +103,52 @@ def run_session(
 
     final_response = ""
     for round_num in range(max_rounds):
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model=model,
-            input=messages,
+            messages=messages,
             tools=tool_schemas,
         )
 
-        # Collect all output items from this response turn
-        tool_calls_made = False
-        assistant_text = ""
+        choice = response.choices[0]
+        message = choice.message
 
-        for item in response.output:
-            if item.type == "message":
-                # Plain text response from the assistant
-                for content_block in item.content:
-                    if hasattr(content_block, "text"):
-                        assistant_text += content_block.text
-                messages.append({"role": "assistant", "content": item.content})
+        # Append the assistant message to history
+        messages.append(message.model_dump(exclude_unset=True))
 
-            elif item.type == "function_call":
-                tool_calls_made = True
-                tool_name = item.name
-                try:
-                    arguments = json.loads(item.arguments) if item.arguments else {}
-                except json.JSONDecodeError:
-                    arguments = {}
-
-                if verbose:
-                    print(f"[blind_user] round {round_num + 1}: tool call → {tool_name}({arguments})")
-
-                # Dispatch via the shared registry
-                try:
-                    result = REGISTRY.dispatch(tool_name, arguments)
-                    result_text = json.dumps(result, indent=2)
-                except Exception as exc:  # noqa: BLE001
-                    result_text = json.dumps({"error": str(exc)})
-
-                if verbose:
-                    print(f"[blind_user] tool result ({len(result_text)} chars)")
-
-                # Record the assistant's tool call
-                messages.append({
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "function_call",
-                            "call_id": item.call_id,
-                            "name": tool_name,
-                            "arguments": item.arguments or "{}",
-                        }
-                    ],
-                })
-                # Record the tool result
-                messages.append({
-                    "role": "tool",
-                    "content": result_text,
-                    "tool_call_id": item.call_id,
-                })
-
-        if not tool_calls_made:
-            # The assistant produced a final text response without further tool calls
-            final_response = assistant_text
+        # Check for tool calls
+        tool_calls = message.tool_calls or []
+        if not tool_calls:
+            # No tool calls — this is the final text response
+            final_response = message.content or ""
             if verbose:
                 print(f"[blind_user] final response received after {round_num + 1} round(s)")
             break
+
+        # Execute each tool call and append results
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            try:
+                arguments = json.loads(tool_call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+
+            if verbose:
+                print(f"[blind_user] round {round_num + 1}: tool call → {tool_name}({arguments})")
+
+            try:
+                result = REGISTRY.dispatch(tool_name, arguments)
+                result_text = json.dumps(result, indent=2)
+            except Exception as exc:  # noqa: BLE001
+                result_text = json.dumps({"error": str(exc)})
+
+            if verbose:
+                print(f"[blind_user] tool result ({len(result_text)} chars)")
+
+            messages.append({
+                "role": "tool",
+                "content": result_text,
+                "tool_call_id": tool_call.id,
+            })
     else:
         final_response = (
             f"Session ended after {max_rounds} rounds without a final response."
