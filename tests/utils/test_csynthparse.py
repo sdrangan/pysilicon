@@ -48,13 +48,18 @@ def test_get_loop_pipeline_info_extracts_trip_counts_and_latency_range(tmp_path:
     parser.get_loop_pipeline_info()
 
     assert list(parser.loop_df.columns) == [
-      "PipelineII",
-      "PipelineDepth",
+        "PipelineII",
+        "PipelineDepth",
         "TripCountMin",
         "TripCountMax",
         "LatencyMin",
         "LatencyMax",
     ]
+    assert str(parser.loop_df["PipelineII"].dtype) == "Int64"
+    assert str(parser.loop_df["TripCountMin"].dtype) == "Int64"
+    assert str(parser.loop_df["TripCountMax"].dtype) == "Int64"
+    assert str(parser.loop_df["LatencyMin"].dtype) == "Int64"
+    assert str(parser.loop_df["LatencyMax"].dtype) == "Int64"
 
     compute_loop = parser.loop_df.loc["poly:compute_loop"]
     assert compute_loop["TripCountMin"] == 1
@@ -71,3 +76,7 @@ def test_get_loop_pipeline_info_extracts_trip_counts_and_latency_range(tmp_path:
     assert drain_loop["LatencyMax"] == 7
     assert drain_loop["PipelineII"] == 2
     assert drain_loop["PipelineDepth"] == 4
+
+    csv_text = parser.loop_df.to_csv()
+    assert "1.0" not in csv_text
+    assert ",1,30,1,512,30,541" in csv_text

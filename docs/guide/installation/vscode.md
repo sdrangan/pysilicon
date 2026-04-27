@@ -1,7 +1,7 @@
 ---
 title: Installing the VS Code Extension
 parent: Installation
-nav_order: 2
+nav_order: 5
 has_children: false
 ---
 

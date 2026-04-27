@@ -88,6 +88,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# MCP files
+!**/mcp/resources/*.json
+
 # Jupyter Notebook checkpoints
 **/.ipynb_checkpoints/
 **/.ipynb_checkpoints/* 
@@ -120,6 +123,11 @@ examples/poly/vcd/
 examples/histogram/include/
 examples/histogram/pysilicon_hist_proj/
 examples/histogram/logs/
+
+examples/conv2d/include/
+examples/conv2d/pysilicon_conv2d_proj/
+examples/conv2d/logs/
+examples/conv2d/data/
 
 
 experiment/

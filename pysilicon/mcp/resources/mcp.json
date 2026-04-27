@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "pysilicon": {
+      "type": "stdio",
+      "command": "__PYSILICON_PYTHON__",
+      "args": ["-m", "pysilicon.mcp.server"]
+    }
+  }
+}

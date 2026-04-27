@@ -343,9 +343,9 @@ class DataSchema(ABC):
             wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void write_axi4_stream("
-                f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, bool tlast = true{suffix}) const {{"
+                f"hls::stream<streamutils::axi4s_word<word_bw>> &s, bool tlast = true{suffix}) const {{"
             )
-            impl_signature = "hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>> &s, bool tlast"
+            impl_signature = "hls::stream<streamutils::axi4s_word<{bw}>> &s, bool tlast"
             wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s, tlast{call_suffix});"
             target = "s"
             unsupported_msg = "Unsupported word_bw for write_axi4_stream"
@@ -485,14 +485,14 @@ class DataSchema(ABC):
             wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void read_axi4_stream("
-                f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s, streamutils::tlast_status &tl{suffix}) {{"
+                f"hls::stream<streamutils::axi4s_word<word_bw>> &s, streamutils::tlast_status &tl{suffix}) {{"
             )
             compat_wrapper_signature = (
                 f"{indent}template<int word_bw>\n"
                 f"{indent}void read_axi4_stream("
-                f"hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>> &s{suffix}) {{"
+                f"hls::stream<streamutils::axi4s_word<word_bw>> &s{suffix}) {{"
             )
-            impl_signature = "hls::stream<hls::axis<ap_uint<{bw}>, 0, 0, 0>> &s, streamutils::tlast_status &tl"
+            impl_signature = "hls::stream<streamutils::axi4s_word<{bw}>> &s, streamutils::tlast_status &tl"
             wrapper_call = f"{i1}{impl_name}<word_bw>::run(this, s, tl{call_suffix});"
             compat_wrapper_call = f"{i1}streamutils::tlast_status tl = streamutils::tlast_status::no_tlast;\n{i1}read_axi4_stream<word_bw>(s, tl{call_suffix});"
             source = "s"
@@ -1927,6 +1927,31 @@ class EnumField(DataField):
         lines.append("};")
         return "\n".join(lines)
 
+    @classmethod
+    def _gen_tb_member_definitions(cls, indent_level: int = 0) -> str:
+        enum_type = cls.enum_type
+        if enum_type is None:
+            raise TypeError(f"{cls.__name__} does not define enum_type.")
+
+        indent = cls._get_indent(indent_level)
+        i1 = cls._get_indent(indent_level + 1)
+        lines = [
+            f"{indent}inline const char* enum_to_string({cls.cpp_class_name()} value) {{",
+            f"{i1}switch (value) {{",
+        ]
+        for member in enum_type:
+            lines.extend([
+                f"{i1}case {cls.cpp_class_name()}::{member.name}:",
+                f"{i1}    return \"{member.name}\";",
+            ])
+        lines.extend([
+            f"{i1}default:",
+            f"{i1}    return \"UNKNOWN\";",
+            f"{i1}}}",
+            f"{indent}}}",
+        ])
+        return "\n".join(lines)
+
     def is_close(
         self,
         other: DataSchema,
@@ -3018,13 +3043,13 @@ class DataArray(DataSchema):
         ])
         lines.extend(emit_read_impl(
             "read_axi4_stream_elem_impl",
-            f"hls::stream<hls::axis<ap_uint<{{bw}}>, 0, 0, 0>>& s, {elem_cpp}* out, int n",
+            f"hls::stream<streamutils::axi4s_word<{{bw}}>>& s, {elem_cpp}* out, int n",
             "axi4_stream",
         ))
         lines.extend([
             "",
             f"{indent}template<int word_bw>",
-            f"{indent}static void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, {elem_cpp} out[pf<word_bw>()], int n = pf<word_bw>()) {{",
+            f"{indent}static void read_axi4_stream_elem(hls::stream<streamutils::axi4s_word<word_bw>>& s, {elem_cpp} out[pf<word_bw>()], int n = pf<word_bw>()) {{",
             f"{i1}#pragma HLS INLINE",
             f"{i1}read_axi4_stream_elem_impl(word_bw_tag<word_bw>{{}}, s, out, n);",
             f"{indent}}}",
@@ -3046,13 +3071,13 @@ class DataArray(DataSchema):
         ])
         lines.extend(emit_write_impl(
             "write_axi4_stream_elem_impl",
-            f"hls::stream<hls::axis<ap_uint<{{bw}}>, 0, 0, 0>>& s, const {elem_cpp}* in, bool tlast, int n",
+            f"hls::stream<streamutils::axi4s_word<{{bw}}>>& s, const {elem_cpp}* in, bool tlast, int n",
             axi=True,
         ))
         lines.extend([
             "",
             f"{indent}template<int word_bw>",
-            f"{indent}static void write_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const {elem_cpp} in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {{",
+            f"{indent}static void write_axi4_stream_elem(hls::stream<streamutils::axi4s_word<word_bw>>& s, const {elem_cpp} in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {{",
             f"{i1}#pragma HLS INLINE",
             f"{i1}write_axi4_stream_elem_impl(word_bw_tag<word_bw>{{}}, s, in, tlast, n);",
             f"{indent}}}",

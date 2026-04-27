@@ -12,6 +12,9 @@
 
 namespace streamutils {
 
+    template<int W>
+    using axi4s_word = ap_axis<W, 0, 0, 0>;
+
     enum class tlast_status {
         no_tlast,
         tlast_at_end,
@@ -54,8 +57,8 @@ namespace streamutils {
      * Sets TKEEP and TSTRB to all-ones by default.
      */
     template<int W>
-    void write_axi4_word(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s, ap_uint<W> data, bool tlast) {
-        hls::axis<ap_uint<W>, 0, 0, 0> pkt;
+    void write_axi4_word(hls::stream<axi4s_word<W>> &s, ap_uint<W> data, bool tlast) {
+        axi4s_word<W> pkt;
         pkt.data = data;
         pkt.last = tlast;
         pkt.keep = -1; // -1 in ap_uint sets all bits to 1
@@ -68,11 +71,11 @@ namespace streamutils {
      * Useful for resynchronizing to the next packet boundary after a framing error.
      */
     template<int W>
-    void flush_axi4_stream_to_tlast(hls::stream<hls::axis<ap_uint<W>, 0, 0, 0>> &s) {
+    void flush_axi4_stream_to_tlast(hls::stream<axi4s_word<W>> &s) {
         bool done = false;
         while (!done) {
 #pragma HLS PIPELINE II=1
-            hls::axis<ap_uint<W>, 0, 0, 0> pkt = s.read();
+            axi4s_word<W> pkt = s.read();
             done = pkt.last;
         }
     }

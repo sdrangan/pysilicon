@@ -5,8 +5,9 @@ This script re-runs a Vivado HLS RTL simulation using `xsim` and generates a VCD
 for waveform analysis. It is intended for use on Windows systems where Vivado is installed.
 
 Usage (CLI):
-First, run the RTL simulation in Vitis HLS to generate the necessary simulation files.
-In that simulation ensure that you have selected `trace=all` in the simulation settings.
+First, run RTL co-simulation in Vitis HLS to generate the necessary simulation files.
+In that simulation, enable trace capture with a setting such as `trace_level all`
+or `trace_level port`.
 Then, run this script from the command line:
 ```bash
     python xsim_vcd.py --top <top_function> [--comp <component_name>] [--out <output_file>]
@@ -16,8 +17,9 @@ Arguments:
     --top    (required) Name of the top-level function to simulate
     --comp   (optional) Name of the HLS component directory (default: 'hls_component')
     --out    (optional) Output VCD filename (default: 'dump.vcd')
-    --trace_level (optional) VCD trace level (default: '*' corresponds to all signals.
-      You can also specify 'port' or '/top_function/*' for more specific tracing.)
+        --trace_level (optional) VCD trace level. Built-in values `*`, `all`, and
+            `port` reuse the trace selection from the generated simulation Tcl. You
+            can also specify a custom hierarchical target such as `/top_function/*`.
 
 Example:
 ```bash
@@ -50,14 +52,30 @@ import argparse
 from pathlib import Path
 
 
+def _get_log_vcd_command(lines, trace_level):
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('log_wave '):
+            if trace_level in {'*', 'all', 'port'}:
+                return f"{stripped.replace('log_wave', 'log_vcd', 1)}\n"
+            return f'log_vcd {trace_level}\n'
+
+    raise RuntimeError(
+        'Could not find a log_wave command in the simulation TCL. '
+        'Re-run co-simulation with trace capture enabled before generating a VCD.'
+    )
+
+
 def modify_tcl(tcl_path, tcl_vcd_path, trace_level):
     with open(tcl_path, 'r') as f:
         lines = f.readlines()
 
+    log_vcd_command = _get_log_vcd_command(lines, trace_level)
+
     # Insert VCD commands before log_wave
     for i, line in enumerate(lines):
-        if 'log_wave -r /' in line:
-            lines = lines[:i] + ['open_vcd\n', f'log_vcd {trace_level}\n'] + lines[i:]
+        if line.strip().startswith('log_wave '):
+            lines = lines[:i] + ['open_vcd\n', log_vcd_command] + lines[i:]
             break
 
     # Replace final lines
@@ -164,9 +182,10 @@ def run_xsim_vcd(
         single sub-directory of *comp* is used automatically.  Default:
         ``'solution1'``.
     trace_level : str
-        VCD trace level string passed to ``log_vcd``.  Use ``'*'`` for all
-        signals (default), ``'port'`` for port signals only, or a specific
-        hierarchical path.
+        VCD trace level.  Built-in values ``'*'``, ``'all'``, and ``'port'``
+        reuse the trace selection recorded in the generated simulation TCL.
+        You can also pass a specific hierarchical path for a custom
+        ``log_vcd`` target.
     workdir : str | Path | None
         Working directory that contains the *comp* component folder.
         Defaults to the current working directory.

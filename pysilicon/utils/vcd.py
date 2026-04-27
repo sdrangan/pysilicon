@@ -1,11 +1,21 @@
 import math
 import re
+from enum import IntEnum
 from sys import prefix
+from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 from vcdvcd import VCDVCD
 
 from pysilicon.utils.timing import SigTimingInfo
+
+
+class AximmBeatType(IntEnum):
+    """Per-cycle data-phase status for an extracted AXI-MM burst."""
+
+    TRANSFER = 0
+    IDLE = 1
+    STALL = 2
 
 def binary_str_to_numeric(
         bin_str : str,
@@ -410,6 +420,104 @@ class VcdParser(object):
                   
         return axi_sigs, bitwidth
 
+    def add_aximm_signals(
+            self,
+            prefix : str | None = None,
+            dir : Literal['read', 'write', 'both'] = 'both',
+            lite_only : bool = False,
+            short_name_prefix : str | None = None,
+            ignore_multiple : bool = False,
+            confirm_exists : bool = True) -> dict[str, str]:
+        """
+        Adds signals that are part of an AXI4-MM interfaces (either AXI4-Lite or AXI4-Full)
+        
+        Parameters
+        ----------
+        prefix : str | None
+            If provided, only signals containing this `prefix{kw}`.
+        short_name_prefix : str | None
+            If provided, this prefix is added to the short names of the signals.
+        dir : Literal['read', 'write', 'both']
+            Direction of the AXI4-MM interface to consider.  
+        lite_only : bool
+            If True, only consider AXI4-Lite signals (i.e., without burst signals 
+            like AWLEN, ARLEN, etc.).  If False, consider all AXI4-MM signals.
+        ignore_multiple : bool
+            If True, if multiple signals are found for an AXI4-Stream keyword, the first one is used and a warning is printed.  If False, an error is raised.
+        confirm_exists : bool
+            If True, an error is raised if any expected signal is not found.  If False, missing signals 
+            are ignored.
+
+        Returns
+        -------
+        axi_sigs : dict[str, str]
+            Dictionary mapping AXI4-Stream keywords to signal names for the signals.
+        bitwidths: dict[str, int]
+            Dictionary mapping AXI4-MM data signal keywords to their bitwidths.
+            The signal keywords are 'RDATA', 'WDATA', 'AWADDR' and 'ARADDR' if they are found.
+        """
+
+
+        # Determine signals to look for
+        axi4s_keywords = []
+        if dir in ['write', 'both']:
+            axi4s_keywords += ['AWADDR', 'AWVALID', 'AWREADY', 'WDATA', 'WVALID', 'WREADY', 'BVALID', 'BREADY']
+            if not lite_only:
+                 axi4s_keywords += ['AWLEN', 'WLAST']
+        if dir in ['read', 'both']:
+            axi4s_keywords += ['ARADDR', 'ARVALID', 'ARREADY', 'RDATA', 'RVALID', 'RREADY', ]
+            if not lite_only:
+                axi4s_keywords += ['ARLEN', 'RLAST']
+
+        axi_sigs = dict()
+        for kw in axi4s_keywords:
+            axi_sigs[kw] = None
+            tgt = f"{prefix}{kw}" if prefix else kw
+            tgt = tgt.lower()
+            for s in self.vcd.signals:
+                if tgt in s.lower():
+                    if axi_sigs[kw] is not None:
+                        if ignore_multiple:
+                            print(f"Warning: Multiple signals found for AXI4-Stream keyword '{kw}'. Using '{axi_sigs[kw]}' and ignoring '{s}'.")
+                            continue
+                        else:
+                            err_str = f"Multiple signals found for AXI4-Stream keyword '{kw}': '{axi_sigs[kw]}' and '{s}'."
+                            raise ValueError(err_str)
+                    axi_sigs[kw] = s
+                    self.add_signal(s)
+                    if short_name_prefix:
+                        short_name = f"{short_name_prefix}{kw.upper()}"
+                    elif prefix:
+                        short_name = f"{prefix}_{kw.upper()}"
+                    else:  
+                        short_name = kw.upper()
+                    self.sig_info[s].short_name = short_name
+
+            # Check if signal is found, except 'tlast' which is optional.
+            if (axi_sigs[kw] is None) and (confirm_exists):
+                raise ValueError(f"No signal found for AXI4- keyword '{kw}'.")
+            
+        # Get the bitwidth from the TDATA signal.
+        # The signal ends in [N:0], so the width is N+1
+        sig_bwid = ['RDATA', 'WDATA', 'AWADDR', 'ARADDR']  # Signals for which to get bitwidths
+        bitwidths = dict()
+        for sig in sig_bwid:
+            if sig in axi_sigs and axi_sigs[sig] is not None:
+                axi_sig = axi_sigs[sig]
+                parts = axi_sig.split('[')
+                bitwidth = None
+                if len(parts) > 1:
+                    bit_range = parts[-1].strip(']')
+                    msb_lsb = bit_range.split(':')
+                    if len(msb_lsb) == 2:
+                        msb = int(msb_lsb[0])
+                        bitwidth = msb + 1       
+
+                        if bitwidth is None:
+                            raise ValueError(f"Could not determine bitwidth from signal '{axi_sig}'.")
+                        bitwidths[sig] = bitwidth
+        return axi_sigs, bitwidths
+
    
     def full_name(
             self, 
@@ -558,6 +666,281 @@ class VcdParser(object):
         clk_period = np.median(clk_diffs)
 
         return bursts, clk_period
+
+    def extract_aximm_bursts(
+            self,
+            clk_name: str,
+            aximm_sigs: dict[str, str]) -> tuple[list[dict], list[dict], float]:
+        """
+        Extract write and read bursts from AXI4-MM signals.
+
+        Supports both AXI4-Lite (without ``AWLEN``/``ARLEN``/``WLAST``/``RLAST``)
+        and AXI4-Full (with burst-length and last-beat signals).  The method
+        resamples all signals at rising clock edges (using
+        :func:`extract_clock_times` and :func:`resample_signal`) and then
+        walks the resampled arrays to identify accepted handshakes.
+
+        Parameters
+        ----------
+        clk_name : str
+            Name of the clock signal.
+        aximm_sigs : dict[str, str]
+            Dictionary of AXI4-MM signal names, as returned by
+            :meth:`add_aximm_signals <VcdParser.add_aximm_signals>`.
+
+            Write-side keys: ``AWADDR``, ``AWVALID``, ``AWREADY``,
+            ``WDATA``, ``WVALID``, ``WREADY``.
+            Optional write keys: ``AWLEN``, ``WLAST``, ``BVALID``,
+            ``BREADY``.
+
+            Read-side keys: ``ARADDR``, ``ARVALID``, ``ARREADY``,
+            ``RDATA``, ``RVALID``, ``RREADY``.
+            Optional read keys: ``ARLEN``, ``RLAST``.
+
+        Returns
+        -------
+        write_bursts : list of dict
+            Each dict has:
+
+            - ``'addr'``      : accepted AWADDR value
+            - ``'data'``      : np.ndarray of accepted WDATA beats
+            - ``'start_idx'`` : clock-edge index of the address phase
+                        - ``'data_start_idx'`` : first clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
+                        - ``'data_end_idx'`` : final clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
+            - ``'beat_type'`` : list of per-beat status after the address
+                            phase while this burst is the active burst on the data channel.
+                            Values use :class:`AximmBeatType`: 0 = transfer
+                            (WVALID & WREADY), 1 = idle (WVALID=0), 2 = stall (WREADY=0)
+            - ``'tstart'``    : time (ns) of the address phase
+                        - ``'data_tstart'`` : time (ns) of the first cycle represented in
+                            ``beat_type``
+                        - ``'data_tend'`` : time (ns) of the final cycle represented in
+                            ``beat_type``
+                        - ``'queue_wait_cycles'`` : number of cycles between address
+                            acceptance and the start of this burst's data phase
+            - ``'awlen'``     : AWLEN value if available, else ``None``
+
+        read_bursts : list of dict
+            Each dict has:
+
+            - ``'addr'``      : accepted ARADDR value
+            - ``'data'``      : np.ndarray of accepted RDATA beats
+            - ``'start_idx'`` : clock-edge index of the address phase
+                        - ``'data_start_idx'`` : first clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
+                        - ``'data_end_idx'`` : final clock-edge index represented in
+                            ``beat_type`` for this burst's data phase
+            - ``'beat_type'`` : list of per-beat status after the address
+                            phase while this burst is the active burst on the data channel.
+                            Values use :class:`AximmBeatType`: 0 = transfer
+                            (RVALID & RREADY), 1 = idle (RVALID=0), 2 = stall (RREADY=0)
+            - ``'tstart'``    : time (ns) of the address phase
+                        - ``'data_tstart'`` : time (ns) of the first cycle represented in
+                            ``beat_type``
+                        - ``'data_tend'`` : time (ns) of the final cycle represented in
+                            ``beat_type``
+                        - ``'queue_wait_cycles'`` : number of cycles between address
+                            acceptance and the start of this burst's data phase
+            - ``'arlen'``     : ARLEN value if available, else ``None``
+
+        clk_period : float
+            Estimated clock period in ns.
+        """
+
+        # Ensure numeric values are computed for all present signals
+        for sig_name in [clk_name] + [v for v in aximm_sigs.values() if v is not None]:
+            if sig_name in self.sig_info:
+                self.sig_info[sig_name].get_values()
+
+        # Extract clock times
+        clk_sig = self.sig_info[clk_name]
+        clk_times = extract_clock_times(clk_sig)
+
+        def _resample_key(key):
+            """Resample aximm_sigs[key] at clock edges, or return None."""
+            name = aximm_sigs.get(key)
+            if name and name in self.sig_info:
+                return resample_signal(self.sig_info[name], clk_times)
+            return None
+
+        # Resample write-side signals
+        awaddr  = _resample_key('AWADDR')
+        awvalid = _resample_key('AWVALID')
+        awready = _resample_key('AWREADY')
+        awlen   = _resample_key('AWLEN')
+        wdata   = _resample_key('WDATA')
+        wvalid  = _resample_key('WVALID')
+        wready  = _resample_key('WREADY')
+        wlast   = _resample_key('WLAST')
+
+        # Resample read-side signals
+        araddr  = _resample_key('ARADDR')
+        arvalid = _resample_key('ARVALID')
+        arready = _resample_key('ARREADY')
+        arlen   = _resample_key('ARLEN')
+        rdata   = _resample_key('RDATA')
+        rvalid  = _resample_key('RVALID')
+        rready  = _resample_key('RREADY')
+        rlast   = _resample_key('RLAST')
+
+        n = len(clk_times)
+
+        write_bursts = []
+        read_bursts  = []
+
+        # FIFO queues of bursts whose address phase was accepted but whose
+        # data beats have not yet all arrived.
+        pending_writes = []
+        pending_reads  = []
+
+        def _is_new_addr_handshake(
+                handshake: bool,
+                prev_handshake: bool,
+                addr_now,
+                addr_prev,
+                len_now,
+                len_prev) -> bool:
+            """Return True only for a newly observed address acceptance.
+
+            Address channels in some traces can hold VALID/READY high across
+            multiple cycles. Treating every such cycle as a fresh handshake
+            creates duplicate overlapping bursts. We start a new burst when the
+            accepted handshake is new, or when the accepted address metadata
+            changes while the channel remains accepted across consecutive cycles.
+            """
+            if not handshake:
+                return False
+            if not prev_handshake:
+                return True
+            if addr_now is not None and addr_prev is not None and addr_now != addr_prev:
+                return True
+            if len_now is not None and len_prev is not None and len_now != len_prev:
+                return True
+            return False
+
+        def _append_active_cycle(active: dict, beat_type: AximmBeatType, clk_idx: int) -> None:
+            if active['data_start_idx'] is None:
+                active['data_start_idx'] = clk_idx
+                active['data_tstart'] = clk_times[clk_idx]
+            active['beat_type'].append(beat_type)
+            active['data_end_idx'] = clk_idx
+            active['data_tend'] = clk_times[clk_idx]
+            active['queue_wait_cycles'] = int(active['data_start_idx'] - active['start_idx'])
+
+        for i in range(n):
+            prev_i = i - 1
+
+            # --- Write address channel ---
+            aw_handshake = bool(
+                awvalid is not None and awready is not None and awvalid[i] and awready[i]
+            )
+            prev_aw_handshake = bool(
+                i > 0 and awvalid is not None and awready is not None and awvalid[prev_i] and awready[prev_i]
+            )
+            if _is_new_addr_handshake(
+                    aw_handshake,
+                    prev_aw_handshake,
+                    awaddr[i] if awaddr is not None else None,
+                    awaddr[prev_i] if (i > 0 and awaddr is not None) else None,
+                    awlen[i] if awlen is not None else None,
+                    awlen[prev_i] if (i > 0 and awlen is not None) else None):
+                burst = {
+                    'addr':      awaddr[i] if awaddr is not None else None,
+                    'awlen':     int(awlen[i]) if awlen is not None else None,
+                    'start_idx': i,
+                    'tstart':    clk_times[i],
+                    'data_start_idx': None,
+                    'data_end_idx': None,
+                    'data_tstart': None,
+                    'data_tend': None,
+                    'queue_wait_cycles': None,
+                    'data':      [],
+                    'beat_type': [],
+                }
+                pending_writes.append(burst)
+
+            # --- Write data channel ---
+            if wvalid is not None and wready is not None and pending_writes:
+                active = pending_writes[0]
+                if wvalid[i] and wready[i]:
+                    _append_active_cycle(active, AximmBeatType.TRANSFER, i)
+                    active['data'].append(wdata[i] if wdata is not None else None)
+                    # Determine end-of-burst
+                    if wlast is not None:
+                        is_last = bool(wlast[i])
+                    elif active['awlen'] is not None:
+                        is_last = len(active['data']) == active['awlen'] + 1
+                    else:
+                        is_last = True  # AXI4-Lite: single beat per burst
+                    if is_last:
+                        active['data'] = np.array(active['data'])
+                        write_bursts.append(active)
+                        pending_writes.pop(0)
+                else:
+                    if not wvalid[i]:
+                        _append_active_cycle(active, AximmBeatType.IDLE, i)
+                    elif not wready[i]:
+                        _append_active_cycle(active, AximmBeatType.STALL, i)
+
+            # --- Read address channel ---
+            ar_handshake = bool(
+                arvalid is not None and arready is not None and arvalid[i] and arready[i]
+            )
+            prev_ar_handshake = bool(
+                i > 0 and arvalid is not None and arready is not None and arvalid[prev_i] and arready[prev_i]
+            )
+            if _is_new_addr_handshake(
+                    ar_handshake,
+                    prev_ar_handshake,
+                    araddr[i] if araddr is not None else None,
+                    araddr[prev_i] if (i > 0 and araddr is not None) else None,
+                    arlen[i] if arlen is not None else None,
+                    arlen[prev_i] if (i > 0 and arlen is not None) else None):
+                burst = {
+                    'addr':      araddr[i] if araddr is not None else None,
+                    'arlen':     int(arlen[i]) if arlen is not None else None,
+                    'start_idx': i,
+                    'tstart':    clk_times[i],
+                    'data_start_idx': None,
+                    'data_end_idx': None,
+                    'data_tstart': None,
+                    'data_tend': None,
+                    'queue_wait_cycles': None,
+                    'data':      [],
+                    'beat_type': [],
+                }
+                pending_reads.append(burst)
+
+            # --- Read data channel ---
+            if rvalid is not None and rready is not None and pending_reads:
+                active = pending_reads[0]
+                if rvalid[i] and rready[i]:
+                    _append_active_cycle(active, AximmBeatType.TRANSFER, i)
+                    active['data'].append(rdata[i] if rdata is not None else None)
+                    # Determine end-of-burst
+                    if rlast is not None:
+                        is_last = bool(rlast[i])
+                    elif active['arlen'] is not None:
+                        is_last = len(active['data']) == active['arlen'] + 1
+                    else:
+                        is_last = True  # AXI4-Lite: single beat per burst
+                    if is_last:
+                        active['data'] = np.array(active['data'])
+                        read_bursts.append(active)
+                        pending_reads.pop(0)
+                else:
+                    if not rvalid[i]:
+                        _append_active_cycle(active, AximmBeatType.IDLE, i)
+                    elif not rready[i]:
+                        _append_active_cycle(active, AximmBeatType.STALL, i)
+
+        # Estimate clock period
+        clk_diffs = np.diff(clk_times)
+        clk_period = np.median(clk_diffs)
+
+        return write_bursts, read_bursts, clk_period
 
 
 def extract_clock_times(

@@ -103,25 +103,28 @@ def test_gen_array_utils_writes_companion_tb_header(tmp_path: Path):
     assert '#if __has_include(<hls_axi_stream.h>)' in content
     assert f"namespace {out_path.stem} {{" in content
     assert f"namespace {out_path.stem} {{" in tb_content
+    assert "static constexpr int value_bitwidth = 16;" in content
     assert "static constexpr int pf() {" in content
     assert "return word_bw / 16;" in content
+    assert "static constexpr int get_nwords(int len) {" in content
+    assert "return (len <= 0) ? 0 : ((len * value_bitwidth + word_bw - 1) / word_bw);" in content
     assert "inline void read_array_elem(const ap_uint<word_bw>* src, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
     assert "inline void write_array_elem(const value_type in[pf<word_bw>()], ap_uint<word_bw>* dst, int n = pf<word_bw>()) {" in content
     assert "inline void read_stream_elem(hls::stream<ap_uint<word_bw>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
     assert "struct read_axi4_stream_elem_impl {" in content
     assert "struct read_axi4_stream_elem_impl<32> {" in content
-    assert "static void run(hls::stream<hls::axis<ap_uint<32>, 0, 0, 0>>& s, value_type* out, streamutils::tlast_status& tl, int n) {" in content
-    assert "inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], streamutils::tlast_status& tl, int n = pf<word_bw>()) {" in content
-    assert "inline void read_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
+    assert "static void run(hls::stream<streamutils::axi4s_word<32>>& s, value_type* out, streamutils::tlast_status& tl, int n) {" in content
+    assert "inline void read_axi4_stream_elem(hls::stream<streamutils::axi4s_word<word_bw>>& s, value_type out[pf<word_bw>()], streamutils::tlast_status& tl, int n = pf<word_bw>()) {" in content
+    assert "inline void read_axi4_stream_elem(hls::stream<streamutils::axi4s_word<word_bw>>& s, value_type out[pf<word_bw>()], int n = pf<word_bw>()) {" in content
     assert "inline void write_stream_elem(hls::stream<ap_uint<word_bw>>& s, const value_type in[pf<word_bw>()], int n = pf<word_bw>()) {" in content
-    assert "inline void write_axi4_stream_elem(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {" in content
+    assert "inline void write_axi4_stream_elem(hls::stream<streamutils::axi4s_word<word_bw>>& s, const value_type in[pf<word_bw>()], bool tlast = false, int n = pf<word_bw>()) {" in content
     assert "inline void read_stream(hls::stream<ap_uint<word_bw>>& s, value_type* dst, int len) {" in content
-    assert "inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, streamutils::tlast_status& tl, int len) {" in content
-    assert "inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, streamutils::tlast_status& tl, int& nread, int len) {" in content
-    assert "inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, int& nread, int len) {" in content
-    assert "inline void read_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, value_type* dst, int len) {" in content
+    assert "inline void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>>& s, value_type* dst, streamutils::tlast_status& tl, int len) {" in content
+    assert "inline void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>>& s, value_type* dst, streamutils::tlast_status& tl, int& nread, int len) {" in content
+    assert "inline void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>>& s, value_type* dst, int& nread, int len) {" in content
+    assert "inline void read_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>>& s, value_type* dst, int len) {" in content
     assert "inline void write_stream(hls::stream<ap_uint<word_bw>>& s, const value_type* src, int len) {" in content
-    assert "inline void write_axi4_stream(hls::stream<hls::axis<ap_uint<word_bw>, 0, 0, 0>>& s, const value_type* src, bool tlast = true, int len = pf<word_bw>()) {" in content
+    assert "inline void write_axi4_stream(hls::stream<streamutils::axi4s_word<word_bw>>& s, const value_type* src, bool tlast = true, int len = pf<word_bw>()) {" in content
     assert "read_stream_elem<word_bw>(s, dst + i, len - i);" in content
     assert "read_axi4_stream_elem<word_bw>(s, dst + i, lane_tl, len - i);" in content
     assert "read_axi4_stream_elem_impl<word_bw>::run(s, out, tl, n);" in content
@@ -142,7 +145,7 @@ def test_gen_array_utils_writes_companion_tb_header(tmp_path: Path):
     assert "streamutils::write_axi4_word<32>(s, w, tlast);" in content
     assert "inline void read_uint32_file_array(value_type* dst, const char* file_path, int n0) {" in tb_content
     assert "inline void write_uint32_file_array(const value_type* src, const char* file_path, int n0) {" in tb_content
-    assert "const int nwords = (n0 * 16 + 31) / 32;" in tb_content
+    assert "const int nwords = get_nwords<32>(n0);" in tb_content
     assert "words.push_back(streamutils::read_le_uint32(ifs));" in tb_content
     assert "streamutils::write_le_uint32(ofs, static_cast<uint32_t>(word));" in tb_content
 

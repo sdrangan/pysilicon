@@ -11,6 +11,8 @@ dependencies = [
     "pydantic>=2.0",
     "numpy>=1.24",
     "simpy>=4.1",
+    "mcp[cli]>=1.0",
+    "openai>=1.0",
 ]
 
 # Optional developer dependencies
@@ -30,6 +32,9 @@ sv_sim = "pysilicon.scripts.sv_sim:main"
 sv_synth = "pysilicon.scripts.sv_build:run_synth"
 sv_impl  = "pysilicon.scripts.sv_build:run_impl"
 build_lab_autograder = "pysilicon.scripts.build_lab_autograder:main"
+pysilicon_mcp_setup = "pysilicon.scripts.pysilicon_mcp_setup:main"
+pysilicon_mcp_server = "pysilicon.mcp.server:main"
+build_corpus = "pysilicon.mcp.build_corpus:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
