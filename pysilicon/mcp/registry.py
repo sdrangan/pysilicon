@@ -25,6 +25,8 @@ from typing import Any, Callable
 
 from mcp.server.fastmcp import FastMCP
 
+from pysilicon.mcp.components import get_components
+from pysilicon.mcp.example_rag import get_example_file, search_schema_examples
 from pysilicon.mcp.schema_examples import get_schema_example, list_schema_examples
 from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema
 
@@ -250,4 +252,82 @@ REGISTRY.add(
         "additionalProperties": False,
     },
     fn=validate_schema,
+)
+
+REGISTRY.add(
+    name="pysilicon_get_components",
+    description=(
+        "Return the canonical pysilicon schema vocabulary glossary. "
+        "Includes all core schema classes (DataSchema, DataList, DataArray, "
+        "DataField, IntField, FloatField, EnumField, MemAddr, IntEnum) and "
+        "common design patterns with descriptions and keywords. "
+        "Call this first to select relevant keywords for "
+        "pysilicon_search_schema_examples. Deterministic; no network access."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    fn=get_components,
+)
+
+REGISTRY.add(
+    name="pysilicon_search_schema_examples",
+    description=(
+        "Search the OpenAI-hosted vector store of pysilicon schema examples. "
+        "Returns the top-k most relevant example snippets for the given task. "
+        "Requires PYSILICON_EXAMPLES_VECTOR_STORE_ID env var to be set. "
+        "Use pysilicon_get_components first to obtain good keywords."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "task": {
+                "type": "string",
+                "description": "Natural-language description of the schema you want to build.",
+            },
+            "keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional pysilicon vocabulary keywords (from pysilicon_get_components) "
+                    "to augment the search query."
+                ),
+            },
+            "k": {
+                "type": "integer",
+                "description": "Maximum number of matches to return (default 5, max 20).",
+            },
+        },
+        "required": ["task"],
+        "additionalProperties": False,
+    },
+    fn=search_schema_examples,
+)
+
+REGISTRY.add(
+    name="pysilicon_get_example_file",
+    description=(
+        "Return the full content of a packaged pysilicon schema example file. "
+        "The path is relative to the pysilicon.examples package root "
+        "(e.g. 'poly.py', 'hist.py', 'conv2d.py'). "
+        "Use after pysilicon_search_schema_examples to read a complete example."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": (
+                    "File path relative to pysilicon.examples package root, "
+                    "e.g. 'poly.py'."
+                ),
+            },
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    },
+    fn=get_example_file,
 )

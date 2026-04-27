@@ -22,15 +22,17 @@ def get_schema_draft_plan(
 	if workspace_root:
 		first_step_instructions = (
 			f"Check the workspace at {workspace_root} for related schemas when "
-			"available, or use pysilicon_list_schema_examples and "
-			"pysilicon_get_schema_example to review comparable patterns before "
-			"drafting new code."
+			"available, then call pysilicon_get_components to review the schema "
+			"vocabulary and use the returned keywords with "
+			"pysilicon_search_schema_examples to find relevant examples. "
+			"Use pysilicon_get_example_file to read a full example once located."
 		)
 	else:
 		first_step_instructions = (
-			"Use pysilicon_list_schema_examples and "
-			"pysilicon_get_schema_example to review comparable patterns before "
-			"drafting new code."
+			"Call pysilicon_get_components to review the schema vocabulary, "
+			"then use the returned keywords with "
+			"pysilicon_search_schema_examples to find relevant examples. "
+			"Use pysilicon_get_example_file to read a full example once located."
 		)
 
 	summary = (
@@ -48,8 +50,9 @@ def get_schema_draft_plan(
 				"goal": "Retrieve similar schema patterns",
 				"instructions": first_step_instructions,
 				"recommended_tools": [
-					"pysilicon_list_schema_examples",
-					"pysilicon_get_schema_example",
+					"pysilicon_get_components",
+					"pysilicon_search_schema_examples",
+					"pysilicon_get_example_file",
 				],
 			},
 			{
