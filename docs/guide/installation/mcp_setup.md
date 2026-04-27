@@ -1,7 +1,7 @@
 ---
 title: Installing the MCP Server
 parent: Installation
-nav_order: 2
+nav_order: 3
 has_children: false
 ---
 
@@ -54,3 +54,9 @@ The simplest way to confirm that the MCP server is running is:
 After changing `mcp.json` or reinstalling packages, you can also use the above procedure to restart the server in VS Code:
 
 You usually do not need to close and reopen VS Code unless you changed the environment after VS Code was already open.
+
+---
+
+## Semantic Example Search
+
+Optional OpenAI-backed semantic search for schema examples is documented separately in [rag.md](./rag.md).
