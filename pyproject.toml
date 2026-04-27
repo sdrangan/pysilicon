@@ -34,6 +34,7 @@ build_lab_autograder = "pysilicon.scripts.build_lab_autograder:main"
 pysilicon_mcp_setup = "pysilicon.scripts.pysilicon_mcp_setup:main"
 pysilicon_mcp_server = "pysilicon.mcp.server:main"
 pysilicon-build-example-rag = "pysilicon.mcp.cli_build_example_rag:main"
+build_corpus = "pysilicon.mcp.build_corpus:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
