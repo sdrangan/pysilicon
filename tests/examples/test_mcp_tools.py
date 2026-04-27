@@ -1,9 +1,12 @@
 """
-Tests for pysilicon MCP tools: schema_examples, registry, and server.
+Tests for pysilicon MCP tools: schema_examples, registry, server, and mode-aware tool exposure.
 """
 from __future__ import annotations
 
+import json
 import os
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +14,7 @@ from pysilicon.mcp.components import get_components
 from pysilicon.mcp.example_rag import get_example_file, search_schema_examples
 from pysilicon.mcp.schema_examples import get_schema_example, list_schema_examples
 from pysilicon.mcp.registry import REGISTRY, ToolRegistry
-from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema
+from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema, validate_schema_from_file
 
 
 # ---------------------------------------------------------------------------
@@ -114,15 +117,42 @@ def test_get_schema_example_poly_resp_ftr_includes_enum_support():
 
 
 def test_registry_has_expected_tools():
-    names = {s["function"]["name"] for s in REGISTRY.tool_schemas()}
-    assert "pysilicon_list_schema_examples" not in names
-    assert "pysilicon_get_schema_example" not in names
-    assert "pysilicon_get_schema_draft_plan" in names
-    assert "pysilicon_validate_schema" in names
-    assert "pysilicon_get_components" in names
-    assert "pysilicon_search_examples" in names
-    assert "pysilicon_search_schema_examples" in names
-    assert "pysilicon_get_example_file" not in names
+    all_names = {s["function"]["name"] for s in REGISTRY.tool_schemas()}
+    # Curated example tools were removed
+    assert "pysilicon_list_schema_examples" not in all_names
+    assert "pysilicon_get_schema_example" not in all_names
+    # Old search aliases were removed
+    assert "pysilicon_search_examples" not in all_names
+    assert "pysilicon_search_schema_examples" not in all_names
+    # Domain tools present in all profiles
+    assert "pysilicon_get_schema_draft_plan" in all_names
+    assert "pysilicon_validate_schema" in all_names
+    assert "pysilicon_get_components" in all_names
+    # RAG search tool present (headless-only; visible when not filtering)
+    assert "pysilicon_rag_search_examples" in all_names
+    # File tools not in the registry (they are added dynamically by build_mcp)
+    assert "list_files" not in all_names
+    assert "read_file" not in all_names
+    assert "write_file" not in all_names
+    assert "edit_file" not in all_names
+
+
+def test_registry_workspace_profile_has_only_domain_tools():
+    workspace_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="workspace")}
+    assert "pysilicon_get_schema_draft_plan" in workspace_names
+    assert "pysilicon_validate_schema" in workspace_names
+    assert "pysilicon_get_components" in workspace_names
+    # RAG search and file tools are not in workspace profile
+    assert "pysilicon_rag_search_examples" not in workspace_names
+    assert "list_files" not in workspace_names
+
+
+def test_registry_headless_profile_has_rag_and_domain_tools():
+    headless_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="headless")}
+    assert "pysilicon_get_schema_draft_plan" in headless_names
+    assert "pysilicon_validate_schema" in headless_names
+    assert "pysilicon_get_components" in headless_names
+    assert "pysilicon_rag_search_examples" in headless_names
 
 
 def test_registry_tool_schemas_are_openai_style():
@@ -160,7 +190,7 @@ def test_get_schema_draft_plan_first_step_uses_registered_tool_names():
 
     assert result["steps"][0]["recommended_tools"] == [
         "pysilicon_get_components",
-        "pysilicon_search_examples",
+        "pysilicon_rag_search_examples",
     ]
 
 
@@ -169,7 +199,7 @@ def test_get_schema_draft_plan_first_step_uses_workspace_root_when_provided():
 
     assert "Check the workspace at c:/demo/workspace" in result["steps"][0]["instructions"]
     assert "pysilicon_get_components" in result["steps"][0]["instructions"]
-    assert "pysilicon_search_examples" in result["steps"][0]["instructions"]
+    assert "pysilicon_rag_search_examples" in result["steps"][0]["instructions"]
 
 
 def test_get_schema_draft_plan_first_step_uses_only_example_tools_without_workspace_root():
@@ -177,7 +207,7 @@ def test_get_schema_draft_plan_first_step_uses_only_example_tools_without_worksp
 
     instructions = result["steps"][0]["instructions"]
     assert "pysilicon_get_components" in instructions
-    assert "pysilicon_search_examples" in instructions
+    assert "pysilicon_rag_search_examples" in instructions
     assert "pysilicon_get_example_file" not in instructions
 
 
@@ -238,25 +268,37 @@ def test_validate_schema_reports_invalid_elements_definition():
     assert result["schema_info"]["name"] == "Broken"
 
 
-def test_registry_dispatch_validate_schema():
+def test_registry_dispatch_validate_schema(tmp_path):
+    schema_file = tmp_path / "payload.py"
+    schema_file.write_text(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataArray, IntField",
+                "U8 = IntField.specialize(bitwidth=8, signed=False)",
+                "class Payload(DataArray):",
+                "    element_type = U8",
+                "    max_shape = (4,)",
+                "    static = True",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.json"
+
     result = REGISTRY.dispatch(
         "pysilicon_validate_schema",
         {
-            "schema": "\n".join(
-                [
-                    "from pysilicon.hw import DataArray, IntField",
-                    "U8 = IntField.specialize(bitwidth=8, signed=False)",
-                    "class Payload(DataArray):",
-                    "    element_type = U8",
-                    "    max_shape = (4,)",
-                    "    static = True",
-                ]
-            )
+            "schema_name": "Payload",
+            "input_path": str(schema_file),
+            "output_path": str(report_path),
         },
     )
 
-    assert result["valid"] is True
-    assert result["schema_info"]["kind"] == "DataArray"
+    assert result["ok"] is True
+    assert result["error_count"] == 0
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["schema_info"]["kind"] == "DataArray"
 
 
 def test_registry_dispatch_unknown_tool_raises_value_error():
@@ -282,6 +324,38 @@ def test_registry_register_all_adds_tools_to_mcp():
     assert result == {"ok": True}
 
 
+def test_registry_register_all_respects_profile():
+    from mcp.server.fastmcp import FastMCP
+
+    fresh_registry = ToolRegistry()
+    fresh_registry.add(
+        name="workspace_only_tool",
+        description="workspace only",
+        parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        fn=lambda: {"ok": True},
+        profiles={"workspace"},
+    )
+    fresh_registry.add(
+        name="headless_only_tool",
+        description="headless only",
+        parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        fn=lambda: {"ok": True},
+        profiles={"headless"},
+    )
+
+    workspace_mcp = FastMCP("ws")
+    fresh_registry.register_all(workspace_mcp, profile="workspace")
+    ws_schemas = {s["function"]["name"] for s in fresh_registry.tool_schemas(profile="workspace")}
+    assert "workspace_only_tool" in ws_schemas
+    assert "headless_only_tool" not in ws_schemas
+
+    headless_mcp = FastMCP("hl")
+    fresh_registry.register_all(headless_mcp, profile="headless")
+    hl_schemas = {s["function"]["name"] for s in fresh_registry.tool_schemas(profile="headless")}
+    assert "headless_only_tool" in hl_schemas
+    assert "workspace_only_tool" not in hl_schemas
+
+
 # ---------------------------------------------------------------------------
 # server smoke test
 # ---------------------------------------------------------------------------
@@ -290,6 +364,258 @@ def test_registry_register_all_adds_tools_to_mcp():
 def test_server_imports_and_has_mcp_instance():
     from pysilicon.mcp.server import mcp
     assert mcp.name == "pysilicon"
+
+
+# ---------------------------------------------------------------------------
+# build_mcp factory / mode-aware tool exposure
+# ---------------------------------------------------------------------------
+
+
+def test_build_mcp_invalid_mode_raises():
+    from pysilicon.mcp.server import build_mcp
+
+    with pytest.raises(ValueError, match="mode must be"):
+        build_mcp(mode="unknown")
+
+
+def test_build_mcp_headless_without_work_dir_raises():
+    from pysilicon.mcp.server import build_mcp
+
+    with pytest.raises(ValueError, match="work_dir is required"):
+        build_mcp(mode="headless")
+
+
+def test_build_mcp_workspace_returns_fastmcp(tmp_path):
+    from pysilicon.mcp.server import build_mcp
+
+    mcp_inst = build_mcp(mode="workspace")
+    assert mcp_inst.name == "pysilicon"
+
+
+def test_build_mcp_headless_returns_fastmcp(tmp_path):
+    from pysilicon.mcp.server import build_mcp
+
+    mcp_inst = build_mcp(mode="headless", work_dir=tmp_path)
+    assert mcp_inst.name == "pysilicon"
+
+
+def test_build_mcp_workspace_does_not_expose_rag_or_file_tools(tmp_path):
+    from pysilicon.mcp.server import build_mcp
+
+    mcp_inst = build_mcp(mode="workspace")
+    # We check via the registry profile filter (the MCP instance doesn't have a
+    # public tool-list API, but registry.tool_schemas gives us the profile view).
+    ws_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="workspace")}
+    assert "pysilicon_rag_search_examples" not in ws_names
+    assert "list_files" not in ws_names
+    assert "read_file" not in ws_names
+
+
+def test_build_mcp_headless_registry_exposes_rag_tool(tmp_path):
+    hl_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="headless")}
+    assert "pysilicon_rag_search_examples" in hl_names
+
+
+# ---------------------------------------------------------------------------
+# File tools (path safety and basic operation)
+# ---------------------------------------------------------------------------
+
+
+def test_file_tools_write_and_read(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    list_files_fn, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
+
+    result = write_file_fn("hello.txt", "hello world")
+    assert result["ok"] is True
+
+    result = read_file_fn("hello.txt")
+    assert result["content"] == "hello world"
+    assert result["path"] == "hello.txt"
+
+
+def test_file_tools_list_files(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    list_files_fn, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
+    write_file_fn("a.txt", "a")
+    write_file_fn("b.txt", "b")
+
+    result = list_files_fn()
+    names = [e["name"] for e in result["entries"]]
+    assert "a.txt" in names
+    assert "b.txt" in names
+
+
+def test_file_tools_edit_file(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    list_files_fn, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
+    write_file_fn("edit_me.txt", "foo bar baz")
+
+    result = edit_file_fn("edit_me.txt", "bar", "qux")
+    assert result["ok"] is True
+
+    result = read_file_fn("edit_me.txt")
+    assert result["content"] == "foo qux baz"
+
+
+def test_file_tools_edit_file_not_unique_fails(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    _, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
+    write_file_fn("dup.txt", "x x x")
+
+    result = edit_file_fn("dup.txt", "x", "y")
+    assert result["ok"] is False
+    assert "3" in result["error"]
+
+
+def test_file_tools_path_escape_rejected(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    _, read_file_fn, _, _ = make_file_tools(tmp_path)
+
+    result = read_file_fn("../../../etc/passwd")
+    assert "error" in result
+    assert result["content"] is None
+
+
+def test_file_tools_absolute_path_outside_root_rejected(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    _, read_file_fn, _, _ = make_file_tools(tmp_path)
+
+    result = read_file_fn("/etc/passwd")
+    assert "error" in result
+    assert result["content"] is None
+
+
+def test_file_tools_empty_path_rejected(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    _, read_file_fn, _, _ = make_file_tools(tmp_path)
+
+    result = read_file_fn("")
+    assert "error" in result
+
+
+def test_file_tools_write_creates_subdirectories(tmp_path):
+    from pysilicon.mcp.file_tools import make_file_tools
+
+    _, _, write_file_fn, _ = make_file_tools(tmp_path)
+
+    result = write_file_fn("sub/dir/file.txt", "content")
+    assert result["ok"] is True
+    assert (tmp_path / "sub" / "dir" / "file.txt").read_text() == "content"
+
+
+# ---------------------------------------------------------------------------
+# validate_schema_from_file (file-based MCP tool)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_schema_from_file_valid(tmp_path):
+    schema_file = tmp_path / "demo.py"
+    schema_file.write_text(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataList, IntField",
+                "U16 = IntField.specialize(bitwidth=16, signed=False)",
+                "class DemoPacket(DataList):",
+                "    elements = {",
+                "        'count': U16,",
+                "    }",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.json"
+
+    result = validate_schema_from_file(
+        schema_name="DemoPacket",
+        input_path=str(schema_file),
+        output_path=str(report_path),
+    )
+
+    assert result["ok"] is True
+    assert result["error_count"] == 0
+    assert result["report_path"] == str(report_path.resolve())
+    assert "valid" in result["summary"].lower()
+
+    # Report file should be written
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["schema_name"] == "DemoPacket"
+    assert report["ok"] is True
+    assert report["schema_info"]["kind"] == "DataList"
+
+
+def test_validate_schema_from_file_invalid(tmp_path):
+    schema_file = tmp_path / "broken.py"
+    schema_file.write_text(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataList, IntField",
+                "class Broken(DataList):",
+                "    elements = {",
+                "        'count': {'description': 'missing schema key'},",
+                "    }",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.json"
+
+    result = validate_schema_from_file(
+        schema_name="Broken",
+        input_path=str(schema_file),
+        output_path=str(report_path),
+    )
+
+    assert result["ok"] is False
+    assert result["error_count"] > 0
+    assert report_path.exists()
+
+
+def test_validate_schema_from_file_missing_input(tmp_path):
+    report_path = tmp_path / "report.json"
+
+    result = validate_schema_from_file(
+        schema_name="Ghost",
+        input_path=str(tmp_path / "nonexistent.py"),
+        output_path=str(report_path),
+    )
+
+    assert result["ok"] is False
+    assert "not found" in result["summary"].lower() or "not found" in result["summary"]
+    # Report still written
+    assert report_path.exists()
+
+
+def test_validate_schema_from_file_creates_report_parent_dirs(tmp_path):
+    schema_file = tmp_path / "schema.py"
+    schema_file.write_text(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataList, IntField",
+                "U8 = IntField.specialize(bitwidth=8, signed=False)",
+                "class Simple(DataList):",
+                "    elements = {'val': U8}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "reports" / "sub" / "report.json"
+
+    result = validate_schema_from_file(
+        schema_name="Simple",
+        input_path=str(schema_file),
+        output_path=str(report_path),
+    )
+
+    assert report_path.exists()
+    assert result["ok"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -417,21 +743,11 @@ def test_search_schema_examples_decodes_uploaded_filename(monkeypatch):
     assert result["matches"][0]["path"] == "examples/conv2d/conv2d.py"
 
 
-def test_registry_dispatch_search_schema_examples_missing_env(monkeypatch):
+def test_registry_dispatch_rag_search_examples_missing_env(monkeypatch):
     monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
 
     result = REGISTRY.dispatch(
-        "pysilicon_search_examples",
-        {"task": "conv2d accelerator command", "keywords": ["DataList"], "k": 3},
-    )
-    assert "error" in result
-
-
-def test_registry_dispatch_search_schema_examples_alias_missing_env(monkeypatch):
-    monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
-
-    result = REGISTRY.dispatch(
-        "pysilicon_search_schema_examples",
+        "pysilicon_rag_search_examples",
         {"task": "conv2d accelerator command", "keywords": ["DataList"], "k": 3},
     )
     assert "error" in result
