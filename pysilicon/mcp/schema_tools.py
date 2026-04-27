@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import ast
+import json
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
 
 from pysilicon.hw import DataArray, DataField, DataList, DataSchema, EnumField, FloatField, IntField, MemAddr
@@ -24,13 +26,13 @@ def get_schema_draft_plan(
 			f"Check the workspace at {workspace_root} for related schemas when "
 			"available, then call pysilicon_get_components to review the schema "
 			"vocabulary and use the returned keywords with "
-			"pysilicon_search_examples to find relevant examples."
+			"pysilicon_rag_search_examples to find relevant examples."
 		)
 	else:
 		first_step_instructions = (
 			"Call pysilicon_get_components to review the schema vocabulary, "
 			"then use the returned keywords with "
-			"pysilicon_search_examples to find relevant examples."
+			"pysilicon_rag_search_examples to find relevant examples."
 		)
 
 	summary = (
@@ -49,7 +51,7 @@ def get_schema_draft_plan(
 				"instructions": first_step_instructions,
 				"recommended_tools": [
 					"pysilicon_get_components",
-					"pysilicon_search_examples",
+					"pysilicon_rag_search_examples",
 				],
 			},
 			{
@@ -390,3 +392,119 @@ def _validation_result(
 		"warnings": warnings,
 		"schema_info": schema_info,
 	}
+
+
+# ---------------------------------------------------------------------------
+# File-based validation (MCP tool interface)
+# ---------------------------------------------------------------------------
+
+
+def validate_schema_from_file(
+	schema_name: str,
+	input_path: str,
+	output_path: str,
+) -> dict[str, Any]:
+	"""Validate a pysilicon schema file and write a report artifact.
+
+	Reads Python source from *input_path*, runs the same deterministic
+	validation as :func:`validate_schema`, writes the full structured report as
+	JSON to *output_path*, and returns a compact summary dict.
+
+	This is the MCP-facing interface for ``pysilicon_validate_schema``.
+	:func:`validate_schema` remains available for direct Python use.
+
+	Parameters
+	----------
+	schema_name:
+		A human-readable label for the schema being validated (used in the
+		report; does not affect validation logic).
+	input_path:
+		Absolute or relative path to the Python source file containing the
+		pysilicon schema definition to validate.
+	output_path:
+		Path where the JSON validation report will be written.  Parent
+		directories are created automatically.
+
+	Returns
+	-------
+	dict
+		Compact result with keys:
+
+		``ok``            – ``True`` if validation passed.
+		``error_count``   – number of errors found.
+		``warning_count`` – number of warnings found.
+		``report_path``   – absolute path of the written report (echoed back).
+		``summary``       – human-readable one-line result.
+	"""
+	in_path = Path(input_path)
+	out_path = Path(output_path)
+
+	# Read input
+	if not in_path.exists():
+		compact = {
+			"ok": False,
+			"error_count": 1,
+			"warning_count": 0,
+			"report_path": str(out_path.resolve()),
+			"summary": f"Input file not found: {input_path!r}",
+		}
+		_write_report(out_path, schema_name, input_path, compact, full_result=None)
+		return compact
+
+	try:
+		schema_text = in_path.read_text(encoding="utf-8")
+	except OSError as exc:
+		compact = {
+			"ok": False,
+			"error_count": 1,
+			"warning_count": 0,
+			"report_path": str(out_path.resolve()),
+			"summary": f"Cannot read input file: {exc}",
+		}
+		_write_report(out_path, schema_name, input_path, compact, full_result=None)
+		return compact
+
+	# Run validation
+	full_result = validate_schema(schema_text, workspace_root=str(in_path))
+
+	compact = {
+		"ok": full_result["valid"],
+		"error_count": len(full_result["errors"]),
+		"warning_count": len(full_result["warnings"]),
+		"report_path": str(out_path.resolve()),
+		"summary": full_result["summary"],
+	}
+
+	_write_report(out_path, schema_name, input_path, compact, full_result=full_result)
+	return compact
+
+
+def _write_report(
+	out_path: Path,
+	schema_name: str,
+	input_path: str,
+	compact: dict[str, Any],
+	full_result: dict[str, Any] | None,
+) -> None:
+	"""Write the full JSON validation report to *out_path*."""
+	report: dict[str, Any] = {
+		"schema_name": schema_name,
+		"input_path": str(Path(input_path).resolve()),
+		"ok": compact["ok"],
+		"summary": compact["summary"],
+	}
+	if full_result is not None:
+		report["errors"] = full_result["errors"]
+		report["warnings"] = full_result["warnings"]
+		report["schema_info"] = full_result.get("schema_info")
+	else:
+		report["errors"] = [{"message": compact["summary"], "code": "io_error", "location": None}]
+		report["warnings"] = []
+		report["schema_info"] = None
+
+	try:
+		out_path.parent.mkdir(parents=True, exist_ok=True)
+		out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+	except OSError:
+		# Best-effort write; do not mask the validation result
+		pass
