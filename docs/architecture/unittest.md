@@ -98,6 +98,27 @@ def test_radar_reflection():
     assert receiver.detected_range == approx(target.true_range)
 ```
 
+### Example: `SimObj` Unit Test Coverage
+
+The repository includes a focused unit test module for the simulation base object:
+
+- `tests/simulation/test_simobj.py`
+
+This test suite documents and validates core `SimObj` behavior, including:
+
+- object initialization defaults and custom naming,
+- simulation-time helpers (`now`, `timeout`, `event`),
+- process registration and process-factory startup behavior,
+- helper primitives (`transaction_queue`, `resource`, `container`) and input validation,
+- action timing records (`ActionRecord`), overlap detection (`ActionOverlap`), and overlap disabling,
+- action log clearing and overlap count reporting.
+
+Run only the `SimObj` tests with:
+
+```bash
+env/bin/python -m pytest -q tests/simulation/test_simobj.py
+```
+
 ## Testing Hardware–Environment Interaction
 
 The most powerful capability is **co‑simulation testing**, where hardware modules interact with realistic environment models:
