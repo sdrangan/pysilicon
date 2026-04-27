@@ -3,7 +3,7 @@ Shared MCP tool registry for pysilicon.
 
 ``REGISTRY`` is the single source of truth for all tool definitions.  Both
 the MCP server (``server.py``) and the blind-user harness
-(``blind_user_llm.py``) import from here so that tool metadata is never
+(``headless.py``) import from here so that tool metadata is never
 duplicated.
 
 Tools are tagged with one or more *profiles* (``"workspace"`` and/or
@@ -299,8 +299,7 @@ REGISTRY.add(
         "Search the OpenAI-hosted vector store of pysilicon example corpus files. "
         "Returns the top-k most relevant example snippets for the given task. "
         "Requires PYSILICON_EXAMPLES_VECTOR_STORE_ID env var to be set. "
-        "Use pysilicon_get_components first to obtain good keywords. "
-        "Available in headless mode only."
+        "Use pysilicon_get_components first to obtain good keywords."
     ),
     parameters={
         "type": "object",
@@ -326,6 +325,6 @@ REGISTRY.add(
         "additionalProperties": False,
     },
     fn=search_schema_examples,
-    profiles={"headless"},
+    profiles={"workspace", "headless"},
 )
 

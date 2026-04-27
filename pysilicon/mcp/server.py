@@ -18,15 +18,14 @@ def build_mcp(
     ----------
     mode:
         ``"workspace"`` – for hosts (VS Code, Claude Code, …) that already
-        provide workspace file and editing tools.  Only domain-specific
-        helpers (schema drafting/validation, component glossary) are
-        registered; generic file tools and the RAG search tool are **not**
-        exposed.
+        provide workspace file and editing tools. Domain-specific helpers
+        (schema drafting/validation, component glossary, and RAG example
+        search) are registered; generic file tools are **not** exposed.
 
         ``"headless"`` – for standalone execution (unit tests, CI, API
         calls, …) where the host does not supply file tools.  Exposes all
         workspace-mode tools **plus** generic file tools scoped to
-        *work_dir* and the ``pysilicon_rag_search_examples`` tool.
+        *work_dir*.
 
     work_dir:
         Root directory for file tools.  **Required** when ``mode="headless"``.

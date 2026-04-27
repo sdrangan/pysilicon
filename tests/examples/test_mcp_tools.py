@@ -142,8 +142,7 @@ def test_registry_workspace_profile_has_only_domain_tools():
     assert "pysilicon_get_schema_draft_plan" in workspace_names
     assert "pysilicon_validate_schema" in workspace_names
     assert "pysilicon_get_components" in workspace_names
-    # RAG search and file tools are not in workspace profile
-    assert "pysilicon_rag_search_examples" not in workspace_names
+    assert "pysilicon_rag_search_examples" in workspace_names
     assert "list_files" not in workspace_names
 
 
@@ -399,14 +398,14 @@ def test_build_mcp_headless_returns_fastmcp(tmp_path):
     assert mcp_inst.name == "pysilicon"
 
 
-def test_build_mcp_workspace_does_not_expose_rag_or_file_tools(tmp_path):
+def test_build_mcp_workspace_exposes_rag_but_not_file_tools(tmp_path):
     from pysilicon.mcp.server import build_mcp
 
     mcp_inst = build_mcp(mode="workspace")
     # We check via the registry profile filter (the MCP instance doesn't have a
     # public tool-list API, but registry.tool_schemas gives us the profile view).
     ws_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="workspace")}
-    assert "pysilicon_rag_search_examples" not in ws_names
+    assert "pysilicon_rag_search_examples" in ws_names
     assert "list_files" not in ws_names
     assert "read_file" not in ws_names
 
