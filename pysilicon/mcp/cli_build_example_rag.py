@@ -20,11 +20,7 @@ What it does
 5. Waits for the vector store to finish processing.
 6. Prints the resulting ``vector_store_id`` and basic stats.
 
-After running, export the printed ID::
-
-    export PYSILICON_EXAMPLES_VECTOR_STORE_ID=<id>
-
-and optionally persist it in your ``.env`` file or MCP server configuration.
+After running, set the printed ID in your shell or MCP server configuration.
 
 Requirements
 ------------
@@ -33,6 +29,7 @@ Requirements
 from __future__ import annotations
 
 import io
+import os
 import sys
 import time
 from importlib import resources
@@ -43,6 +40,41 @@ from importlib import resources
 
 _EXAMPLES_PACKAGE = "pysilicon.examples"
 _VECTOR_STORE_NAME = "pysilicon-examples"
+_VECTOR_STORE_ENV = "PYSILICON_EXAMPLES_VECTOR_STORE_ID"
+
+
+def _print_env_var_instructions(var_name: str, value: str) -> None:
+    """Print cross-platform commands for setting an environment variable."""
+    print(f"To use this vector store, set {var_name} with one of these commands:")
+    print("  Unix/Linux/macOS (current shell):")
+    print(f"    export {var_name}={value}")
+    print("  PowerShell (current session):")
+    print(f'    $env:{var_name} = "{value}"')
+    print("  PowerShell (persist for future sessions):")
+    print(f'    setx {var_name} "{value}"')
+
+
+def _delete_vector_store_if_present(client: "openai.OpenAI", vector_store_id: str, *, verbose: bool) -> None:  # type: ignore[name-defined]
+    """Best-effort deletion of an existing vector store by ID."""
+    if verbose:
+        print(f"Deleting previous vector store '{vector_store_id}' ...", end="", flush=True)
+    try:
+        response = client.vector_stores.delete(vector_store_id)
+    except Exception as exc:  # noqa: BLE001
+        if verbose:
+            print(" failed")
+        print(
+            f"[warn] Could not delete previous vector store {vector_store_id!r}: {exc}",
+            file=sys.stderr,
+        )
+        return
+
+    deleted = getattr(response, "deleted", None)
+    if verbose:
+        if deleted is False:
+            print(" not confirmed")
+        else:
+            print(" done")
 
 
 def _enumerate_example_files() -> list[tuple[str, str]]:
@@ -120,6 +152,7 @@ def build_example_rag(*, verbose: bool = True) -> str:
         raise SystemExit("openai package is required: pip install openai") from exc
 
     client = openai.OpenAI()  # reads OPENAI_API_KEY from env
+    previous_vs_id = os.environ.get(_VECTOR_STORE_ENV)
 
     # 1. Enumerate example files
     if verbose:
@@ -175,8 +208,14 @@ def build_example_rag(*, verbose: bool = True) -> str:
             print(f"  Files completed: {getattr(file_counts, 'completed', '?')}")
             print(f"  Files failed:    {getattr(file_counts, 'failed', '?')}")
         print()
-        print("To use this vector store, set the environment variable:")
-        print(f"  export PYSILICON_EXAMPLES_VECTOR_STORE_ID={vs_id}")
+
+    if previous_vs_id and previous_vs_id != vs_id:
+        _delete_vector_store_if_present(client, previous_vs_id, verbose=verbose)
+        if verbose:
+            print()
+
+    if verbose:
+        _print_env_var_instructions("PYSILICON_EXAMPLES_VECTOR_STORE_ID", vs_id)
 
     return vs_id
 

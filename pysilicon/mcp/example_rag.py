@@ -42,7 +42,7 @@ _EXAMPLES_PACKAGE = "pysilicon.examples"
 def search_schema_examples(
     task: str,
     keywords: list[str] | None = None,
-    k: int = 5,
+    k: int | None = 5,
 ) -> dict[str, Any]:
     """Search the OpenAI-hosted vector store for schema examples.
 
@@ -59,6 +59,7 @@ def search_schema_examples(
         "MemAddr", "transaction_id"]``) to augment the query.
     k:
         Maximum number of matches to return (default 5, capped at 20).
+        ``None`` uses the default.
 
     Returns
     -------
@@ -69,6 +70,8 @@ def search_schema_examples(
         ``error``            – present only when something went wrong.
     """
     keywords = keywords or []
+    if k is None:
+        k = 5
     k = max(1, min(k, 20))
 
     # Build a normalised query string that combines task + keywords.

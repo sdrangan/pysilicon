@@ -115,8 +115,8 @@ def test_get_schema_example_poly_resp_ftr_includes_enum_support():
 
 def test_registry_has_expected_tools():
     names = {s["function"]["name"] for s in REGISTRY.tool_schemas()}
-    assert "pysilicon_list_schema_examples" in names
-    assert "pysilicon_get_schema_example" in names
+    assert "pysilicon_list_schema_examples" not in names
+    assert "pysilicon_get_schema_example" not in names
     assert "pysilicon_get_schema_draft_plan" in names
     assert "pysilicon_validate_schema" in names
     assert "pysilicon_get_components" in names
@@ -134,17 +134,16 @@ def test_registry_tool_schemas_are_openai_style():
         assert schema["function"]["parameters"]["type"] == "object"
 
 
-def test_registry_dispatch_list_schema_examples():
-    result = REGISTRY.dispatch("pysilicon_list_schema_examples", {})
-    assert "examples" in result
-    assert len(result["examples"]) > 0
+def test_registry_dispatch_disabled_list_schema_examples_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown tool name"):
+        REGISTRY.dispatch("pysilicon_list_schema_examples", {})
 
 
-def test_registry_dispatch_get_schema_example():
-    result = REGISTRY.dispatch(
-        "pysilicon_get_schema_example", {"example_id": "hist_cmd"}
-    )
-    assert result["id"] == "hist_cmd"
+def test_registry_dispatch_disabled_get_schema_example_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown tool name"):
+        REGISTRY.dispatch(
+            "pysilicon_get_schema_example", {"example_id": "hist_cmd"}
+        )
 
 
 def test_get_schema_draft_plan_final_step_recommends_validation():
