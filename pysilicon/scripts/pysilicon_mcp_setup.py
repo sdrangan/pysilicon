@@ -140,8 +140,13 @@ def main() -> int:
         if not os.environ.get("OPENAI_API_KEY"):
             print(
                 "Error: OPENAI_API_KEY environment variable is not set.\n"
-                "Set it before running --build-rag:\n"
-                "  export OPENAI_API_KEY=sk-...",
+                "Set it before running --build-rag using one of these commands:\n"
+                "  Unix/Linux/macOS (current shell):\n"
+                "    export OPENAI_API_KEY=sk-...\n"
+                "  PowerShell (current session):\n"
+                "    $env:OPENAI_API_KEY = \"sk-...\"\n"
+                "  PowerShell (persist for future sessions):\n"
+                "    setx OPENAI_API_KEY \"sk-...\"",
                 file=sys.stderr,
             )
             return 1

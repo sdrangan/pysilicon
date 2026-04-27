@@ -42,7 +42,21 @@ Set your API key in the terminal before running any OpenAI-enabled commands:
 export OPENAI_API_KEY=sk-...
 ```
 
+In Windows PowerShell, use:
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+To persist it for future PowerShell sessions, use:
+
+```powershell
+setx OPENAI_API_KEY "sk-..."
+```
+
 To make the key available in every new shell session, add the line above to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+
+On Windows, `setx` persists the variable for future shells but does not update the current PowerShell session. After `setx`, either open a new terminal or also run `$env:OPENAI_API_KEY = "sk-..."` in the current session.
 
 > **Never** hardcode the key in `.vscode/mcp.json` or any other file that might be committed to git.
 

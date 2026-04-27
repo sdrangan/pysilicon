@@ -166,44 +166,47 @@ class ToolRegistry:
 
 REGISTRY = ToolRegistry()
 
-REGISTRY.add(
-    name="pysilicon_list_schema_examples",
-    description=(
-        "Return a curated catalog of available pysilicon schema examples. "
-        "Each entry includes an id, title, description, and feature list. "
-        "Call this first to discover which examples are available before "
-        "calling pysilicon_get_schema_example."
-    ),
-    parameters={
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": False,
-    },
-    fn=list_schema_examples,
-)
+ENABLE_CURATED_SCHEMA_EXAMPLE_TOOLS = False
 
-REGISTRY.add(
-    name="pysilicon_get_schema_example",
-    description=(
-        "Return the full content for a pysilicon schema example by ID. "
-        "The response includes metadata, the primary symbol name, supporting "
-        "definitions, and the complete curated source code ready to adapt. "
-        "Use pysilicon_list_schema_examples first to find valid IDs."
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "example_id": {
-                "type": "string",
-                "description": "Schema example ID as returned by pysilicon_list_schema_examples.",
-            }
+if ENABLE_CURATED_SCHEMA_EXAMPLE_TOOLS:
+    REGISTRY.add(
+        name="pysilicon_list_schema_examples",
+        description=(
+            "Return a curated catalog of available pysilicon schema examples. "
+            "Each entry includes an id, title, description, and feature list. "
+            "Call this first to discover which examples are available before "
+            "calling pysilicon_get_schema_example."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
         },
-        "required": ["example_id"],
-        "additionalProperties": False,
-    },
-    fn=get_schema_example,
-)
+        fn=list_schema_examples,
+    )
+
+    REGISTRY.add(
+        name="pysilicon_get_schema_example",
+        description=(
+            "Return the full content for a pysilicon schema example by ID. "
+            "The response includes metadata, the primary symbol name, supporting "
+            "definitions, and the complete curated source code ready to adapt. "
+            "Use pysilicon_list_schema_examples first to find valid IDs."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "example_id": {
+                    "type": "string",
+                    "description": "Schema example ID as returned by pysilicon_list_schema_examples.",
+                }
+            },
+            "required": ["example_id"],
+            "additionalProperties": False,
+        },
+        fn=get_schema_example,
+    )
 
 REGISTRY.add(
     name="pysilicon_get_schema_draft_plan",
@@ -289,7 +292,7 @@ REGISTRY.add(
                 "description": "Natural-language description of the schema you want to build.",
             },
             "keywords": {
-                "type": "array",
+                "type": ["array", "null"],
                 "items": {"type": "string"},
                 "description": (
                     "Optional pysilicon vocabulary keywords (from pysilicon_get_components) "
@@ -297,11 +300,11 @@ REGISTRY.add(
                 ),
             },
             "k": {
-                "type": "integer",
+                "type": ["integer", "null"],
                 "description": "Maximum number of matches to return (default 5, max 20).",
             },
         },
-        "required": ["task"],
+        "required": ["task", "keywords", "k"],
         "additionalProperties": False,
     },
     fn=search_schema_examples,
