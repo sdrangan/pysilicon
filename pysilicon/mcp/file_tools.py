@@ -32,7 +32,7 @@ def _resolve_safe(root: Path, path: str) -> Path:
     ValueError
         If *path* is empty or resolves to a location outside *root*.
     """
-    if not path or not path.strip():
+    if not path.strip():
         raise ValueError("Path must not be empty.")
     candidate = Path(path)
     if candidate.is_absolute():

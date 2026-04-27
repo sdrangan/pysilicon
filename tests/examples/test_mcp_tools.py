@@ -553,7 +553,18 @@ def test_validate_schema_from_file_valid(tmp_path):
 
 def test_validate_schema_from_file_invalid(tmp_path):
     schema_file = tmp_path / "broken.py"
-    schema_file.write_text("class Broken(DataList)\n    pass", encoding="utf-8")
+    schema_file.write_text(
+        "\n".join(
+            [
+                "from pysilicon.hw import DataList, IntField",
+                "class Broken(DataList):",
+                "    elements = {",
+                "        'count': {'description': 'missing schema key'},",
+                "    }",
+            ]
+        ),
+        encoding="utf-8",
+    )
     report_path = tmp_path / "report.json"
 
     result = validate_schema_from_file(
