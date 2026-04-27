@@ -11,3 +11,5 @@ Follow this guide to:
 
 - [Install the Python package](./python.md)
 - [Install the VS Code extension](./vscode.md)
+- [Set up the MCP server](./mcp_setup.md)
+- [Configure OpenAI for semantic example search (optional)](./openai.md)
