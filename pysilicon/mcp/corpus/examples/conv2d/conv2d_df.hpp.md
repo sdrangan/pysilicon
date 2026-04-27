@@ -1,3 +1,8 @@
+# Source: examples/conv2d/conv2d_df.hpp
+
+Original extension: `.hpp`
+
+```cpp
 #ifndef CONV2D_DF_HPP
 #define CONV2D_DF_HPP
 
@@ -12,3 +17,4 @@ void conv2d_df(
 );
 
 #endif  // CONV2D_DF_HPP
+```

@@ -13,7 +13,7 @@ Or directly::
 
 What it does
 ------------
-1. Enumerates Python files under the ``pysilicon.examples`` package.
+1. Enumerates text files under the ``pysilicon.mcp.corpus`` package.
 2. Optionally generates an in-memory catalog markdown summary.
 3. Uploads each file to OpenAI (Files API).
 4. Creates a new vector store and adds all uploaded files.
@@ -33,14 +33,17 @@ import os
 import sys
 import time
 from importlib import resources
+from pathlib import PurePosixPath
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_EXAMPLES_PACKAGE = "pysilicon.examples"
+_EXAMPLES_PACKAGE = "pysilicon.mcp.corpus"
 _VECTOR_STORE_NAME = "pysilicon-examples"
 _VECTOR_STORE_ENV = "PYSILICON_EXAMPLES_VECTOR_STORE_ID"
+_OPENAI_SUPPORTED_SUFFIXES = frozenset({".py", ".cpp", ".c", ".h", ".md"})
+_PATH_ESCAPE = "__pysilicon_path__"
 
 
 def _print_env_var_instructions(var_name: str, value: str) -> None:
@@ -77,29 +80,39 @@ def _delete_vector_store_if_present(client: "openai.OpenAI", vector_store_id: st
             print(" done")
 
 
-def _enumerate_example_files() -> list[tuple[str, str]]:
-    """Return a list of (filename, text_content) for each example .py file."""
-    pkg = resources.files(_EXAMPLES_PACKAGE)
+def _walk_corpus_files(root, prefix: str = "") -> list[tuple[str, str]]:
+    """Return ``(relative_path, text)`` pairs for text files under *root*."""
     results: list[tuple[str, str]] = []
-    for resource in pkg.iterdir():
+    for resource in root.iterdir():
         name = getattr(resource, "name", str(resource))
-        if name.startswith("_") or not name.endswith(".py"):
+        if name.startswith("_"):
+            continue
+        rel_path = f"{prefix}/{name}" if prefix else name
+        if resource.is_dir():
+            results.extend(_walk_corpus_files(resource, rel_path))
             continue
         try:
             content = resource.read_text(encoding="utf-8")
-            results.append((name, content))
         except Exception as exc:  # noqa: BLE001
-            print(f"  [warn] Could not read {name}: {exc}", file=sys.stderr)
-    return sorted(results, key=lambda t: t[0])
+            print(f"  [warn] Could not read {rel_path}: {exc}", file=sys.stderr)
+            continue
+        results.append((rel_path, content))
+    return results
+
+
+def _enumerate_example_files() -> list[tuple[str, str]]:
+    """Return ``(relative_path, text_content)`` pairs for packaged corpus files."""
+    pkg = resources.files(_EXAMPLES_PACKAGE)
+    return sorted(_walk_corpus_files(pkg), key=lambda t: t[0])
 
 
 def _generate_catalog(files: list[tuple[str, str]]) -> str:
-    """Generate a brief markdown catalog of the examples corpus."""
+    """Generate a brief markdown catalog of the packaged corpus."""
     lines = [
         "# pysilicon examples catalog",
         "",
-        "This catalog describes the curated schema examples shipped with pysilicon.",
-        "Each file defines DataList/DataArray schemas for an accelerator interface.",
+        "This catalog describes the packaged pysilicon MCP corpus.",
+        "It includes example code, supporting tests, and documentation snippets.",
         "",
         "## Files",
         "",
@@ -118,6 +131,35 @@ def _generate_catalog(files: list[tuple[str, str]]) -> str:
             lines.append(f"{doc_line}")
         lines.append("")
     return "\n".join(lines)
+
+
+def _split_uploadable_files(
+    files: list[tuple[str, str]],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Split packaged corpus files into uploadable and skipped path lists."""
+    uploadable: list[tuple[str, str]] = []
+    skipped: list[str] = []
+    for name, content in files:
+        suffix = PurePosixPath(name).suffix.lower()
+        if suffix in _OPENAI_SUPPORTED_SUFFIXES:
+            uploadable.append((name, content))
+        else:
+            skipped.append(name)
+    return uploadable, skipped
+
+
+def encode_upload_filename(path: str) -> str:
+    """Encode a corpus-relative path into a filename safe for OpenAI upload."""
+    if "/" not in path:
+        return path
+    return path.replace("/", _PATH_ESCAPE)
+
+
+def decode_upload_filename(filename: str) -> str:
+    """Decode an uploaded filename back to a corpus-relative path."""
+    if _PATH_ESCAPE not in filename:
+        return filename
+    return filename.replace(_PATH_ESCAPE, "/")
 
 
 def _wait_for_vector_store(client: "openai.OpenAI", vs_id: str, timeout: int = 120) -> None:  # type: ignore[name-defined]
@@ -154,15 +196,20 @@ def build_example_rag(*, verbose: bool = True) -> str:
     client = openai.OpenAI()  # reads OPENAI_API_KEY from env
     previous_vs_id = os.environ.get(_VECTOR_STORE_ENV)
 
-    # 1. Enumerate example files
+    # 1. Enumerate packaged corpus files
     if verbose:
-        print(f"Scanning packaged examples from '{_EXAMPLES_PACKAGE}' ...")
+        print(f"Scanning packaged corpus files from '{_EXAMPLES_PACKAGE}' ...")
     files = _enumerate_example_files()
     if not files:
-        raise SystemExit("No example files found in the package.")
+        raise SystemExit("No corpus files found in the package.")
+    files, skipped_files = _split_uploadable_files(files)
+    if not files:
+        raise SystemExit("No uploadable corpus files found in the package.")
     if verbose:
         for name, content in files:
             print(f"  {name}  ({len(content)} chars)")
+        for name in skipped_files:
+            print(f"  [skip] {name} (unsupported by OpenAI Files API)")
 
     # 2. Generate catalog
     catalog_md = _generate_catalog(files)
@@ -177,7 +224,7 @@ def build_example_rag(*, verbose: bool = True) -> str:
             print(f"  Uploading {fname} ...", end="", flush=True)
         encoded = content.encode("utf-8")
         file_obj = io.BytesIO(encoded)
-        file_obj.name = fname  # openai uses .name as the filename
+        file_obj.name = encode_upload_filename(fname)
         response = client.files.create(file=file_obj, purpose="assistants")
         uploaded_ids.append(response.id)
         if verbose:

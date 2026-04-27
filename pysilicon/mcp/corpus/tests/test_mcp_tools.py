@@ -115,13 +115,14 @@ def test_get_schema_example_poly_resp_ftr_includes_enum_support():
 
 def test_registry_has_expected_tools():
     names = {s["function"]["name"] for s in REGISTRY.tool_schemas()}
-    assert "pysilicon_list_schema_examples" in names
-    assert "pysilicon_get_schema_example" in names
+    assert "pysilicon_list_schema_examples" not in names
+    assert "pysilicon_get_schema_example" not in names
     assert "pysilicon_get_schema_draft_plan" in names
     assert "pysilicon_validate_schema" in names
     assert "pysilicon_get_components" in names
+    assert "pysilicon_search_examples" in names
     assert "pysilicon_search_schema_examples" in names
-    assert "pysilicon_get_example_file" in names
+    assert "pysilicon_get_example_file" not in names
 
 
 def test_registry_tool_schemas_are_openai_style():
@@ -134,17 +135,16 @@ def test_registry_tool_schemas_are_openai_style():
         assert schema["function"]["parameters"]["type"] == "object"
 
 
-def test_registry_dispatch_list_schema_examples():
-    result = REGISTRY.dispatch("pysilicon_list_schema_examples", {})
-    assert "examples" in result
-    assert len(result["examples"]) > 0
+def test_registry_dispatch_disabled_list_schema_examples_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown tool name"):
+        REGISTRY.dispatch("pysilicon_list_schema_examples", {})
 
 
-def test_registry_dispatch_get_schema_example():
-    result = REGISTRY.dispatch(
-        "pysilicon_get_schema_example", {"example_id": "hist_cmd"}
-    )
-    assert result["id"] == "hist_cmd"
+def test_registry_dispatch_disabled_get_schema_example_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown tool name"):
+        REGISTRY.dispatch(
+            "pysilicon_get_schema_example", {"example_id": "hist_cmd"}
+        )
 
 
 def test_get_schema_draft_plan_final_step_recommends_validation():
@@ -160,8 +160,7 @@ def test_get_schema_draft_plan_first_step_uses_registered_tool_names():
 
     assert result["steps"][0]["recommended_tools"] == [
         "pysilicon_get_components",
-        "pysilicon_search_schema_examples",
-        "pysilicon_get_example_file",
+        "pysilicon_search_examples",
     ]
 
 
@@ -170,7 +169,7 @@ def test_get_schema_draft_plan_first_step_uses_workspace_root_when_provided():
 
     assert "Check the workspace at c:/demo/workspace" in result["steps"][0]["instructions"]
     assert "pysilicon_get_components" in result["steps"][0]["instructions"]
-    assert "pysilicon_search_schema_examples" in result["steps"][0]["instructions"]
+    assert "pysilicon_search_examples" in result["steps"][0]["instructions"]
 
 
 def test_get_schema_draft_plan_first_step_uses_only_example_tools_without_workspace_root():
@@ -178,8 +177,8 @@ def test_get_schema_draft_plan_first_step_uses_only_example_tools_without_worksp
 
     instructions = result["steps"][0]["instructions"]
     assert "pysilicon_get_components" in instructions
-    assert "pysilicon_search_schema_examples" in instructions
-    assert "pysilicon_get_example_file" in instructions
+    assert "pysilicon_search_examples" in instructions
+    assert "pysilicon_get_example_file" not in instructions
 
 
 def test_validate_schema_accepts_valid_datalist_source():
@@ -349,7 +348,7 @@ def test_registry_dispatch_get_components():
 
 
 # ---------------------------------------------------------------------------
-# pysilicon_search_schema_examples
+# pysilicon_search_examples
 # ---------------------------------------------------------------------------
 
 
@@ -388,7 +387,47 @@ def test_search_schema_examples_normalized_query_no_keywords(monkeypatch):
     assert result["normalized_query"] == "simple integer field"
 
 
+def test_search_schema_examples_decodes_uploaded_filename(monkeypatch):
+    class FakePage:
+        def __iter__(self):
+            yield type(
+                "FakeItem",
+                (),
+                {
+                    "filename": "examples__pysilicon_path__conv2d__pysilicon_path__conv2d.py",
+                    "attributes": {},
+                    "content": [type("Block", (), {"text": "snippet text"})()],
+                    "score": 0.75,
+                },
+            )()
+
+    class FakeVectorStores:
+        def search(self, vector_store_id, query, max_num_results):
+            return FakePage()
+
+    class FakeClient:
+        def __init__(self):
+            self.vector_stores = FakeVectorStores()
+
+    monkeypatch.setenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", "vs_test")
+    monkeypatch.setitem(__import__("sys").modules, "openai", type("FakeOpenAI", (), {"OpenAI": FakeClient}))
+
+    result = search_schema_examples(task="conv2d command")
+
+    assert result["matches"][0]["path"] == "examples/conv2d/conv2d.py"
+
+
 def test_registry_dispatch_search_schema_examples_missing_env(monkeypatch):
+    monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
+
+    result = REGISTRY.dispatch(
+        "pysilicon_search_examples",
+        {"task": "conv2d accelerator command", "keywords": ["DataList"], "k": 3},
+    )
+    assert "error" in result
+
+
+def test_registry_dispatch_search_schema_examples_alias_missing_env(monkeypatch):
     monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
 
     result = REGISTRY.dispatch(
@@ -432,7 +471,6 @@ def test_get_example_file_rejects_traversal():
         get_example_file("../mcp/registry.py")
 
 
-def test_registry_dispatch_get_example_file():
-    result = REGISTRY.dispatch("pysilicon_get_example_file", {"path": "hist.py"})
-    assert "content" in result
-    assert "HistCmd" in result["content"]
+def test_registry_dispatch_get_example_file_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown tool name"):
+        REGISTRY.dispatch("pysilicon_get_example_file", {"path": "hist.py"})

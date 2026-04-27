@@ -1,3 +1,8 @@
+# Source: examples/conv2d/conv2d.hpp
+
+Original extension: `.hpp`
+
+```cpp
 #ifndef CONV2D_HPP
 #define CONV2D_HPP
 
@@ -46,3 +51,4 @@ void conv2d(
 );
 
 #endif  // CONV2D_HPP
+```

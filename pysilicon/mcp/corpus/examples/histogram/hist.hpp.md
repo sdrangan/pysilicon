@@ -1,3 +1,8 @@
+# Source: examples/histogram/hist.hpp
+
+Original extension: `.hpp`
+
+```cpp
 #ifndef HIST_HPP
 #define HIST_HPP
 
@@ -32,3 +37,4 @@ using mem_word_t = ap_uint<mem_dwidth>;
 void hist(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream, mem_word_t* mem);
 
 #endif // HIST_HPP
+```

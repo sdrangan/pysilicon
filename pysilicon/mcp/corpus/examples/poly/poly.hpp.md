@@ -1,3 +1,8 @@
+# Source: examples/poly/poly.hpp
+
+Original extension: `.hpp`
+
+```cpp
 #ifndef POLY_HPP
 #define POLY_HPP
 
@@ -26,3 +31,4 @@ static float eval_poly_horner(const float coeff[4], float x);
 void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream);
 
 #endif
+```

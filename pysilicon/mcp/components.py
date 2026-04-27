@@ -204,7 +204,7 @@ def get_components() -> dict:
             "Canonical pysilicon schema vocabulary: core classes "
             "(DataSchema, DataList, DataArray, DataField, IntField, FloatField, "
             "EnumField, MemAddr, IntEnum) and common design patterns. "
-            "Use the keywords to form search queries for pysilicon_search_schema_examples."
+            "Use the keywords to form search queries for pysilicon_search_examples."
         ),
         "components": list(_COMPONENTS),
     }

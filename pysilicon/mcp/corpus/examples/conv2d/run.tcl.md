@@ -1,3 +1,8 @@
+# Source: examples/conv2d/run.tcl
+
+Original extension: `.tcl`
+
+```tcl
 set script_dir [file dirname [file normalize [info script]]]
 set data_dir [file join $script_dir "data"]
 
@@ -68,10 +73,10 @@ if {$start_idx > $through_idx} {
 }
 
 if {$start_at eq "csim"} {
-    open_project -reset pysilicon_conv2d_df_proj
-    set_top conv2d_df
-    add_files conv2d_df.cpp
-    add_files -tb conv2d_tb.cpp -cflags "-Wno-unknown-pragmas -DPYSILICON_CONV2D_DF"
+    open_project -reset pysilicon_conv2d_proj
+    set_top conv2d
+    add_files conv2d.cpp
+    add_files -tb conv2d_tb.cpp
 
     set streamutils_cpp [file join $script_dir "streamutils.cpp"]
     if {![file exists $streamutils_cpp]} {
@@ -85,13 +90,13 @@ if {$start_at eq "csim"} {
     set_part {xc7z020clg484-1}
     create_clock -period 10
 } else {
-    open_project pysilicon_conv2d_df_proj
+    open_project pysilicon_conv2d_proj
     open_solution "solution1"
 }
 
 if {$start_idx <= 0 && $through_idx >= 0} {
     if {[catch {csim_design -argv "$data_dir"} res]} {
-        puts "PYSILICON_ERROR: conv2d_df C-Simulation failed."
+        puts "PYSILICON_ERROR: conv2d C-Simulation failed."
         puts $res
         exit 1
     }
@@ -99,7 +104,7 @@ if {$start_idx <= 0 && $through_idx >= 0} {
 
 if {$start_idx <= 1 && $through_idx >= 1} {
     if {[catch {csynth_design} res]} {
-        puts "PYSILICON_ERROR: conv2d_df C-Synthesis failed."
+        puts "PYSILICON_ERROR: conv2d C-Synthesis failed."
         puts $res
         exit 1
     }
@@ -107,11 +112,12 @@ if {$start_idx <= 1 && $through_idx >= 1} {
 
 if {$start_idx <= 2 && $through_idx >= 2} {
     if {[catch {cosim_design -argv "$data_dir" -trace_level $trace_level} res]} {
-        puts "PYSILICON_ERROR: conv2d_df RTL Co-Simulation failed."
+        puts "PYSILICON_ERROR: conv2d RTL Co-Simulation failed."
         puts $res
         exit 1
     }
 }
 
-puts "PYSILICON_SUCCESS: conv2d_df stages $start_at through $through passed."
+puts "PYSILICON_SUCCESS: conv2d stages $start_at through $through passed."
 exit 0
+```

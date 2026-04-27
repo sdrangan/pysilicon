@@ -27,6 +27,8 @@ import os
 from importlib import resources
 from typing import Any
 
+from pysilicon.mcp.cli_build_example_rag import decode_upload_filename
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -130,7 +132,7 @@ def search_schema_examples(
         attrs = getattr(item, "attributes", None) or {}
         file_path = attrs.get("path") or getattr(item, "filename", None)
         if file_path:
-            match["path"] = file_path
+            match["path"] = decode_upload_filename(file_path)
         # Extract snippet text from content blocks
         content = getattr(item, "content", None) or []
         snippet_parts = []

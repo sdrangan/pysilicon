@@ -1,3 +1,8 @@
+# Source: examples/poly/run.tcl
+
+Original extension: `.tcl`
+
+```tcl
 open_project -reset pysilicon_poly_proj
 set_top poly
 add_files poly.cpp
@@ -76,3 +81,5 @@ if {$do_cosim} {
     puts "PYSILICON_SUCCESS: poly C-Simulation and C-Synthesis passed."
 }
 exit 0
+
+```

@@ -15,6 +15,12 @@ Only files with these extensions are included::
 
     .py  .cpp  .c  .h  .hpp  .tcl  .md
 
+Files that are useful for retrieval but not accepted directly by the OpenAI
+Files API are converted during corpus build::
+
+    .hpp -> .hpp.md
+    .tcl -> .tcl.md
+
 Git-tracked files are used when ``git`` is available (via ``git ls-files``);
 otherwise the source trees are walked and the extension filter is applied.
 
@@ -43,6 +49,13 @@ from pathlib import Path
 ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
     {".py", ".cpp", ".c", ".h", ".hpp", ".tcl", ".md"}
 )
+
+UNSUPPORTED_UPLOAD_EXTENSIONS: frozenset[str] = frozenset({".hpp", ".tcl"})
+
+MARKDOWN_CODE_FENCE_LANGUAGE: dict[str, str] = {
+    ".hpp": "cpp",
+    ".tcl": "tcl",
+}
 
 # Each tuple is (source_root_relative_to_repo, corpus_subdir_name)
 SOURCE_MAPPINGS: list[tuple[str, str]] = [
@@ -109,6 +122,33 @@ def _collect_files(src: Path, repo: Path) -> list[Path]:
     return _walk_files(src)
 
 
+def _dest_relative_path(rel: Path) -> Path:
+    """Return the destination path inside corpus for a source-relative path."""
+    if rel.suffix in UNSUPPORTED_UPLOAD_EXTENSIONS:
+        return rel.with_name(f"{rel.name}.md")
+    return rel
+
+
+def _render_converted_markdown(*, source_file: Path, repo: Path) -> str:
+    """Render an unsupported source file as markdown for vector-store upload."""
+    rel_source = source_file.relative_to(repo).as_posix()
+    suffix = source_file.suffix.lower()
+    code_lang = MARKDOWN_CODE_FENCE_LANGUAGE.get(suffix, "text")
+    source_text = source_file.read_text(encoding="utf-8")
+    return "\n".join(
+        [
+            f"# Source: {rel_source}",
+            "",
+            f"Original extension: `{suffix}`",
+            "",
+            f"```{code_lang}",
+            source_text,
+            "```",
+            "",
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
@@ -145,10 +185,19 @@ def build_corpus(*, verbose: bool = True) -> Path:
             print(f"  {src_rel}/ -> corpus/{dest_subdir}/  ({len(files)} files)")
 
         for src_file in files:
+            if not src_file.is_file():
+                continue
             rel = src_file.relative_to(src)
-            dest_file = dest_root / rel
+            dest_rel = _dest_relative_path(rel)
+            dest_file = dest_root / dest_rel
             dest_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_file, dest_file)
+            if src_file.suffix in UNSUPPORTED_UPLOAD_EXTENSIONS:
+                dest_file.write_text(
+                    _render_converted_markdown(source_file=src_file, repo=repo),
+                    encoding="utf-8",
+                )
+            else:
+                shutil.copy2(src_file, dest_file)
             size = dest_file.stat().st_size
             manifest.append(
                 {
@@ -158,7 +207,10 @@ def build_corpus(*, verbose: bool = True) -> Path:
                 }
             )
             if verbose:
-                print(f"    {rel}  ({size} bytes)")
+                if src_file.suffix in UNSUPPORTED_UPLOAD_EXTENSIONS:
+                    print(f"    {rel} -> {dest_rel}  ({size} bytes, converted)")
+                else:
+                    print(f"    {rel}  ({size} bytes)")
 
     # 3. Write manifest
     manifest_path = corpus / "manifest.json"

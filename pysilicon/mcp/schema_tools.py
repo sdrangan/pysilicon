@@ -24,15 +24,13 @@ def get_schema_draft_plan(
 			f"Check the workspace at {workspace_root} for related schemas when "
 			"available, then call pysilicon_get_components to review the schema "
 			"vocabulary and use the returned keywords with "
-			"pysilicon_search_schema_examples to find relevant examples. "
-			"Use pysilicon_get_example_file to read a full example once located."
+			"pysilicon_search_examples to find relevant examples."
 		)
 	else:
 		first_step_instructions = (
 			"Call pysilicon_get_components to review the schema vocabulary, "
 			"then use the returned keywords with "
-			"pysilicon_search_schema_examples to find relevant examples. "
-			"Use pysilicon_get_example_file to read a full example once located."
+			"pysilicon_search_examples to find relevant examples."
 		)
 
 	summary = (
@@ -51,8 +49,7 @@ def get_schema_draft_plan(
 				"instructions": first_step_instructions,
 				"recommended_tools": [
 					"pysilicon_get_components",
-					"pysilicon_search_schema_examples",
-					"pysilicon_get_example_file",
+					"pysilicon_search_examples",
 				],
 			},
 			{
