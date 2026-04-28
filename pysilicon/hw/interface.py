@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 
 from pysilicon.hw.component import Component
 from pysilicon.hw.named import NamedObject
+from pysilicon.hw.clock import Clock
 
 
 class InterfaceEndpoint:
