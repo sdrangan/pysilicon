@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Generator
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable, Generator
+
 from pysilicon.hw.named import NamedObject
 
 import simpy
+
+if TYPE_CHECKING:
+    from .simulation import Simulation
 
 
 ProcessGen = Generator[simpy.events.Event, Any, Any]
@@ -27,42 +31,28 @@ class ActionOverlap(object):
     previous: ActionRecord
     current: ActionRecord
 
-@dataclass
-class SimConfig(NamedObject):
-    """Configuration parameters for a simulation run."""
-
-    env : simpy.Environment | None = None
-    """Shared simulation environment. If None, a new environment 
-    will be created."""
-
-    duration: float = 0
-    """Simulation duration in seconds. Must be non-negative. 
-       Ignored if zero."""
-
-    def __post_init__(self) -> None:
-        if self.env is not None and not isinstance(self.env, simpy.Environment):
-            raise ValueError("env must be a simpy.Environment or None.")
-        if self.duration < 0:
-            raise ValueError("duration must be non-negative.")
-        
-        # Create a new environment if none was provided
-        if self.env is None:
-            self.env = simpy.Environment()
-
-    
 
 @dataclass
 class SimObj(NamedObject):
     """
-    Base class for active simulation entities built on top of ``simpy``.
+    Base class for simulation entities built on top of ``simpy``.
 
     A ``SimObj`` owns one or more concurrent processes registered with a shared
-    ``simpy.Environment``. Subclasses typically register long-running loops that
-    consume and produce transactions.
+    ``simpy.Environment``.  Subclasses typically register long-running loops
+    that consume and produce transactions.
+
+    Each ``SimObj`` registers itself with the provided :class:`Simulation`
+    instance so that :meth:`Simulation.run_sim` can drive the standard
+    three-phase lifecycle:
+
+    * :meth:`pre_sim`  — setup / validation before the event loop starts
+    * :meth:`run_proc` — optional SimPy generator process
+    * :meth:`post_sim` — inspection / finalization after the event loop ends
     """
 
-    sim_config: SimConfig | None = None
-    """Configuration parameters for the simulation environment."""
+    sim: Simulation | None = None
+    """Owning simulation.  The object borrows its environment and registers
+    itself with *sim* during :meth:`__post_init__`."""
 
     track_action_overlaps: bool = True
 
@@ -70,42 +60,70 @@ class SimObj(NamedObject):
         super().__init_subclass__(**kwargs)
 
     def __post_init__(self) -> None:
-        """
-        Initialize the the process registry
-        """
+        """Initialize the process registry and register with the simulation."""
         super().__post_init__()
-        if self.sim_config is None:
-            raise ValueError("sim_config must be provided.")
-        
+        if self.sim is None:
+            raise ValueError("sim must be provided.")
+
         self.processes: list[simpy.events.Process] = []
         self._process_factories: list[tuple[str, ProcessFactory]] = []
         self.action_history: list[ActionRecord] = []
         self.action_overlaps: list[ActionOverlap] = []
 
+        self.sim.add_obj(self)
+
+    # ------------------------------------------------------------------
+    # Lifecycle hooks
+    # ------------------------------------------------------------------
+
+    def pre_sim(self) -> None:
+        """Called once before the simulation event loop starts.
+
+        Override to perform per-object setup, validation, or initial event
+        scheduling.  The default implementation is a no-op.
+        """
+
+    def run_proc(self) -> ProcessGen | None:
+        """Return a SimPy generator process to schedule, or ``None``.
+
+        Returning ``None`` (the default) marks the object as *passive*; it
+        participates only through :meth:`pre_sim` / :meth:`post_sim`.
+        Active objects should override this method and ``yield`` SimPy events.
+        """
+        return None
+
+    def post_sim(self) -> None:
+        """Called once after the simulation event loop ends.
+
+        Override to collect statistics, assert invariants, or emit reports.
+        The default implementation is a no-op.
+        """
+
+    # ------------------------------------------------------------------
+    # Environment helpers
+    # ------------------------------------------------------------------
+
     @property
     def env(self) -> simpy.Environment:
         """The shared simulation environment."""
-        return self.sim_config.env
-    
+        return self.sim.env
+
     @property
     def now(self) -> float:
-        """Current simulation timestamp in seconds.  """
+        """Current simulation timestamp."""
         return float(self.env.now)
 
     def timeout(self, delay: float) -> simpy.events.Timeout:
-        """Convenience wrapper around ``env.timeout``. 
+        """Convenience wrapper around ``env.timeout``.
 
         Parameters
         ----------
         delay : float
-            Time to wait in seconds. Must be non-negative. 
-        
+            Time to wait in seconds. Must be non-negative.
+
         Example
-        --------
-        
-        ```
-        yield self.timeout(5)  # wait for 5 seconds
-        ```
+        -------
+        ``yield self.timeout(5)  # wait for 5 seconds``
         """
         if delay < 0:
             raise ValueError("delay must be non-negative.")
