@@ -1,5 +1,4 @@
 import pytest
-import simpy
 
 from pysilicon.simulation.simobj import ActionOverlap, ActionRecord, SimObj
 from pysilicon.simulation.simulation import Simulation
@@ -8,12 +7,13 @@ from pysilicon.simulation.simulation import Simulation
 def test_init_defaults_and_custom_name() -> None:
     """Verify constructor defaults and explicit naming/overlap-tracking overrides."""
     sim = Simulation()
-    obj = SimObj(sim)
-    named = SimObj(sim, name="worker", track_action_overlaps=False)
+    obj = SimObj(sim=sim)
+    named = SimObj(sim=sim, name="worker", track_action_overlaps=False)
 
     assert obj.sim is sim
     assert obj.env is sim.env
-    assert obj.name == "SimObj"
+    assert obj.type_name == "sim_obj"
+    assert obj.name.startswith("sim_obj")
     assert obj.track_action_overlaps is True
     assert obj.processes == []
     assert obj.action_history == []
@@ -26,7 +26,7 @@ def test_init_defaults_and_custom_name() -> None:
 def test_now_and_timeout_progress_time() -> None:
     """Ensure timeout advances simulation time and now reflects the progressed clock."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     assert obj.now == 0.0
     evt = obj.timeout(3.5)
@@ -38,7 +38,7 @@ def test_now_and_timeout_progress_time() -> None:
 def test_timeout_rejects_negative_delay() -> None:
     """Reject negative timeout delays with a clear ValueError."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     with pytest.raises(ValueError, match="delay must be non-negative"):
         obj.timeout(-1)
@@ -47,7 +47,7 @@ def test_timeout_rejects_negative_delay() -> None:
 def test_event_creates_plain_event_in_same_environment() -> None:
     """Create a plain event bound to the same environment and support succeed/value flow."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
     evt = obj.event()
 
     assert evt.env is sim.env
@@ -60,7 +60,7 @@ def test_event_creates_plain_event_in_same_environment() -> None:
 def test_process_registers_and_completes() -> None:
     """Register a process in SimObj bookkeeping and preserve its return value on completion."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     def worker():
         yield obj.timeout(2)
@@ -76,7 +76,7 @@ def test_process_registers_and_completes() -> None:
 def test_add_process_and_start_registered_processes() -> None:
     """Validate process factory registration semantics for autostart and deferred startup."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
     calls: list[str] = []
 
     def p1():
@@ -101,7 +101,7 @@ def test_add_process_and_start_registered_processes() -> None:
 def test_add_process_requires_non_empty_name() -> None:
     """Require non-empty process names when registering process factories."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     with pytest.raises(ValueError, match="name must be non-empty"):
         obj.add_process("", lambda: iter(()))
@@ -110,7 +110,7 @@ def test_add_process_requires_non_empty_name() -> None:
 def test_resource_and_transaction_queue_helpers() -> None:
     """Construct queue/resource helpers and enforce positive resource capacity."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     q = obj.transaction_queue(capacity=2)
     assert q.capacity == 2
@@ -125,7 +125,7 @@ def test_resource_and_transaction_queue_helpers() -> None:
 def test_container_helper_creates_container_with_capacity_and_init() -> None:
     """Construct a container helper with the requested capacity and initial level."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     c = obj.container(capacity=10, init=4)
 
@@ -136,7 +136,7 @@ def test_container_helper_creates_container_with_capacity_and_init() -> None:
 def test_action_records_duration_and_validation() -> None:
     """Record action timing windows and validate action input arguments."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     def runner():
         record0 = yield from obj.action("instant")
@@ -157,13 +157,13 @@ def test_action_records_duration_and_validation() -> None:
 
     with pytest.raises(ValueError, match="name must be non-empty"):
         sim2 = Simulation()
-        obj2 = SimObj(sim2)
+        obj2 = SimObj(sim=sim2)
         sim2.env.process(obj2.action(""))
         sim2.env.run()
 
     with pytest.raises(ValueError, match="processing_delay must be non-negative"):
         sim3 = Simulation()
-        obj3 = SimObj(sim3)
+        obj3 = SimObj(sim=sim3)
         sim3.env.process(obj3.action("bad", processing_delay=-1))
         sim3.env.run()
 
@@ -171,7 +171,7 @@ def test_action_records_duration_and_validation() -> None:
 def test_action_overlap_tracking_and_clear_logs() -> None:
     """Detect overlapping actions when enabled and verify clear_action_logs resets records."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
 
     def first():
         yield from obj.action("first", processing_delay=5)
@@ -198,7 +198,7 @@ def test_action_overlap_tracking_and_clear_logs() -> None:
 def test_action_overlap_tracking_can_be_disabled() -> None:
     """Do not collect overlap records when overlap tracking is explicitly disabled."""
     sim = Simulation()
-    obj = SimObj(sim, track_action_overlaps=False)
+    obj = SimObj(sim=sim, track_action_overlaps=False)
 
     def first():
         yield from obj.action("first", processing_delay=5)
@@ -213,4 +213,3 @@ def test_action_overlap_tracking_can_be_disabled() -> None:
 
     assert len(obj.action_history) == 2
     assert obj.active_overlap_count() == 0
-

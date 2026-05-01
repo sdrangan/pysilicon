@@ -24,7 +24,8 @@ class NamedObject:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._instance_count = 0
-        if cls.type_name is None:
+        declared_type_name = cls.__dict__.get("type_name")
+        if declared_type_name is None:
             cls.type_name = NamedObject._camel_to_snake(cls.__name__)
 
     def __post_init__(self):

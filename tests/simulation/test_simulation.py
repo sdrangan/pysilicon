@@ -12,7 +12,7 @@ class PassiveObj(SimObj):
     """SimObj that only uses pre_sim / post_sim (no active process)."""
 
     def __init__(self, sim: Simulation) -> None:
-        super().__init__(sim)
+        super().__init__(sim=sim)
         self.pre_called = False
         self.post_called = False
 
@@ -27,7 +27,7 @@ class ActiveObj(SimObj):
     """SimObj that also runs a process during the simulation."""
 
     def __init__(self, sim: Simulation, duration: float = 5.0) -> None:
-        super().__init__(sim)
+        super().__init__(sim=sim)
         self.duration = duration
         self.pre_called = False
         self.post_called = False
@@ -103,7 +103,7 @@ def test_run_sim_registration_order() -> None:
 
     class Ordered(SimObj):
         def __init__(self, sim, tag):
-            super().__init__(sim)
+            super().__init__(sim=sim)
             self.tag = tag
 
         def pre_sim(self):
@@ -124,14 +124,14 @@ def test_run_sim_registration_order() -> None:
 def test_default_run_proc_is_none() -> None:
     """The default run_proc implementation returns None (passive object)."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
     assert obj.run_proc() is None
 
 
 def test_default_lifecycle_hooks_are_noop() -> None:
     """Default pre_sim and post_sim do not raise and return None."""
     sim = Simulation()
-    obj = SimObj(sim)
+    obj = SimObj(sim=sim)
     assert obj.pre_sim() is None
     assert obj.post_sim() is None
 

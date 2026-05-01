@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Generator
+
+from pysilicon.hw.named import NamedObject
 
 import simpy
 
@@ -30,7 +32,8 @@ class ActionOverlap(object):
     current: ActionRecord
 
 
-class SimObj(object):
+@dataclass
+class SimObj(NamedObject):
     """
     Base class for simulation entities built on top of ``simpy``.
 
@@ -47,35 +50,27 @@ class SimObj(object):
     * :meth:`post_sim` — inspection / finalization after the event loop ends
     """
 
-    def __init__(
-        self,
-        sim: Simulation,
-        name: str | None = None,
-        track_action_overlaps: bool = True,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        sim : Simulation
-            Owning simulation.  The object registers itself with *sim* and
-            borrows its ``simpy.Environment``.
-        name : str | None
-            Optional object name. Defaults to class name.
-        track_action_overlaps : bool
-            If ``True``, overlapping action windows are captured in
-            ``action_overlaps`` for race/resource conflict analysis.
-        """
-        self.sim: Simulation = sim
-        self.env: simpy.Environment = sim.env
-        self.name: str = self.__class__.__name__ if name is None else name
-        self.track_action_overlaps: bool = track_action_overlaps
+    sim: Simulation | None = None
+    """Owning simulation.  The object borrows its environment and registers
+    itself with *sim* during :meth:`__post_init__`."""
+
+    track_action_overlaps: bool = True
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        """Initialize the process registry and register with the simulation."""
+        super().__post_init__()
+        if self.sim is None:
+            raise ValueError("sim must be provided.")
 
         self.processes: list[simpy.events.Process] = []
         self._process_factories: list[tuple[str, ProcessFactory]] = []
         self.action_history: list[ActionRecord] = []
         self.action_overlaps: list[ActionOverlap] = []
 
-        sim.add_obj(self)
+        self.sim.add_obj(self)
 
     # ------------------------------------------------------------------
     # Lifecycle hooks
@@ -104,13 +99,32 @@ class SimObj(object):
         The default implementation is a no-op.
         """
 
+    # ------------------------------------------------------------------
+    # Environment helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def env(self) -> simpy.Environment:
+        """The shared simulation environment."""
+        return self.sim.env
+
     @property
     def now(self) -> float:
         """Current simulation timestamp."""
         return float(self.env.now)
 
     def timeout(self, delay: float) -> simpy.events.Timeout:
-        """Convenience wrapper around ``env.timeout``."""
+        """Convenience wrapper around ``env.timeout``.
+
+        Parameters
+        ----------
+        delay : float
+            Time to wait in seconds. Must be non-negative.
+
+        Example
+        -------
+        ``yield self.timeout(5)  # wait for 5 seconds``
+        """
         if delay < 0:
             raise ValueError("delay must be non-negative.")
         return self.env.timeout(delay)
