@@ -440,6 +440,231 @@ class StreamIFMaster(InterfaceEndpoint):
         """
         if self.interface is None:
             raise RuntimeError(f"Cannot write to AXI4-Stream master endpoint because it is not bound to an interface")
-        
+
         yield self.process( self.interface.write(words) )
-        
+
+
+@dataclass
+class CrossbarIFSlave(InterfaceEndpoint):
+    """
+    A crossbar slave (RX) endpoint that receives routed transfers.
+    """
+
+    bitwidth: int = 32
+    """The bitwidth of the crossbar interface."""
+
+    rx_proc: RxProc | None = None
+    """An optional process to call when words arrive at this slave port."""
+
+    queue_size: int | None = None
+    """
+    Optional size for the internal transaction queue in words.
+    If None, the queue is unbounded.
+    """
+
+    data_buffer: simpy.Store = field(init=False)
+    """Buffer for storing incoming bursts; each entry is one burst."""
+
+    bus: simpy.Resource = field(init=False)
+    """Serialises concurrent writes from multiple masters to this slave."""
+
+    nrx: simpy.Container = field(init=False)
+    """Number of pending words in the RX queue."""
+
+    ntx: simpy.Container = field(init=False)
+    """Number of pending words in the TX queue."""
+
+    type_name = 'crossbar_if_slave'
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.data_buffer = simpy.Store(self.env)
+        self.bus = simpy.Resource(self.env, capacity=1)
+        capacity = self.queue_size if self.queue_size is not None else float('inf')
+        self.nrx = simpy.Container(self.env, init=0, capacity=capacity)
+        self.ntx = simpy.Container(self.env, init=0)
+
+    def run_proc(self) -> ProcessGen:
+        """Continual loop that processes incoming bursts."""
+        while True:
+            words = yield self.data_buffer.get()
+            nwords = words.shape[0]
+
+            btx = min(nwords, self.ntx.level)
+            if btx > 0:
+                yield self.ntx.get(btx)
+
+            brx = nwords - btx
+            if brx > 0:
+                if self.nrx.level < brx:
+                    raise RuntimeError(
+                        f"Not enough words in RX queue: need {brx}, have {self.nrx.level}"
+                    )
+                yield self.nrx.get(brx)
+
+            if self.rx_proc is not None:
+                yield self.env.process(self.rx_proc(words))
+
+
+@dataclass
+class CrossbarIFMaster(InterfaceEndpoint):
+    """
+    A crossbar master (TX) endpoint.  Sends bursts to a specified slave port.
+    """
+
+    bitwidth: int = 32
+    """The bitwidth of the crossbar interface."""
+
+    type_name = 'crossbar_if_master'
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+    def write(self, words: Words, dest: int) -> ProcessGen:
+        """
+        Route a burst of words to slave port *dest*.
+
+        Parameters
+        ----------
+        words : Words
+            The block of words to send.
+        dest : int
+            Zero-based index of the target slave port.
+
+        Example
+        -------
+        ```
+        words = np.array([1, 2, 3], dtype=np.uint32)
+        yield env.process(master_ep.write(words, dest=1))
+        ```
+        """
+        if self.interface is None:
+            raise RuntimeError(
+                "Cannot write from CrossbarIFMaster because it is not bound to an interface"
+            )
+        yield self.process(self.interface.write(words, dest))
+
+
+@dataclass
+class CrossbarIF(Interface):
+    """
+    A crossbar interface with *num_masters* input (TX) ports and
+    *num_slaves* output (RX) ports.
+
+    Any master can route a burst to any slave by specifying a destination
+    index.  Concurrent transfers to different slaves proceed in parallel;
+    concurrent transfers to the same slave are serialised via that slave's
+    bus resource.
+
+    Endpoint names follow the pattern ``master_0``, ``master_1``, …,
+    ``slave_0``, ``slave_1``, ….
+    """
+
+    num_masters: int = 1
+    """Number of master (TX) ports."""
+
+    num_slaves: int = 1
+    """Number of slave (RX) ports."""
+
+    bitwidth: int | None = None
+    """
+    Bit-width of every port.  If None it is inferred from the first
+    endpoint bound; subsequent endpoints must match.
+    """
+
+    clk: Clock | None = None
+    """Clock for this interface (determines transfer timing)."""
+
+    latency_init: float = 0.
+    """
+    Fixed latency in cycles added to every transfer.
+    Total transfer time = (latency_init + nwords) / clk.freq.
+    """
+
+    type_name = 'crossbar_if'
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        if self.num_masters < 1:
+            raise ValueError("num_masters must be >= 1")
+        if self.num_slaves < 1:
+            raise ValueError("num_slaves must be >= 1")
+        master_names = tuple(f'master_{i}' for i in range(self.num_masters))
+        slave_names = tuple(f'slave_{i}' for i in range(self.num_slaves))
+        self.endpoint_names = master_names + slave_names
+        super().__post_init__()
+        if self.clk is None:
+            raise ValueError("clock must be provided for CrossbarIF")
+
+    def bind(self, ep_name: str, endpoint: InterfaceEndpoint) -> None:
+        """Bind an endpoint to a named port, validating type and bitwidth."""
+        if ep_name not in self.endpoints:
+            raise KeyError(
+                f"Port '{ep_name}' is not valid for CrossbarIF '{self.name}'"
+            )
+        if ep_name.startswith('slave_') and not isinstance(endpoint, CrossbarIFSlave):
+            raise TypeError("slave ports of CrossbarIF must bind to CrossbarIFSlave")
+        if ep_name.startswith('master_') and not isinstance(endpoint, CrossbarIFMaster):
+            raise TypeError("master ports of CrossbarIF must bind to CrossbarIFMaster")
+        if self.bitwidth is None:
+            self.bitwidth = endpoint.bitwidth
+        if self.bitwidth != endpoint.bitwidth:
+            raise ValueError(
+                f"Endpoint bitwidth {endpoint.bitwidth} does not match "
+                f"interface bitwidth {self.bitwidth}"
+            )
+        super().bind(ep_name, endpoint)
+
+    def write(self, words: Words, dest: int) -> ProcessGen:
+        """
+        Route a burst to slave port *dest*.
+
+        Parameters
+        ----------
+        words : Words
+            Block of words to transfer.
+        dest : int
+            Zero-based index of the target slave port.
+        """
+        if dest < 0 or dest >= self.num_slaves:
+            raise ValueError(
+                f"dest={dest} is out of range [0, {self.num_slaves})"
+            )
+        slave_name = f'slave_{dest}'
+        slave = self.endpoints[slave_name]
+        if slave is None:
+            raise RuntimeError(
+                f"Slave port {dest} ('{slave_name}') is not bound on CrossbarIF '{self.name}'"
+            )
+
+        cycles = self.latency_init + words.shape[0]
+        dly = cycles / self.clk.freq
+        if dly > 0:
+            yield self.timeout(dly)
+
+        with slave.bus.request() as req:
+            yield req
+
+            nwords_rem = words.shape[0]
+
+            if nwords_rem > 0:
+                yield slave.nrx.put(1)
+                nwords_rem -= 1
+
+            nwords_rx = min(nwords_rem, slave.nrx.capacity - slave.nrx.level)
+            if nwords_rx > 0:
+                yield slave.nrx.put(nwords_rx)
+                nwords_rem -= nwords_rx
+
+            if nwords_rem > 0:
+                yield slave.ntx.put(nwords_rem)
+
+            yield slave.data_buffer.put(words)
