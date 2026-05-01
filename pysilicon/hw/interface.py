@@ -423,14 +423,14 @@ class StreamIFMaster(InterfaceEndpoint):
     def write(self, words: Words) -> ProcessGen:
         """
         Write a burst of word to the master (TX) side of this interface.
-        The write will block until the slave side has sufficient RX 
+        The write will block until the slave side has sufficient RX
         queue capacity.
 
         Parameters
         ----------
         words : Words
-            The block of words to write. 
-        
+            The block of words to write.
+
         Example
         -------
         ```
@@ -440,6 +440,262 @@ class StreamIFMaster(InterfaceEndpoint):
         """
         if self.interface is None:
             raise RuntimeError(f"Cannot write to AXI4-Stream master endpoint because it is not bound to an interface")
-        
+
         yield self.process( self.interface.write(words) )
-        
+
+
+@dataclass
+class CrossBarIF(Interface):
+    """
+    A crossbar interface connecting ``nports_in`` input ports to ``nports_out``
+    output ports.  Each transfer arriving at an input port is routed to exactly
+    one output port via a configurable ``route_fn``.
+
+    Endpoint names
+    --------------
+    ``'in_0'``, ``'in_1'``, … ``'in_{nports_in-1}'``  — bind :class:`CrossBarIFInput`
+    ``'out_0'``, ``'out_1'``, … ``'out_{nports_out-1}'`` — bind :class:`CrossBarIFOutput`
+    """
+
+    nports_in: int = 2
+    """Number of input ports."""
+
+    nports_out: int = 2
+    """Number of output ports."""
+
+    bitwidth: int | None = None
+    """Data bitwidth. Inferred from the first endpoint bound if ``None``."""
+
+    clk: Clock | None = None
+    """Clock signal for this crossbar interface."""
+
+    latency_init: float = 0.
+    """Fixed latency in cycles added to every transfer (modelled as ``(latency_init + nwords) / clk.freq`` seconds)."""
+
+    route_fn: Callable[[Words, int], int] | None = None
+    """
+    Routing function ``(words, port_in) -> port_out``.
+    If ``None``, the default mapping ``port_out = port_in % nports_out`` is used.
+    """
+
+    type_name = 'crossbar_if'
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        self.endpoint_names = tuple(
+            [f'in_{i}' for i in range(self.nports_in)] +
+            [f'out_{j}' for j in range(self.nports_out)]
+        )
+        super().__post_init__()
+        if self.nports_in < 1:
+            raise ValueError("nports_in must be at least 1")
+        if self.nports_out < 1:
+            raise ValueError("nports_out must be at least 1")
+        if self.bitwidth is not None and self.bitwidth <= 0:
+            raise ValueError("bitwidth must be positive")
+        if self.clk is None:
+            raise ValueError("clock must be provided for CrossBarIF")
+
+    def write(self, words: Words, port_in: int) -> ProcessGen:
+        """
+        Route words arriving at ``port_in`` to the appropriate output port.
+
+        Parameters
+        ----------
+        words : Words
+            The block of words to transfer.
+        port_in : int
+            Index of the input port the words arrived on.
+        """
+        if port_in < 0 or port_in >= self.nports_in:
+            raise ValueError(f"port_in {port_in} out of range [0, {self.nports_in})")
+
+        port_out = self.route_fn(words, port_in) if self.route_fn is not None else port_in % self.nports_out
+
+        if port_out < 0 or port_out >= self.nports_out:
+            raise ValueError(
+                f"route_fn returned port_out {port_out} which is out of range [0, {self.nports_out})"
+            )
+
+        out_ep = self.endpoints[f'out_{port_out}']
+        if out_ep is None:
+            raise RuntimeError(f"Output port out_{port_out} is not bound on crossbar '{self.name}'")
+
+        cycles = self.latency_init + words.shape[0]
+        dly = cycles / self.clk.freq
+        if dly > 0:
+            yield self.timeout(dly)
+
+        with out_ep.bus.request() as req:
+            yield req
+
+            nwords_rem = words.shape[0]
+
+            if nwords_rem > 0:
+                yield out_ep.nrx.put(1)
+                nwords_rem -= 1
+
+            nwords_rx = min(nwords_rem, out_ep.nrx.capacity - out_ep.nrx.level)
+            if nwords_rx > 0:
+                yield out_ep.nrx.put(nwords_rx)
+                nwords_rem -= nwords_rx
+
+            if nwords_rem > 0:
+                yield out_ep.ntx.put(nwords_rem)
+
+            yield out_ep.data_buffer.put(words)
+
+    def bind(self, ep_name: str, endpoint: InterfaceEndpoint) -> None:
+        if ep_name.startswith('in_'):
+            try:
+                idx = int(ep_name[3:])
+            except ValueError:
+                raise KeyError(f"Invalid endpoint name '{ep_name}' for CrossBarIF")
+            if idx >= self.nports_in:
+                raise KeyError(
+                    f"Input port index {idx} is out of range for crossbar with {self.nports_in} input(s)"
+                )
+            if not isinstance(endpoint, CrossBarIFInput):
+                raise TypeError("Input sides of CrossBarIF must bind to CrossBarIFInput")
+        elif ep_name.startswith('out_'):
+            try:
+                idx = int(ep_name[4:])
+            except ValueError:
+                raise KeyError(f"Invalid endpoint name '{ep_name}' for CrossBarIF")
+            if idx >= self.nports_out:
+                raise KeyError(
+                    f"Output port index {idx} is out of range for crossbar with {self.nports_out} output(s)"
+                )
+            if not isinstance(endpoint, CrossBarIFOutput):
+                raise TypeError("Output sides of CrossBarIF must bind to CrossBarIFOutput")
+        else:
+            raise KeyError(f"Invalid endpoint name '{ep_name}' for CrossBarIF")
+
+        if self.bitwidth is None:
+            self.bitwidth = endpoint.bitwidth
+        if self.bitwidth != endpoint.bitwidth:
+            raise ValueError(
+                f"Endpoint bitwidth {endpoint.bitwidth} does not match interface bitwidth {self.bitwidth}"
+            )
+
+        if ep_name.startswith('in_'):
+            endpoint.port_in = idx
+
+        super().bind(ep_name, endpoint)
+
+
+@dataclass
+class CrossBarIFInput(InterfaceEndpoint):
+    """
+    An input endpoint for a :class:`CrossBarIF`.
+
+    An upstream master calls :meth:`write` to push a burst of words into the
+    crossbar; the crossbar's routing function determines which output port
+    receives the data.
+    """
+
+    bitwidth: int = 32
+    """Bitwidth of the data words."""
+
+    port_in: int = field(init=False)
+    """Index of the input port this endpoint is bound to. Set by :meth:`CrossBarIF.bind`."""
+
+    type_name = 'crossbar_if_input'
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.port_in = -1
+
+    def write(self, words: Words) -> ProcessGen:
+        """
+        Write a burst of words into the crossbar at this input port.
+
+        Parameters
+        ----------
+        words : Words
+            The block of words to write.
+
+        Example
+        -------
+        ```
+        words = np.array([1, 2, 3], dtype=np.uint32)
+        yield env.process( input_ep.write(words) )
+        ```
+        """
+        if self.interface is None:
+            raise RuntimeError(
+                "Cannot write: CrossBarIFInput is not bound to a CrossBarIF"
+            )
+        yield self.process(self.interface.write(words, self.port_in))
+
+
+@dataclass
+class CrossBarIFOutput(InterfaceEndpoint):
+    """
+    An output endpoint for a :class:`CrossBarIF`.
+
+    Words routed to this port are buffered internally and delivered to the
+    optional :attr:`rx_proc` callback, mirroring the behaviour of
+    :class:`StreamIFSlave`.
+    """
+
+    bitwidth: int = 32
+    """Bitwidth of the data words."""
+
+    rx_proc: RxProc | None = None
+    """Optional process called with each received burst of words."""
+
+    queue_size: int | None = None
+    """Optional RX queue depth in words. ``None`` means unbounded."""
+
+    data_buffer: simpy.Store = field(init=False)
+    """Buffer holding incoming bursts; each entry is one full burst."""
+
+    bus: simpy.Resource = field(init=False)
+    """Serialises concurrent writes from different input ports."""
+
+    nrx: simpy.Container = field(init=False)
+    """Number of words pending in the RX queue."""
+
+    ntx: simpy.Container = field(init=False)
+    """Number of words pending in the TX (overflow) queue."""
+
+    type_name = 'crossbar_if_output'
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.data_buffer = simpy.Store(self.env)
+        self.bus = simpy.Resource(self.env, capacity=1)
+        capacity = self.queue_size if self.queue_size is not None else float('inf')
+        self.nrx = simpy.Container(self.env, init=0, capacity=capacity)
+        self.ntx = simpy.Container(self.env, init=0)
+
+    def run_proc(self) -> ProcessGen:
+        """Continually processes incoming data bursts and invokes :attr:`rx_proc`."""
+        while True:
+            words = yield self.data_buffer.get()
+            nwords = words.shape[0]
+
+            btx = min(nwords, self.ntx.level)
+            if btx > 0:
+                yield self.ntx.get(btx)
+
+            brx = nwords - btx
+            if brx > 0:
+                if self.nrx.level < brx:
+                    raise RuntimeError(
+                        f"Not enough words in RX queue to read {nwords} words. "
+                        f"RX queue level: {self.nrx.level}, TX queue level: {self.ntx.level}"
+                    )
+                yield self.nrx.get(brx)
+
+            if self.rx_proc is not None:
+                yield self.env.process(self.rx_proc(words))
