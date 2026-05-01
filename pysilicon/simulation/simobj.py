@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Generator
+from pysilicon.hw.named import NamedObject
 
 import simpy
 
@@ -26,8 +27,32 @@ class ActionOverlap(object):
     previous: ActionRecord
     current: ActionRecord
 
+@dataclass
+class SimConfig(NamedObject):
+    """Configuration parameters for a simulation run."""
 
-class SimObj(object):
+    env : simpy.Environment | None = None
+    """Shared simulation environment. If None, a new environment 
+    will be created."""
+
+    duration: float = 0
+    """Simulation duration in seconds. Must be non-negative. 
+       Ignored if zero."""
+
+    def __post_init__(self) -> None:
+        if self.env is not None and not isinstance(self.env, simpy.Environment):
+            raise ValueError("env must be a simpy.Environment or None.")
+        if self.duration < 0:
+            raise ValueError("duration must be non-negative.")
+        
+        # Create a new environment if none was provided
+        if self.env is None:
+            self.env = simpy.Environment()
+
+    
+
+@dataclass
+class SimObj(NamedObject):
     """
     Base class for active simulation entities built on top of ``simpy``.
 
@@ -36,39 +61,52 @@ class SimObj(object):
     consume and produce transactions.
     """
 
-    def __init__(
-        self,
-        env: simpy.Environment,
-        name: str | None = None,
-        track_action_overlaps: bool = True,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        env : simpy.Environment
-            Shared simulation environment.
-        name : str | None
-            Optional object name. Defaults to class name.
-        track_action_overlaps : bool
-            If ``True``, overlapping action windows are captured in
-            ``action_overlaps`` for race/resource conflict analysis.
-        """
-        self.env: simpy.Environment = env
-        self.name: str = self.__class__.__name__ if name is None else name
-        self.track_action_overlaps: bool = track_action_overlaps
+    sim_config: SimConfig | None = None
+    """Configuration parameters for the simulation environment."""
 
+    track_action_overlaps: bool = True
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __post_init__(self) -> None:
+        """
+        Initialize the the process registry
+        """
+        super().__post_init__()
+        if self.sim_config is None:
+            raise ValueError("sim_config must be provided.")
+        
         self.processes: list[simpy.events.Process] = []
         self._process_factories: list[tuple[str, ProcessFactory]] = []
         self.action_history: list[ActionRecord] = []
         self.action_overlaps: list[ActionOverlap] = []
 
     @property
+    def env(self) -> simpy.Environment:
+        """The shared simulation environment."""
+        return self.sim_config.env
+    
+    @property
     def now(self) -> float:
-        """Current simulation timestamp."""
+        """Current simulation timestamp in seconds.  """
         return float(self.env.now)
 
     def timeout(self, delay: float) -> simpy.events.Timeout:
-        """Convenience wrapper around ``env.timeout``."""
+        """Convenience wrapper around ``env.timeout``. 
+
+        Parameters
+        ----------
+        delay : float
+            Time to wait in seconds. Must be non-negative. 
+        
+        Example
+        --------
+        
+        ```
+        yield self.timeout(5)  # wait for 5 seconds
+        ```
+        """
         if delay < 0:
             raise ValueError("delay must be non-negative.")
         return self.env.timeout(delay)

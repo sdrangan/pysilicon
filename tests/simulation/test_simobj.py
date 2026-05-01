@@ -1,17 +1,22 @@
 import pytest
 import simpy
 
-from pysilicon.simulation.simobj import ActionOverlap, ActionRecord, SimObj
+from pysilicon.simulation.simobj import ActionOverlap, ActionRecord, SimConfig, SimObj
+
+
+def make_obj(env: simpy.Environment, **kwargs) -> SimObj:
+    return SimObj(sim_config=SimConfig(env=env), **kwargs)
 
 
 def test_init_defaults_and_custom_name() -> None:
     """Verify constructor defaults and explicit naming/overlap-tracking overrides."""
     env = simpy.Environment()
-    obj = SimObj(env)
-    named = SimObj(env, name="worker", track_action_overlaps=False)
+    obj = make_obj(env)
+    named = make_obj(env, name="worker", track_action_overlaps=False)
 
     assert obj.env is env
-    assert obj.name == "SimObj"
+    assert obj.type_name == "sim_obj"
+    assert obj.name.startswith("sim_obj")
     assert obj.track_action_overlaps is True
     assert obj.processes == []
     assert obj.action_history == []
@@ -24,7 +29,7 @@ def test_init_defaults_and_custom_name() -> None:
 def test_now_and_timeout_progress_time() -> None:
     """Ensure timeout advances simulation time and now reflects the progressed clock."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     assert obj.now == 0.0
     evt = obj.timeout(3.5)
@@ -36,7 +41,7 @@ def test_now_and_timeout_progress_time() -> None:
 def test_timeout_rejects_negative_delay() -> None:
     """Reject negative timeout delays with a clear ValueError."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     with pytest.raises(ValueError, match="delay must be non-negative"):
         obj.timeout(-1)
@@ -45,7 +50,7 @@ def test_timeout_rejects_negative_delay() -> None:
 def test_event_creates_plain_event_in_same_environment() -> None:
     """Create a plain event bound to the same environment and support succeed/value flow."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
     evt = obj.event()
 
     assert evt.env is env
@@ -58,7 +63,7 @@ def test_event_creates_plain_event_in_same_environment() -> None:
 def test_process_registers_and_completes() -> None:
     """Register a process in SimObj bookkeeping and preserve its return value on completion."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     def worker():
         yield obj.timeout(2)
@@ -74,7 +79,7 @@ def test_process_registers_and_completes() -> None:
 def test_add_process_and_start_registered_processes() -> None:
     """Validate process factory registration semantics for autostart and deferred startup."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
     calls: list[str] = []
 
     def p1():
@@ -99,7 +104,7 @@ def test_add_process_and_start_registered_processes() -> None:
 def test_add_process_requires_non_empty_name() -> None:
     """Require non-empty process names when registering process factories."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     with pytest.raises(ValueError, match="name must be non-empty"):
         obj.add_process("", lambda: iter(()))
@@ -108,7 +113,7 @@ def test_add_process_requires_non_empty_name() -> None:
 def test_resource_and_transaction_queue_helpers() -> None:
     """Construct queue/resource helpers and enforce positive resource capacity."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     q = obj.transaction_queue(capacity=2)
     assert q.capacity == 2
@@ -123,7 +128,7 @@ def test_resource_and_transaction_queue_helpers() -> None:
 def test_container_helper_creates_container_with_capacity_and_init() -> None:
     """Construct a container helper with the requested capacity and initial level."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     c = obj.container(capacity=10, init=4)
 
@@ -134,7 +139,7 @@ def test_container_helper_creates_container_with_capacity_and_init() -> None:
 def test_action_records_duration_and_validation() -> None:
     """Record action timing windows and validate action input arguments."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     def runner():
         record0 = yield from obj.action("instant")
@@ -155,13 +160,13 @@ def test_action_records_duration_and_validation() -> None:
 
     with pytest.raises(ValueError, match="name must be non-empty"):
         env2 = simpy.Environment()
-        obj2 = SimObj(env2)
+        obj2 = make_obj(env2)
         env2.process(obj2.action(""))
         env2.run()
 
     with pytest.raises(ValueError, match="processing_delay must be non-negative"):
         env3 = simpy.Environment()
-        obj3 = SimObj(env3)
+        obj3 = make_obj(env3)
         env3.process(obj3.action("bad", processing_delay=-1))
         env3.run()
 
@@ -169,7 +174,7 @@ def test_action_records_duration_and_validation() -> None:
 def test_action_overlap_tracking_and_clear_logs() -> None:
     """Detect overlapping actions when enabled and verify clear_action_logs resets records."""
     env = simpy.Environment()
-    obj = SimObj(env)
+    obj = make_obj(env)
 
     def first():
         yield from obj.action("first", processing_delay=5)
@@ -196,7 +201,7 @@ def test_action_overlap_tracking_and_clear_logs() -> None:
 def test_action_overlap_tracking_can_be_disabled() -> None:
     """Do not collect overlap records when overlap tracking is explicitly disabled."""
     env = simpy.Environment()
-    obj = SimObj(env, track_action_overlaps=False)
+    obj = make_obj(env, track_action_overlaps=False)
 
     def first():
         yield from obj.action("first", processing_delay=5)
