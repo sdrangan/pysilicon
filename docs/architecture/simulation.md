@@ -12,10 +12,33 @@ The simulation subsystem models both hardware and non‑hardware entities in a u
 
 Two primary abstractions structure the simulation:
 
-- **`SimObj`** — Represents any active entity in the simulation. This includes hardware modules (`HwObj`), software processes, sensors, wireless channels, robots, or any physical or logical component that produces or consumes transactions.
-- **`Environment`** — A container that holds all `SimObj` instances and manages the global `simpy` event loop. It orchestrates time, scheduling, and interactions between objects.
+- **`Simulation`** — The runtime coordination object. It owns the `simpy` environment, maintains a registry of all `SimObj` instances, and drives the standard three-phase simulation lifecycle via `run_sim()`.
+- **`SimObj`** — Base class for any entity that participates in the simulation. This includes hardware modules (`HwObj`), software processes, sensors, wireless channels, robots, or any physical or logical component that produces or consumes transactions. Each `SimObj` registers itself with a `Simulation` during construction.
 
-Each `SimObj` registers one or more **processes** with the `simpy` environment. These processes model the concurrent behaviors of the object, such as reacting to incoming transactions, generating data, or interacting with the physical environment.
+## Simulation Lifecycle
+
+Every `SimObj` participates in a three-phase lifecycle managed by `Simulation.run_sim()`:
+
+1. **`pre_sim()`** — Called on all registered objects before the event loop starts. Use this for per-object setup, validation, or initial event scheduling. The default implementation is a no-op.
+2. **`run_proc()`** — An optional SimPy generator process. If an object returns a non-`None` generator, it is scheduled via `env.process()`. Returning `None` (the default) marks the object as *passive*; it participates only through `pre_sim()` and `post_sim()`.
+3. **`post_sim()`** — Called on all registered objects after the event loop ends. Use this to collect statistics, assert invariants, or emit reports. The default implementation is a no-op.
+
+A minimal active object looks like:
+
+```python
+from pysilicon.simulation import Simulation, SimObj
+
+class Producer(SimObj):
+    def run_proc(self):
+        for _ in range(3):
+            yield self.timeout(1)
+        self.done = True
+
+sim = Simulation()
+p = Producer(sim)
+sim.run_sim()
+assert p.done
+```
 
 ## Modeling Hardware Objects
 

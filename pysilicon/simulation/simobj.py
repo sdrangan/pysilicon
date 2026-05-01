@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Generator
+from typing import TYPE_CHECKING, Any, Callable, Generator
 
 import simpy
+
+if TYPE_CHECKING:
+    from .simulation import Simulation
 
 
 ProcessGen = Generator[simpy.events.Event, Any, Any]
@@ -29,31 +32,41 @@ class ActionOverlap(object):
 
 class SimObj(object):
     """
-    Base class for active simulation entities built on top of ``simpy``.
+    Base class for simulation entities built on top of ``simpy``.
 
     A ``SimObj`` owns one or more concurrent processes registered with a shared
-    ``simpy.Environment``. Subclasses typically register long-running loops that
-    consume and produce transactions.
+    ``simpy.Environment``.  Subclasses typically register long-running loops
+    that consume and produce transactions.
+
+    Each ``SimObj`` registers itself with the provided :class:`Simulation`
+    instance so that :meth:`Simulation.run_sim` can drive the standard
+    three-phase lifecycle:
+
+    * :meth:`pre_sim`  — setup / validation before the event loop starts
+    * :meth:`run_proc` — optional SimPy generator process
+    * :meth:`post_sim` — inspection / finalization after the event loop ends
     """
 
     def __init__(
         self,
-        env: simpy.Environment,
+        sim: Simulation,
         name: str | None = None,
         track_action_overlaps: bool = True,
     ) -> None:
         """
         Parameters
         ----------
-        env : simpy.Environment
-            Shared simulation environment.
+        sim : Simulation
+            Owning simulation.  The object registers itself with *sim* and
+            borrows its ``simpy.Environment``.
         name : str | None
             Optional object name. Defaults to class name.
         track_action_overlaps : bool
             If ``True``, overlapping action windows are captured in
             ``action_overlaps`` for race/resource conflict analysis.
         """
-        self.env: simpy.Environment = env
+        self.sim: Simulation = sim
+        self.env: simpy.Environment = sim.env
         self.name: str = self.__class__.__name__ if name is None else name
         self.track_action_overlaps: bool = track_action_overlaps
 
@@ -61,6 +74,35 @@ class SimObj(object):
         self._process_factories: list[tuple[str, ProcessFactory]] = []
         self.action_history: list[ActionRecord] = []
         self.action_overlaps: list[ActionOverlap] = []
+
+        sim.add_obj(self)
+
+    # ------------------------------------------------------------------
+    # Lifecycle hooks
+    # ------------------------------------------------------------------
+
+    def pre_sim(self) -> None:
+        """Called once before the simulation event loop starts.
+
+        Override to perform per-object setup, validation, or initial event
+        scheduling.  The default implementation is a no-op.
+        """
+
+    def run_proc(self) -> ProcessGen | None:
+        """Return a SimPy generator process to schedule, or ``None``.
+
+        Returning ``None`` (the default) marks the object as *passive*; it
+        participates only through :meth:`pre_sim` / :meth:`post_sim`.
+        Active objects should override this method and ``yield`` SimPy events.
+        """
+        return None
+
+    def post_sim(self) -> None:
+        """Called once after the simulation event loop ends.
+
+        Override to collect statistics, assert invariants, or emit reports.
+        The default implementation is a no-op.
+        """
 
     @property
     def now(self) -> float:
