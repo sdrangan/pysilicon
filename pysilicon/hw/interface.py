@@ -349,6 +349,8 @@ class StreamIFSlave(InterfaceEndpoint):
     ntx : simpy.Container = field(init=False)
     """Number of pending words in the TX queue."""
 
+    type_name = 'stream_if_slave'
+
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -370,7 +372,7 @@ class StreamIFSlave(InterfaceEndpoint):
         """
         Continual run loop for the slave to processing incoming transfers
         """
-        while (1):
+        while True:
             # Wait for the block of words to be available
             words = yield self.data_buffer.get()
             nwords = words.shape[0]
@@ -408,6 +410,8 @@ class StreamIFMaster(InterfaceEndpoint):
     """
     The method for notifying the receiver side of transfers on 
     this interface. """
+
+    type_name = 'stream_if_master'
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
