@@ -1,3 +1,9 @@
+"""
+CrossBarIF-specific tests: routing behaviour and topology validation.
+
+Timing / data-correctness tests shared with StreamIF are in test_interface.py
+(parameterised over both StreamScenario and CrossBarScenario11).
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,19 +17,18 @@ from pysilicon.hw.interface import (
     CrossBarIF,
     CrossBarIFInput,
     CrossBarIFOutput,
-    StreamIFSlave,
     Words,
 )
 from pysilicon.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Multi-port routing harness
 # ---------------------------------------------------------------------------
 
 class CrossBarScenario:
     """
-    Test harness for a single CrossBarIF with configurable topology.
+    Test harness for a CrossBarIF with configurable topology.
 
     Parameters
     ----------
@@ -36,7 +41,7 @@ class CrossBarScenario:
     rx_processing_delay : float
         SimPy time each output spends processing one burst.
     clk_freq : float
-        Clock frequency in Hz (used as simulated time = words / freq).
+        Clock frequency in Hz.
     """
 
     def __init__(
@@ -119,7 +124,6 @@ class CrossBarScenario:
 
             self.env.process(_proc())
 
-        # Run the crossbar output loops
         for out in self.outputs:
             self.env.process(out.run_proc())
 
@@ -131,7 +135,7 @@ class CrossBarScenario:
 
 
 # ---------------------------------------------------------------------------
-# Data-correctness tests
+# Routing tests
 # ---------------------------------------------------------------------------
 
 def test_identity_routing_2x2():
@@ -145,7 +149,6 @@ def test_identity_routing_2x2():
 
     assert len(sc.received[0]) == 1
     npt.assert_array_equal(sc.received[0][0], pkts0[0])
-
     assert len(sc.received[1]) == 1
     npt.assert_array_equal(sc.received[1][0], pkts1[0])
 
@@ -182,18 +185,15 @@ def test_route_fn_based_on_data():
 
     assert len(sc.received[0]) == 1
     npt.assert_array_equal(sc.received[0][0], even_pkt)
-
     assert len(sc.received[1]) == 1
     npt.assert_array_equal(sc.received[1][0], odd_pkt)
 
 
 def test_multiple_packets_single_path():
-    """Multiple bursts on a single 1x1 path are all delivered in order."""
+    """Multiple bursts on a single 1×1 path are all delivered in order."""
     sc = CrossBarScenario(nports_in=1, nports_out=1)
 
-    packets = [
-        np.array([i, i + 1], dtype=np.uint32) for i in range(0, 10, 2)
-    ]
+    packets = [np.array([i, i + 1], dtype=np.uint32) for i in range(0, 10, 2)]
     sc.run({0: packets})
 
     assert len(sc.received[0]) == len(packets)
@@ -202,92 +202,7 @@ def test_multiple_packets_single_path():
 
 
 # ---------------------------------------------------------------------------
-# Timing tests  (clock freq = 1 Hz so cycles == seconds)
-# ---------------------------------------------------------------------------
-
-def test_timing_single_input_no_backpressure():
-    """
-    Single path, three packets with a gap.  Write-end time equals nwords
-    (with freq=1 and latency_init=0).
-    """
-    sc = CrossBarScenario(nports_in=1, nports_out=1, clk_freq=1.0)
-
-    packets = [
-        np.array([1, 2, 3], dtype=np.uint32),   # 3 words  -> t=3
-        np.array([10, 11], dtype=np.uint32),     # 2 words  -> t=3+1(gap)+2=6
-        np.array([99], dtype=np.uint32),          # 1 word   -> t=6+1+1=8
-    ]
-    tx_gap = 1.0
-    write_end_times: list[float] = []
-
-    def _proc():
-        for pkt in packets:
-            yield sc.env.process(sc.inputs[0].write(pkt))
-            write_end_times.append(sc.env.now)
-            yield sc.env.timeout(tx_gap)
-
-    done = sc.env.event()
-
-    def _outer():
-        yield from _proc()
-        done.succeed()
-
-    sc.env.process(_outer())
-    for out in sc.outputs:
-        sc.env.process(out.run_proc())
-    sc.env.run(until=done)
-
-    assert write_end_times == pytest.approx([3.0, 6.0, 8.0])
-    assert sc.rx_start_times[0] == pytest.approx([3.0, 6.0, 8.0])
-
-
-def test_timing_backpressure():
-    """
-    Bounded queue forces the sender to stall when the receiver is slow.
-    Mirrors the shallow-queue test from test_interface.py.
-    """
-    sc = CrossBarScenario(
-        nports_in=1,
-        nports_out=1,
-        queue_sizes=[2],
-        rx_processing_delay=5.0,
-        clk_freq=1.0,
-    )
-
-    packets = [
-        np.array([1, 2], dtype=np.uint32),
-        np.array([3, 4], dtype=np.uint32),
-        np.array([5, 6], dtype=np.uint32),
-    ]
-    write_end_times: list[float] = []
-
-    def _proc():
-        for pkt in packets:
-            yield sc.env.process(sc.inputs[0].write(pkt))
-            write_end_times.append(sc.env.now)
-
-    all_rx_done = sc.env.event()
-
-    def _rx_monitor():
-        while len(sc.rx_end_times[0]) < len(packets):
-            yield sc.env.timeout(0.1)
-        all_rx_done.succeed()
-
-    sc.env.process(_proc())
-    for out in sc.outputs:
-        sc.env.process(out.run_proc())
-    sc.env.process(_rx_monitor())
-    sc.env.run(until=all_rx_done)
-
-    assert write_end_times == pytest.approx([2.0, 4.0, 7.0])
-    assert sc.rx_start_times[0] == pytest.approx([2.0, 7.0, 12.0])
-    assert sc.rx_end_times[0] == pytest.approx([7.0, 12.0, 17.0])
-    assert sc.outputs[0].nrx.level == 0
-    assert sc.outputs[0].ntx.level == 0
-
-
-# ---------------------------------------------------------------------------
-# Validation / error tests
+# CrossBarIF-specific validation tests
 # ---------------------------------------------------------------------------
 
 def test_invalid_nports_in():
