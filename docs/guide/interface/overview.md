@@ -1,6 +1,6 @@
 ---
 title: Overview
-parent: Hardware Interfaces
+parent: Interfaces
 nav_order: 1
 has_children: false
 ---

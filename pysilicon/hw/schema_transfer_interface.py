@@ -9,9 +9,63 @@ from typing import Any, Callable
 import numpy as np
 import simpy
 
-from pysilicon.hw.dataschema import Words
+from pysilicon.hw.dataschema import FloatField, IntField, Words
 from pysilicon.hw.interface import Interface, InterfaceEndpoint, StreamIFMaster, StreamIFSlave
 from pysilicon.simulation.simobj import ProcessGen
+
+
+# ---------------------------------------------------------------------------
+# Numpy fast-path helpers for ArrayTransferIF
+# ---------------------------------------------------------------------------
+
+def _scalar_dtype_for_fast_path(
+    element_type: type, word_bw: int
+) -> tuple[np.dtype, np.dtype] | None:
+    """Return ``(elem_dtype, word_dtype)`` for the numpy fast path, or ``None``.
+
+    Fast path is available for scalar ``FloatField`` / ``IntField`` subclasses
+    whose value fits in exactly one word (``nwords_per_inst == 1``).
+    """
+    if not issubclass(element_type, (FloatField, IntField)):
+        return None
+    if element_type.nwords_per_inst(word_bw) != 1:
+        return None
+
+    word_dtype = np.dtype(np.uint32 if word_bw <= 32 else np.uint64)
+
+    if issubclass(element_type, FloatField):
+        bw = element_type.get_bitwidth()
+        elem_dtype = np.dtype(np.float32 if bw == 32 else np.float64)
+    else:  # IntField
+        bw = element_type.get_bitwidth()  # type: ignore[attr-defined]
+        signed: bool = element_type.signed  # type: ignore[attr-defined]
+        if bw <= 8:
+            elem_dtype = np.dtype(np.int8 if signed else np.uint8)
+        elif bw <= 16:
+            elem_dtype = np.dtype(np.int16 if signed else np.uint16)
+        elif bw <= 32:
+            elem_dtype = np.dtype(np.int32 if signed else np.uint32)
+        else:
+            elem_dtype = np.dtype(np.int64 if signed else np.uint64)
+
+    return elem_dtype, word_dtype
+
+
+def _to_words(arr: np.ndarray, elem_dtype: np.dtype, word_dtype: np.dtype) -> np.ndarray:
+    """Convert a numpy element array to a word array for transmission."""
+    arr = np.asarray(arr, dtype=elem_dtype)
+    if arr.dtype.itemsize == word_dtype.itemsize:
+        return arr.view(word_dtype)
+    unsigned_same = np.dtype(f'u{arr.dtype.itemsize}')
+    return arr.view(unsigned_same).astype(word_dtype)
+
+
+def _from_words(words: np.ndarray, elem_dtype: np.dtype) -> np.ndarray:
+    """Convert a word array back to a numpy element array after reception."""
+    if words.dtype.itemsize == elem_dtype.itemsize:
+        return words.view(elem_dtype)
+    unsigned_same = np.dtype(f'u{elem_dtype.itemsize}')
+    return words.astype(unsigned_same).view(elem_dtype)
 
 
 class PhysicalTransport(ABC):
@@ -171,9 +225,16 @@ class ArrayTransferIFMaster(InterfaceEndpoint):
         Parameters
         ----------
         elements:
-            Iterable of ``element_type`` instances or raw values (int, float, …)
-            that ``element_type(value)`` can accept.
+            ``np.ndarray`` of the element's native numpy dtype (fast path), or
+            an iterable of ``element_type`` instances / raw values accepted by
+            ``element_type(value)``.
         """
+        fast = _scalar_dtype_for_fast_path(self.element_type, self.bitwidth)
+        if fast is not None and isinstance(elements, np.ndarray):
+            elem_dtype, word_dtype = fast
+            all_words = _to_words(elements, elem_dtype, word_dtype)
+            yield from self.transport.write_words(all_words)
+            return
         nwords_per_elem = self.element_type.nwords_per_inst(self.bitwidth)
         items = list(elements)
         dtype = np.uint32 if self.bitwidth <= 32 else np.uint64
@@ -211,7 +272,11 @@ class ArrayTransferIFSlave(InterfaceEndpoint):
         if not self.pull_mode:
             self.transport.set_rx_callback(self._on_words_received)
 
-    def _deserialize(self, words: Words, count: int) -> list:
+    def _deserialize(self, words: Words, count: int) -> np.ndarray | list:
+        fast = _scalar_dtype_for_fast_path(self.element_type, self.bitwidth)
+        if fast is not None:
+            elem_dtype, _ = fast
+            return _from_words(words, elem_dtype)
         nwords_per_elem = self.element_type.nwords_per_inst(self.bitwidth)
         return [
             self.element_type().deserialize(
@@ -228,17 +293,16 @@ class ArrayTransferIFSlave(InterfaceEndpoint):
         if self.rx_proc is not None:
             yield self.env.process(self.rx_proc(elements))
 
-    def get(self, count: int) -> ProcessGen[list]:
+    def get(self, count: int) -> ProcessGen[np.ndarray | list]:
         """Pull and deserialize exactly *count* elements (pull model).
+
+        For scalar ``FloatField`` / ``IntField`` element types, returns a
+        ``np.ndarray`` of the element's native dtype (e.g. ``np.float32``).
+        For composite types, returns a ``list`` of deserialized instances.
 
         Validates that the burst contains precisely ``count *
         element_type.nwords_per_inst(bitwidth)`` words, matching the C++
         TLAST contract (TLAST_EARLY / NO_TLAST errors).
-
-        Returns
-        -------
-        list
-            List of *count* deserialized ``element_type`` instances.
         """
         nwords_per_elem = self.element_type.nwords_per_inst(self.bitwidth)
         expected = count * nwords_per_elem

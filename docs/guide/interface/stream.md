@@ -1,6 +1,6 @@
 ---
 title: Stream Interfaces
-parent: Hardware Interfaces
+parent: Interfaces
 nav_order: 2
 has_children: false
 ---

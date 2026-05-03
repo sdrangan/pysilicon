@@ -1,6 +1,7 @@
 """Tests for SchemaTransferIF: PhysicalTransport, StreamTransport, master/slave endpoints."""
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from pysilicon.hw.clock import Clock
@@ -722,66 +723,89 @@ def _float32_type():
 
 class TestArrayTransferIFRoundTrip:
     def test_u8_array_round_trip(self):
+        """Scalar IntField: get() returns np.ndarray[uint8]."""
         sim, env, _, arr_master, arr_slave = _make_array_scenario(U8)
-        got = []
+        result = []
+
+        def proc():
+            yield from arr_master.write(np.array([1, 2, 3, 4], dtype=np.uint8))
+            elems = yield from arr_slave.get(count=4)
+            result.append(elems)
+
+        done = env.process(proc())
+        env.run(until=done)
+
+        assert isinstance(result[0], np.ndarray)
+        assert result[0].dtype == np.uint8
+        assert np.array_equal(result[0], [1, 2, 3, 4])
+
+    def test_s16_array_round_trip(self):
+        """Scalar signed IntField: get() returns np.ndarray[int16]."""
+        sim, env, _, arr_master, arr_slave = _make_array_scenario(S16)
+        result = []
+
+        def proc():
+            yield from arr_master.write(np.array([-100, 0, 100], dtype=np.int16))
+            elems = yield from arr_slave.get(count=3)
+            result.append(elems)
+
+        done = env.process(proc())
+        env.run(until=done)
+
+        assert isinstance(result[0], np.ndarray)
+        assert result[0].dtype == np.int16
+        assert np.array_equal(result[0], [-100, 0, 100])
+
+    def test_float32_array_round_trip(self):
+        """FloatField: write/get accept/return np.ndarray[float32]."""
+        F32 = _float32_type()
+        sim, env, _, arr_master, arr_slave = _make_array_scenario(F32)
+        values = np.array([1.0, -2.5, 0.0, 3.14], dtype=np.float32)
+        result = []
+
+        def proc():
+            yield from arr_master.write(values)
+            elems = yield from arr_slave.get(count=len(values))
+            result.append(elems)
+
+        done = env.process(proc())
+        env.run(until=done)
+
+        assert isinstance(result[0], np.ndarray)
+        assert result[0].dtype == np.float32
+        assert np.allclose(result[0], values, atol=1e-6)
+
+    def test_schema_instance_write(self):
+        """write() still accepts schema instances (slow path) and get() returns ndarray."""
+        sim, env, _, arr_master, arr_slave = _make_array_scenario(U8)
+        result = []
 
         def proc():
             yield from arr_master.write([U8(v) for v in [1, 2, 3, 4]])
             elems = yield from arr_slave.get(count=4)
-            got.extend(elems)
+            result.append(elems)
 
         done = env.process(proc())
         env.run(until=done)
 
-        assert len(got) == 4
-        assert [int(e.val) for e in got] == [1, 2, 3, 4]
-
-    def test_s16_array_round_trip(self):
-        sim, env, _, arr_master, arr_slave = _make_array_scenario(S16)
-        got = []
-
-        def proc():
-            yield from arr_master.write([S16(v) for v in [-100, 0, 100]])
-            elems = yield from arr_slave.get(count=3)
-            got.extend(elems)
-
-        done = env.process(proc())
-        env.run(until=done)
-
-        assert [int(e.val) for e in got] == [-100, 0, 100]
-
-    def test_float32_array_round_trip(self):
-        F32 = _float32_type()
-        sim, env, _, arr_master, arr_slave = _make_array_scenario(F32)
-        values = [1.0, -2.5, 0.0, 3.14]
-        got = []
-
-        def proc():
-            yield from arr_master.write([F32(v) for v in values])
-            elems = yield from arr_slave.get(count=len(values))
-            got.extend(elems)
-
-        done = env.process(proc())
-        env.run(until=done)
-
-        assert len(got) == len(values)
-        for elem, expected in zip(got, values):
-            assert abs(float(elem.val) - expected) < 1e-5
+        assert isinstance(result[0], np.ndarray)
+        assert np.array_equal(result[0], [1, 2, 3, 4])
 
     def test_raw_value_write(self):
-        """write() accepts raw Python values, not just schema instances."""
+        """write() accepts raw Python values (slow path) and get() returns ndarray."""
         sim, env, _, arr_master, arr_slave = _make_array_scenario(U8)
-        got = []
+        result = []
 
         def proc():
-            yield from arr_master.write([10, 20, 30])  # raw ints
+            yield from arr_master.write([10, 20, 30])  # raw ints → slow path
             elems = yield from arr_slave.get(count=3)
-            got.extend(elems)
+            result.append(elems)
 
         done = env.process(proc())
         env.run(until=done)
 
-        assert [int(e.val) for e in got] == [10, 20, 30]
+        assert isinstance(result[0], np.ndarray)
+        assert np.array_equal(result[0], [10, 20, 30])
 
     def test_tlast_early_raises(self):
         """Burst shorter than count * nwords_per_elem raises RuntimeError."""
@@ -825,7 +849,7 @@ class TestArrayTransferIFRoundTrip:
         assert "Missing TLAST" in errors[0]
 
     def test_push_mode_rx_proc(self):
-        """ArrayTransferIFSlave push mode delivers elements via rx_proc."""
+        """ArrayTransferIFSlave push mode delivers np.ndarray via rx_proc."""
         sim = Simulation()
         env = sim.env
         clk = Clock(freq=1.0)
@@ -839,7 +863,7 @@ class TestArrayTransferIFRoundTrip:
         received = []
 
         def on_elements(elems):
-            received.extend(elems)
+            received.append(elems)
             yield env.timeout(0)
 
         arr_master = ArrayTransferIFMaster(
@@ -852,13 +876,15 @@ class TestArrayTransferIFRoundTrip:
         arr_slave.pre_sim()
 
         def tx():
-            yield from arr_master.write([U8(v) for v in [5, 6, 7]])
+            yield from arr_master.write(np.array([5, 6, 7], dtype=np.uint8))
 
         env.process(ss.run_proc())
         done = env.process(tx())
         env.run(until=env.timeout(10))
 
-        assert [int(e.val) for e in received] == [5, 6, 7]
+        assert len(received) == 1
+        assert isinstance(received[0], np.ndarray)
+        assert np.array_equal(received[0], [5, 6, 7])
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
 title: Schema Transfer Interface
-parent: Hardware Interfaces
+parent: Interfaces
 nav_order: 4
 has_children: false
 ---
