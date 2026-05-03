@@ -20,9 +20,12 @@ import math
 import posixpath
 from pathlib import Path, PurePosixPath
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeAlias
 
 import numpy as np
+from numpy.typing import NDArray
+
+Words: TypeAlias = NDArray[np.uint32] | NDArray[np.uint64]
 
 from pysilicon.build.build import CodeGenConfig
 
@@ -158,7 +161,7 @@ class DataSchema(ABC):
             return 1
         return int(packed.shape[0])
 
-    def serialize(self, word_bw: int = 32) -> np.ndarray:
+    def serialize(self, word_bw: int = 32) -> Words:
         """Serialize this runtime value into packed hardware words."""
         if word_bw <= 0:
             raise ValueError("word_bw must be positive.")
@@ -206,7 +209,7 @@ class DataSchema(ABC):
     ) -> tuple[int, int]:
         raise NotImplementedError(f"{self.__class__.__name__} does not implement serialization.")
 
-    def deserialize(self, packed: np.ndarray, word_bw: int = 32) -> DataSchema:
+    def deserialize(self, packed: Words, word_bw: int = 32) -> DataSchema:
         """Deserialize packed hardware words into this runtime value."""
         if word_bw <= 0:
             raise ValueError("word_bw must be positive.")

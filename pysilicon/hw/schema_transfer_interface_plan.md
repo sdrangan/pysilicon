@@ -1,120 +1,79 @@
-# SchemaTransferIF — Design Plan
+# SchemaTransferIF — Design Plan (revised)
 
 ## 1. Overview
 
-`SchemaTransferIF` is a logical interface for transmitting and receiving `DataSchema` objects
-over physical transport mechanisms such as `StreamIF` and `AXIMMCrossBarIF`. It leverages
-`DataSchema`'s existing `serialize()` / `deserialize()` methods to convert structured Python
-objects to and from raw word arrays, and adds a compact wire header so the receiver can
-reconstruct the correct schema type without out-of-band signaling.
+`SchemaTransferIF` is a logical interface for transmitting and receiving serializable
+objects over physical transport mechanisms such as `StreamIF` and `AXIMMCrossBarIF`.
 
-The design follows the same layering pattern already present in the codebase:
+The interface is **agnostic to framing**: it calls `obj.serialize(word_bw)` on the
+transmit side and `schema_type().deserialize(words, word_bw)` on the receive side.
+Whether `schema_type` is a `DataSchema` subclass (single known type, no header) or a
+`DataUnion` subclass (multi-type dispatch via header) is entirely the caller's concern.
 
 ```
-Application layer:  Component.write_schema(schema)  /  rx_schema_proc(schema, schema_cls)
-                        |                                        |
-Logical layer:   SchemaTransferIFMaster          SchemaTransferIFSlave
-                        |                                        |
-Transport layer: PhysicalTransport  (StreamTransport | AXIMMTransport | CrossBarTransport)
-                        |                                        |
-Physical layer:  StreamIFMaster / AXIMMCrossBarIFMaster   StreamIFSlave / AXIMMCrossBarIFSlave
+Application layer:  Component.write(obj)          rx_proc(obj)
+                          |                             |
+Logical layer:   SchemaTransferIFMaster     SchemaTransferIFSlave
+                          |                             |
+Transport layer:     PhysicalTransport  (StreamTransport | AXIMMTransport | ...)
+                          |                             |
+Physical layer:  StreamIFMaster / AXIMMCrossBarIFMaster   StreamIFSlave / ...
 ```
 
 ---
 
 ## 2. Goals
 
-1. Allow a `Component` to send any registered `DataSchema` instance through a single
-   `write_schema(schema)` call, regardless of the underlying physical interface.
-2. Allow a `Component` to receive `DataSchema` instances via a slave endpoint callback
-   `rx_schema_proc(schema_instance, schema_cls)` that provides both the deserialized object
-   and its Python class.
-3. Support multiple `DataSchema` types on the same interface using a schema type ID embedded
-   in the wire header.
+1. Allow a `Component` to transmit any serializable object through a single `write(obj)`
+   call, regardless of the underlying physical interface.
+2. Allow a `Component` to receive deserialized objects via an `rx_proc(obj)` callback
+   or a `simpy.Store` queue.
+3. Support both single-type and multi-type protocols by choosing the right `schema_type`
+   at construction time — `SchemaTransferIF` itself has no opinion on framing.
 4. Decouple the logical interface from the physical layer through a `PhysicalTransport`
-   abstraction, so a single `SchemaTransferIF` can back any physical transport.
+   abstraction.
 
 ---
 
 ## 3. Non-Goals / Out of Scope (Initial Version)
 
-- Flow control or acknowledgment beyond what the underlying physical layer already provides.
+- Flow control or acknowledgment beyond what the underlying physical layer provides.
 - Schema versioning or migration.
-- HLS code generation for `SchemaTransferIF` endpoints (deferred — requires extending
-  `DataSchema.gen_write` / `gen_read`).
-- Streaming fragmentation for schemas larger than the physical layer's maximum burst size.
+- HLS code generation for `SchemaTransferIF` endpoints.
+- Streaming fragmentation for objects larger than the physical layer's maximum burst.
 
 ---
 
 ## 4. Wire Protocol
 
-Each transmission is a single burst on the physical interface. The burst consists of:
+`SchemaTransferIF` imposes no wire format of its own. The format is determined
+entirely by the `schema_type` passed at construction:
 
-```
-Word 0:   [31:16] schema_id   [15:0] num_payload_words
-Words 1…N: serialize(schema, word_bw=bitwidth)     (N = num_payload_words)
-```
+| `schema_type` | Wire format | Header? |
+|---|---|---|
+| `type[DataSchema]` subclass | `schema.serialize(word_bw)` — payload only | No |
+| `type[DataUnion]` subclass | `DataUnionHdr` + padded payload | Yes (inside DataUnion) |
 
-- **`schema_id`** (16 bits): integer uniquely identifying the `DataSchema` subclass;
-  stored in the `SchemaRegistry`.
-- **`num_payload_words`** (16 bits): number of payload words; allows the slave to consume
-  exactly the right slice of the burst even if the burst carries trailing padding.
-- The header is always one word, regardless of the configured `bitwidth`. For 64-bit
-  transports the upper half of Word 0 is reserved as zero.
-
-This format is transport-agnostic and works for both stream and memory-mapped transports.
-If `num_payload_words` needs to exceed 65 535 (i.e., for very large schemas), the design
-can be extended to a two-word header in a later revision.
+In both cases `schema_type.nwords_per_inst(word_bw)` gives the fixed burst size,
+which the transport layer uses to frame bursts.
 
 ---
 
-## 5. Schema Registry
+## 5. Schema Registry and DataUnion (already implemented)
 
-A `SchemaRegistry` maintains a bidirectional mapping between integer IDs and
-`DataSchema` subclasses. It is intentionally separate from `DataSchema` itself so that
-a single class can participate in multiple registries with different IDs (e.g., in
-multi-subsystem designs).
+`SchemaRegistry`, `register_schema`, `SchemaIDField`, `LengthField`, `DataUnionHdr`,
+and `DataUnion` are all implemented in `pysilicon/hw/dataunion.py` and exported from
+`pysilicon/hw/__init__.py`. There is **no** default registry singleton; every design
+creates its own.
 
-```python
-class SchemaRegistry:
-    def register(self, schema_cls: type[DataSchema], schema_id: int) -> None: ...
-    def get_id(self, schema_cls: type[DataSchema]) -> int: ...
-    def get_class(self, schema_id: int) -> type[DataSchema]: ...
-```
-
-A module-level singleton `DEFAULT_SCHEMA_REGISTRY` is provided so simple designs do not
-need to manage registry lifetime. A class decorator `@register_schema` makes registration
-ergonomic:
-
-```python
-DEFAULT_SCHEMA_REGISTRY = SchemaRegistry()
-
-def register_schema(schema_id: int, registry: SchemaRegistry = DEFAULT_SCHEMA_REGISTRY):
-    """Class decorator: registers a DataSchema subclass in the given registry."""
-    def decorator(cls: type[DataSchema]) -> type[DataSchema]:
-        registry.register(cls, schema_id)
-        return cls
-    return decorator
-```
-
-Usage:
-
-```python
-@register_schema(schema_id=1)
-class SensorPacket(DataList):
-    elements = {"x": Int32, "y": Int32}
-
-@register_schema(schema_id=2)
-class ControlWord(DataList):
-    elements = {"opcode": UInt8, "payload": UInt32}
-```
+Single-type transfers require no registry at all.
 
 ---
 
 ## 6. Physical Transport Abstraction
 
-`PhysicalTransport` is an abstract base class with two responsibilities:
-(a) sending a word burst, and (b) registering a receive callback.
+`PhysicalTransport` is an ABC with two responsibilities: sending a word burst and
+registering a receive callback.
 
 ```python
 class PhysicalTransport(ABC):
@@ -126,13 +85,11 @@ class PhysicalTransport(ABC):
 
     @abstractmethod
     def set_rx_callback(self, callback: Callable[[Words], ProcessGen]) -> None:
-        """Register the callback to be invoked when a word burst arrives."""
+        """Register the callback invoked when a word burst arrives."""
         ...
 ```
 
 ### 6.1 StreamTransport
-
-Wraps a `StreamIFMaster` (TX path) or a `StreamIFSlave` (RX path).
 
 ```python
 class StreamTransport(PhysicalTransport):
@@ -140,22 +97,13 @@ class StreamTransport(PhysicalTransport):
     slave_ep: StreamIFSlave | None = None
 
     def write_words(self, words: Words) -> ProcessGen:
-        # delegates to StreamIFMaster.write(words)
         yield from self.master_ep.write(words)
 
     def set_rx_callback(self, callback: Callable[[Words], ProcessGen]) -> None:
-        # sets StreamIFSlave.rx_proc to the callback
         self.slave_ep.rx_proc = callback
 ```
 
-`StreamTransport` is constructed with either a master endpoint (for TX-side
-`SchemaTransferIFMaster`) or a slave endpoint (for RX-side `SchemaTransferIFSlave`).
-
 ### 6.2 AXIMMTransport
-
-Wraps `AXIMMCrossBarIFMaster` (TX) or `AXIMMCrossBarIFSlave` (RX). Uses a single
-dedicated base address for schema burst writes; the address is agreed upon at system
-configuration time.
 
 ```python
 class AXIMMTransport(PhysicalTransport):
@@ -167,17 +115,10 @@ class AXIMMTransport(PhysicalTransport):
         yield from self.master_ep.write(words, self.base_addr)
 
     def set_rx_callback(self, callback: Callable[[Words], ProcessGen]) -> None:
-        # wraps callback as AXIMMCrossBarIFSlave.rx_write_proc(words, local_addr)
         self.slave_ep.rx_write_proc = lambda words, addr: callback(words)
 ```
 
-`base_addr` must be within the `AXIMMAddressRange` assigned to the slave endpoint via the
-existing `assign_address_ranges` utility.
-
 ### 6.3 CrossBarTransport
-
-Wraps `CrossBarIFInput` (TX) or `CrossBarIFOutput` (RX), using the same delegation
-pattern as `StreamTransport`.
 
 ```python
 class CrossBarTransport(PhysicalTransport):
@@ -193,206 +134,245 @@ class CrossBarTransport(PhysicalTransport):
 
 ---
 
-## 7. SchemaTransferIF Endpoints and Interface
+## 7. SchemaTransferIF Endpoints
 
 ### 7.1 SchemaTransferIFMaster
 
-TX-side endpoint owned by a `Component`. The `Component` also owns the underlying
-physical endpoint (e.g., `StreamIFMaster`) and passes it to `StreamTransport` at
-construction time.
+The master has no `schema_type`: it simply serializes whatever object it is given.
 
 ```python
+@dataclass
 class SchemaTransferIFMaster(InterfaceEndpoint):
     transport: PhysicalTransport
-    registry: SchemaRegistry = DEFAULT_SCHEMA_REGISTRY
     bitwidth: int = 32
 
-    def write_schema(self, schema: DataSchema) -> ProcessGen:
-        schema_id = self.registry.get_id(type(schema))
-        payload = schema.serialize(word_bw=self.bitwidth)   # returns np.ndarray
-        num_words = len(payload)
-        header = np.array([(schema_id << 16) | num_words], dtype=np.uint32)
-        burst = np.concatenate([header, payload])
-        yield from self.transport.write_words(burst)
+    def write(self, obj) -> ProcessGen:
+        yield from self.transport.write_words(obj.serialize(word_bw=self.bitwidth))
 ```
 
 ### 7.2 SchemaTransferIFSlave
 
-RX-side endpoint. The `Component` provides an `rx_schema_proc` callback to receive
-deserialized schemas.
+The slave holds `schema_type` only to construct the right instance for
+deserialization. There is no branch on `DataUnion` vs `DataSchema`.
 
 ```python
+@dataclass
 class SchemaTransferIFSlave(InterfaceEndpoint):
     transport: PhysicalTransport
-    registry: SchemaRegistry = DEFAULT_SCHEMA_REGISTRY
+    schema_type: type   # type[DataSchema] | type[DataUnion]
     bitwidth: int = 32
-    rx_schema_proc: Callable[[DataSchema, type[DataSchema]], ProcessGen] | None = None
-    schema_queue: simpy.Store   # populated in pre_sim(); enables poll-style RX
+    rx_proc: Callable[[Any], ProcessGen] | None = None
 
     def pre_sim(self) -> None:
-        self.schema_queue = simpy.Store(self.sim.env)
+        self.queue = simpy.Store(self.sim.env)
         self.transport.set_rx_callback(self._on_words_received)
 
     def _on_words_received(self, words: Words) -> ProcessGen:
-        header = int(words[0])
-        schema_id = (header >> 16) & 0xFFFF
-        num_payload = header & 0xFFFF
-        payload = words[1: 1 + num_payload]
-        schema_cls = self.registry.get_class(schema_id)
-        schema_inst = schema_cls()
-        schema_inst.deserialize(payload, word_bw=self.bitwidth)
-        yield self.schema_queue.put((schema_inst, schema_cls))
-        if self.rx_schema_proc is not None:
-            yield from self.rx_schema_proc(schema_inst, schema_cls)
+        obj = self.schema_type().deserialize(words, word_bw=self.bitwidth)
+        yield self.queue.put(obj)
+        if self.rx_proc is not None:
+            yield from self.rx_proc(obj)
 ```
 
-`schema_queue` provides a `simpy.Store` interface for coroutines that prefer to `yield`
-on an incoming schema rather than provide a callback.
+`queue` provides a `simpy.Store` for coroutines that prefer to `yield` on an
+incoming object rather than use a callback.
 
 ### 7.3 SchemaTransferIF
-
-The logical interface acts as a named container for the master/slave endpoint pair.
-It does not subclass `QueuedTransferIF` because physical framing is handled by the
-transport layer; it only needs to validate that both endpoints share the same registry
-and bitwidth.
 
 ```python
 class SchemaTransferIF(Interface):
     endpoint_names = ('master', 'slave')
-    registry: SchemaRegistry = DEFAULT_SCHEMA_REGISTRY
 
     def bind(self, ep_name: str, endpoint: InterfaceEndpoint) -> None:
         # Validate endpoint is SchemaTransferIFMaster or SchemaTransferIFSlave
-        # Validate registry and bitwidth consistency
+        # Validate bitwidth consistency between master and slave
         super().bind(ep_name, endpoint)
 ```
 
 ---
 
-## 8. Associating Physical Endpoints with SchemaTransferIF
+## 8. Usage Examples
 
-Each `Component` that participates in schema transfer owns both a physical endpoint
-(e.g., `StreamIFMaster`) and a `SchemaTransferIFMaster`. The physical endpoint is passed
-to the transport at construction time, making the association explicit:
+### 8.1 Single-type transfer
+
+One component always sends `SensorPacket`; the other always receives it.
+No registry, no header.
 
 ```python
-class TxComponent(Component):
-    def __init__(self, sim, ...):
-        # Physical endpoint — registered with a StreamIF in the usual way
-        self.stream_master = StreamIFMaster(sim=sim, bitwidth=32)
-        self.add_endpoint(self.stream_master)
+U8  = IntField.specialize(bitwidth=8,  signed=False)
+S16 = IntField.specialize(bitwidth=16, signed=True)
 
-        # Logical endpoint — wraps the physical endpoint via StreamTransport
+class SensorPacket(DataList):
+    elements = {"temp_raw": S16, "sensor_id": U8}
+
+
+class TxComponent(Component):
+    def __init__(self, sim, clk):
+        self.stream_master = StreamIFMaster(sim=sim, bitwidth=32)
         self.schema_master = SchemaTransferIFMaster(
             sim=sim,
             transport=StreamTransport(master_ep=self.stream_master),
-            registry=my_registry,
             bitwidth=32,
         )
-        self.add_endpoint(self.schema_master)
-```
 
-```python
+    async def run_proc(self):
+        yield from self.schema_master.write(SensorPacket(temp_raw=-42, sensor_id=7))
+
+
 class RxComponent(Component):
-    def __init__(self, sim, ...):
+    def __init__(self, sim, clk):
         self.stream_slave = StreamIFSlave(sim=sim, bitwidth=32)
-        self.add_endpoint(self.stream_slave)
-
         self.schema_slave = SchemaTransferIFSlave(
             sim=sim,
             transport=StreamTransport(slave_ep=self.stream_slave),
-            registry=my_registry,
+            schema_type=SensorPacket,
             bitwidth=32,
-            rx_schema_proc=self._handle_schema,
+            rx_proc=self._on_packet,
         )
-        self.add_endpoint(self.schema_slave)
 
-    async def _handle_schema(
-        self, schema: DataSchema, schema_cls: type[DataSchema]
-    ) -> ProcessGen:
-        if isinstance(schema, SensorPacket):
-            yield from self._process_sensor(schema)
-        elif isinstance(schema, ControlWord):
-            yield from self._process_control(schema)
+    def _on_packet(self, pkt: SensorPacket) -> ProcessGen:
+        print(f"temp_raw={pkt.temp_raw}  sensor_id={pkt.sensor_id}")
+        yield self.timeout(0)
 ```
 
-Connecting at the system level:
-
-```python
-stream_if = StreamIF(sim=sim, clk=clk, bitwidth=32)
-stream_if.bind("master", tx_comp.stream_master)
-stream_if.bind("slave", rx_comp.stream_slave)
-
-schema_if = SchemaTransferIF(sim=sim, registry=my_registry)
-schema_if.bind("master", tx_comp.schema_master)
-schema_if.bind("slave", rx_comp.schema_slave)
-```
-
-Both the `StreamIF` and the `SchemaTransferIF` are declared; the `SchemaTransferIF` does
-not replace the physical interface but rather layers on top of it.
+Wire footprint: `SensorPacket.nwords_per_inst(32) = 1` word per transfer.
 
 ---
 
-## 9. Multi-Schema Dispatch on the RX Side
+### 8.2 Multi-type transfer (DataUnion)
 
-The `rx_schema_proc` callback receives `(schema_instance, schema_cls)`. The recommended
-dispatch pattern is a simple `isinstance` chain (readable, type-checked by mypy) or a
-dictionary keyed by `schema_cls`:
+Multiple packet types share one interface. The `DataUnion` header carries `schema_id`
+so the slave can dispatch; `SchemaTransferIF` itself sees only words.
 
 ```python
-# isinstance-based (recommended for small number of types)
-async def _handle_schema(self, schema, schema_cls):
-    if isinstance(schema, SensorPacket):
-        ...
-    elif isinstance(schema, ControlWord):
-        ...
+U8  = IntField.specialize(bitwidth=8,  signed=False)
+S16 = IntField.specialize(bitwidth=16, signed=True)
+U16 = IntField.specialize(bitwidth=16, signed=False)
 
-# dispatch-table (preferred for large or extensible type sets)
-_handlers = {
-    SensorPacket: _handle_sensor,
-    ControlWord:  _handle_control,
-}
+sensor_reg = SchemaRegistry("Sensor")
 
-async def _handle_schema(self, schema, schema_cls):
-    handler = self._handlers.get(schema_cls)
-    if handler:
-        yield from handler(self, schema)
+@register_schema(schema_id=1, registry=sensor_reg)
+class TempPacket(DataList):
+    elements = {"temp_raw": S16, "sensor_id": U8}
+
+@register_schema(schema_id=2, registry=sensor_reg)
+class PressPacket(DataList):
+    elements = {"pressure_pa": U16, "sensor_id": U8}
+
+@register_schema(schema_id=3, registry=sensor_reg)
+class AccelPacket(DataList):
+    elements = {"ax": S16, "ay": S16, "az": S16}
+
+SensorSchemaID = SchemaIDField.specialize(registry=sensor_reg, bitwidth=16)
+SensorHdr      = DataUnionHdr.specialize(schema_id_type=SensorSchemaID)
+SensorDU       = DataUnion.specialize(hdr_type=SensorHdr)
+
+
+class TxComponent(Component):
+    def __init__(self, sim, clk):
+        self.stream_master = StreamIFMaster(sim=sim, bitwidth=32)
+        self.schema_master = SchemaTransferIFMaster(
+            sim=sim,
+            transport=StreamTransport(master_ep=self.stream_master),
+            bitwidth=32,
+        )
+
+    async def run_proc(self):
+        for payload in [
+            TempPacket(temp_raw=-42, sensor_id=7),
+            AccelPacket(ax=100, ay=-200, az=980),
+            PressPacket(pressure_pa=10132, sensor_id=3),
+        ]:
+            du = SensorDU()
+            du.payload = payload
+            yield from self.schema_master.write(du)
+
+
+class RxComponent(Component):
+    def __init__(self, sim, clk):
+        self.stream_slave = StreamIFSlave(sim=sim, bitwidth=32)
+        self.schema_slave = SchemaTransferIFSlave(
+            sim=sim,
+            transport=StreamTransport(slave_ep=self.stream_slave),
+            schema_type=SensorDU,
+            bitwidth=32,
+            rx_proc=self._dispatch,
+        )
+
+    _handlers = {
+        TempPacket:  lambda self, p: self._on_temp(p),
+        PressPacket: lambda self, p: self._on_press(p),
+        AccelPacket: lambda self, p: self._on_accel(p),
+    }
+
+    def _dispatch(self, du: SensorDU) -> ProcessGen:
+        handler = self._handlers.get(type(du.payload))
+        if handler:
+            yield from handler(self, du.payload)
+
+    def _on_temp(self, p: TempPacket) -> ProcessGen:
+        print(f"Temp: {p.temp_raw}  sensor={p.sensor_id}")
+        yield self.timeout(0)
+
+    def _on_accel(self, p: AccelPacket) -> ProcessGen:
+        print(f"Accel: ax={p.ax}  ay={p.ay}  az={p.az}")
+        yield self.timeout(0)
+
+    def _on_press(self, p: PressPacket) -> ProcessGen:
+        print(f"Pressure: {p.pressure_pa}  sensor={p.sensor_id}")
+        yield self.timeout(0)
 ```
 
-For poll-style designs (e.g., a coroutine that blocks until a specific schema type arrives):
+Wire footprint: `SensorDU.nwords_per_inst(32) = 3` words per transfer
+(1 header + 2 payload words, padded to `AccelPacket`'s 48 bits).
+
+---
+
+## 9. Dispatch Patterns on the Receive Side
+
+In single-type mode `rx_proc` receives the deserialized `DataSchema` directly.
+
+In multi-type mode `rx_proc` receives a `DataUnion` instance. The caller accesses
+`.payload` and `type(.payload)` for dispatch:
 
 ```python
+# dispatch table (recommended)
+_handlers: dict[type, Callable] = {
+    TempPacket:  _on_temp,
+    AccelPacket: _on_accel,
+}
+
+def _dispatch(self, du: SensorDU) -> ProcessGen:
+    handler = self._handlers.get(type(du.payload))
+    if handler:
+        yield from handler(self, du.payload)
+
+# poll-style — block until next object arrives
 async def run_proc(self):
     while True:
-        event = self.schema_slave.schema_queue.get()
+        event = self.schema_slave.queue.get()
         yield event
-        schema, schema_cls = event.value
-        # process schema
+        du = event.value           # SensorDU in multi-type mode
+        # du.payload, type(du.payload), du.schema_id all available
 ```
 
 ---
 
 ## 10. Open Questions
 
-1. **Header word width for large schemas**: 16 bits for `num_payload_words` supports at
-   most 65 535 words × 4 bytes = 256 KB per transfer. For larger schemas, a two-word
-   header (or a 32-bit length field) would be needed.
-2. **Bitwidth negotiation**: Should `SchemaTransferIF.bind()` infer `bitwidth` from the
-   physical transport (mirroring how `QueuedTransferIF._validate_and_set_bitwidth` works),
-   or should it always be set explicitly?
-3. **AXI-MM address management**: `AXIMMTransport.base_addr` must not conflict with other
-   AXI-MM slaves. Should `SchemaTransferIF` register itself with `assign_address_ranges`,
-   or leave address assignment entirely to the system integrator?
+1. **`bitwidth` inference**: Should `SchemaTransferIF.bind()` infer `bitwidth` from
+   the physical transport, or always require it to be set explicitly?
+2. **AXI-MM address management**: `AXIMMTransport.base_addr` must not conflict with
+   other AXI-MM slaves. Should `SchemaTransferIF` register with `assign_address_ranges`,
+   or leave address assignment to the system integrator?
+3. **Unknown `schema_id` handling**: In multi-type mode, `SchemaIDField._convert()`
+   already raises `ValueError` for unregistered IDs during `DataUnion.deserialize()`.
+   Should the slave catch this and route to an optional `rx_unknown_proc` callback,
+   or let it propagate?
 4. **Read-back / request-response**: Should `SchemaTransferIF` support reading a schema
-   back through `AXIMMTransport` (using `rx_read_proc`)? This would enable a
-   request/response protocol where a master writes a request schema and reads a response
-   schema from the same address range.
-5. **Unknown schema_id handling**: If the slave receives an unregistered `schema_id`,
-   should it silently discard the burst, log a warning, raise an exception, or call an
-   optional `rx_unknown_proc` callback?
-6. **Transport lifetime and ownership**: The `PhysicalTransport` objects hold references to
-   physical endpoints. Should `SchemaTransferIF` take ownership (and call `pre_sim` on
-   them), or should the owning `Component` manage transport lifecycle?
+   back through `AXIMMTransport`, enabling a request/response protocol?
+5. **Transport lifetime**: Should `SchemaTransferIF` take ownership of
+   `PhysicalTransport` and call `pre_sim` on it, or leave lifecycle to the `Component`?
 
 ---
 
@@ -400,37 +380,41 @@ async def run_proc(self):
 
 ```
 pysilicon/hw/
-    schema_transfer_interface.py   # SchemaRegistry, register_schema decorator,
-                                   # PhysicalTransport (ABC),
-                                   # StreamTransport, AXIMMTransport, CrossBarTransport,
-                                   # SchemaTransferIFMaster, SchemaTransferIFSlave,
-                                   # SchemaTransferIF
+    dataunion.py                    # already complete:
+                                    #   SchemaRegistry, register_schema,
+                                    #   SchemaIDField, LengthField,
+                                    #   DataUnionHdr, DataUnion
+
+    schema_transfer_interface.py    # to be implemented:
+                                    #   PhysicalTransport (ABC),
+                                    #   StreamTransport, AXIMMTransport, CrossBarTransport,
+                                    #   SchemaTransferIFMaster, SchemaTransferIFSlave,
+                                    #   SchemaTransferIF
 
 tests/hw/
-    test_schema_transfer_interface.py   # unit tests:
-                                        #   - serialize/deserialize round-trip
-                                        #   - header encoding/decoding
-                                        #   - multi-schema dispatch
-                                        #   - StreamTransport integration
-                                        #   - AXIMMTransport integration
+    test_dataunion.py               # already complete (144 tests)
+    test_dataunion_vitis.py         # already complete (vitis loopback)
+    test_schema_transfer_interface.py  # to be implemented:
+                                       #   single-type round-trip
+                                       #   multi-type round-trip via DataUnion
+                                       #   StreamTransport integration (SimPy)
+                                       #   AXIMMTransport integration
 
 examples/interface/
-    schema_transfer_demo.py        # end-to-end demo using StreamIF as physical layer
+    schema_transfer_demo.py         # end-to-end demo, both modes
 ```
 
 ---
 
 ## 12. Implementation Sequence
 
-1. **DataSchema extension** (optional, minimal): Confirm that `serialize()` /
-   `deserialize()` are sufficient as-is. No changes to `DataSchema` are required for the
-   core design; `schema_id` lives in `SchemaRegistry`, not on the class.
-2. **`SchemaRegistry` + `register_schema` decorator**: Implement and test in isolation.
-3. **`PhysicalTransport` ABC + `StreamTransport`**: The simplest physical layer; enables
+1. ~~**`SchemaRegistry` + `register_schema`**~~ — complete (`dataunion.py`)
+2. ~~**`DataUnion` + `DataUnionHdr`**~~ — complete (`dataunion.py`)
+3. **`PhysicalTransport` ABC + `StreamTransport`**: simplest physical layer; enables
    most of the logical interface to be built and tested without AXI-MM.
-4. **`SchemaTransferIFMaster`, `SchemaTransferIFSlave`, `SchemaTransferIF`**: Core logical
-   layer; write unit tests using `StreamTransport`.
-5. **`AXIMMTransport` + `CrossBarTransport`**: Add remaining physical layer adapters with
-   corresponding tests.
-6. **Integration example** (`schema_transfer_demo.py`): End-to-end demo wiring
-   `TxComponent` → `StreamIF` → `RxComponent` with multi-schema dispatch.
+4. **`SchemaTransferIFMaster`, `SchemaTransferIFSlave`, `SchemaTransferIF`**: core
+   logical layer; write unit tests using `StreamTransport` in both single-type and
+   multi-type modes.
+5. **`AXIMMTransport` + `CrossBarTransport`**: remaining physical layer adapters.
+6. **Integration example** (`schema_transfer_demo.py`): end-to-end demo showing both
+   modes with `StreamIF` as the physical layer.

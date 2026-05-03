@@ -9,6 +9,22 @@ from .dataschema import (
     FloatField,
     IntField,
     MemAddr,
+    Words,
+)
+from .dataunion import (
+    DataUnion,
+    DataUnionHdr,
+    LengthField,
+    SchemaIDField,
+    SchemaRegistry,
+    register_schema,
+)
+from .schema_transfer_interface import (
+    PhysicalTransport,
+    SchemaTransferIF,
+    SchemaTransferIFMaster,
+    SchemaTransferIFSlave,
+    StreamTransport,
 )
 
 __all__ = [
@@ -20,4 +36,16 @@ __all__ = [
     "EnumField",
     "DataList",
     "DataArray",
+    "Words",
+    "SchemaRegistry",
+    "register_schema",
+    "SchemaIDField",
+    "LengthField",
+    "DataUnionHdr",
+    "DataUnion",
+    "PhysicalTransport",
+    "StreamTransport",
+    "SchemaTransferIFMaster",
+    "SchemaTransferIFSlave",
+    "SchemaTransferIF",
 ]
