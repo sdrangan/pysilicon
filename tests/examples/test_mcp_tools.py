@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from pysilicon.mcp.components import get_components
-from pysilicon.mcp.example_rag import get_example_file, search_schema_examples
+from pysilicon.mcp.example_rag import search_schema_examples
 from pysilicon.mcp.schema_examples import get_schema_example, list_schema_examples
 from pysilicon.mcp.registry import REGISTRY, ToolRegistry
 from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema, validate_schema_from_file
@@ -752,40 +752,3 @@ def test_registry_dispatch_rag_search_examples_missing_env(monkeypatch):
     assert "error" in result
 
 
-# ---------------------------------------------------------------------------
-# pysilicon_get_example_file
-# ---------------------------------------------------------------------------
-
-
-def test_get_example_file_returns_poly():
-    result = get_example_file("poly.py")
-    assert result["path"] == "poly.py"
-    assert "PolyCmdHdr" in result["content"]
-    assert "DataList" in result["content"]
-
-
-def test_get_example_file_returns_hist():
-    result = get_example_file("hist.py")
-    assert result["path"] == "hist.py"
-    assert "HistCmd" in result["content"]
-
-
-def test_get_example_file_returns_conv2d():
-    result = get_example_file("conv2d.py")
-    assert result["path"] == "conv2d.py"
-    assert "Conv2DCmd" in result["content"]
-
-
-def test_get_example_file_unknown_raises_value_error():
-    with pytest.raises(ValueError, match="not found"):
-        get_example_file("nonexistent_file.py")
-
-
-def test_get_example_file_rejects_traversal():
-    with pytest.raises(ValueError, match="Invalid example path"):
-        get_example_file("../mcp/registry.py")
-
-
-def test_registry_dispatch_get_example_file_raises_value_error():
-    with pytest.raises(ValueError, match="Unknown tool name"):
-        REGISTRY.dispatch("pysilicon_get_example_file", {"path": "hist.py"})

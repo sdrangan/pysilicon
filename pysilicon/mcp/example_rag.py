@@ -1,6 +1,5 @@
 """
-OpenAI vector-store backed search over the packaged pysilicon examples corpus,
-plus a helper for reading individual example files from the package.
+OpenAI vector-store backed search over the packaged pysilicon examples corpus.
 
 Environment variables
 ---------------------
@@ -16,15 +15,10 @@ search_schema_examples(task, keywords, k)
     Search the vector store for examples relevant to *task*.
     Returns a structured error dict when the env var is missing; never
     raises so that the MCP host can surface the message gracefully.
-
-get_example_file(path)
-    Return the full content of a packaged example file by its path
-    relative to the ``pysilicon.examples`` package root.
 """
 from __future__ import annotations
 
 import os
-from importlib import resources
 from typing import Any
 
 from pysilicon.mcp.cli_build_example_rag import decode_upload_filename
@@ -34,7 +28,6 @@ from pysilicon.mcp.cli_build_example_rag import decode_upload_filename
 # ---------------------------------------------------------------------------
 
 VECTOR_STORE_ENV = "PYSILICON_EXAMPLES_VECTOR_STORE_ID"
-_EXAMPLES_PACKAGE = "pysilicon.examples"
 
 # ---------------------------------------------------------------------------
 # search_schema_examples
@@ -155,68 +148,3 @@ def search_schema_examples(
         "matches": matches,
     }
 
-
-# ---------------------------------------------------------------------------
-# get_example_file
-# ---------------------------------------------------------------------------
-
-
-def get_example_file(path: str) -> dict[str, Any]:
-    """Return the full content of a packaged example file.
-
-    Parameters
-    ----------
-    path:
-        Path relative to the ``pysilicon.examples`` package root, e.g.
-        ``"poly.py"`` or ``"conv2d.py"``.
-
-    Returns
-    -------
-    dict
-        ``path``    – the requested path (echoed back).
-        ``content`` – full UTF-8 text content of the file.
-
-    Raises
-    ------
-    ValueError
-        If the file does not exist in the packaged examples.
-    """
-    # Prevent directory traversal
-    if ".." in path or path.startswith("/"):
-        raise ValueError(
-            f"Invalid example path {path!r}: must be a relative path with no '..' components."
-        )
-    try:
-        content = (
-            resources.files(_EXAMPLES_PACKAGE)
-            .joinpath(path)
-            .read_text(encoding="utf-8")
-        )
-    except (FileNotFoundError, OSError, TypeError) as exc:
-        available = _list_example_paths()
-        raise ValueError(
-            f"Example file not found: {path!r}. "
-            f"Available examples: {available}. "
-            f"Original error: {exc}"
-        ) from exc
-    return {"path": path, "content": content}
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _list_example_paths() -> list[str]:
-    """Return sorted list of example file paths relative to the package root."""
-    try:
-        pkg = resources.files(_EXAMPLES_PACKAGE)
-        paths = []
-        for resource in pkg.iterdir():
-            name = getattr(resource, "name", str(resource))
-            if name.startswith("_") or not name.endswith(".py"):
-                continue
-            paths.append(name)
-        return sorted(paths)
-    except Exception:  # noqa: BLE001
-        return []
