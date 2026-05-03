@@ -45,15 +45,13 @@ from typing import Callable, Generator
 import simpy
 
 import numpy as np
-from numpy.typing import NDArray
 
 from pysilicon.hw.component import Component
+from pysilicon.hw.dataschema import Words
 from pysilicon.hw.named import NamedObject
 from pysilicon.hw.clock import Clock
 from pysilicon.simulation.simobj import SimObj, ProcessGen
 
-"""Type aliases for interface definitions."""
-Words = TypeAlias = NDArray[np.uint32] | NDArray[np.uint64]
 RxProc = TypeAlias = Callable[[Words], ProcessGen]
 
 @dataclass
