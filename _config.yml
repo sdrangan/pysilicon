@@ -20,6 +20,20 @@ just_the_docs:
   favicon: "/assets/images/favicon.png"
   color_scheme: light
 
+# Exclude source code and non-doc content from Jekyll processing.
+# examples/ is intentionally kept so that generated HTML reports
+# (e.g. examples/some_example/report.html) remain accessible as
+# static files and can be linked from docs pages.
+exclude:
+  - pysilicon/
+  - tests/
+  - CLAUDE.md
+  - pyproject.toml
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+  - node_modules/
+
 
 
 
