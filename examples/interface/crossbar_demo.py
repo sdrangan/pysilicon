@@ -45,7 +45,7 @@ class Source(SimObj):
         self.input_ep = CrossBarIFInput(sim=self.sim, bitwidth=self.bitwidth)
         self.tx_times: list[float] = []
 
-    def run_proc(self) -> ProcessGen:
+    def run_proc(self) -> ProcessGen[None]:
         for i, packet in enumerate(self.tx_packets):
             print(f"[{self.name}] sending burst {i}: {packet} at t={self.env.now:.1f}")
             yield self.process(self.input_ep.write(packet))
@@ -77,7 +77,7 @@ class Sink(SimObj):
             queue_size=self.queue_size,
         )
 
-    def rx_proc(self, words: Words) -> ProcessGen:
+    def rx_proc(self, words: Words) -> ProcessGen[None]:
         print(f"[{self.name}] received: {words} at t={self.env.now:.1f}")
         self.rx_packets.append(np.array(words, copy=True))
         self.rx_times.append(self.now)

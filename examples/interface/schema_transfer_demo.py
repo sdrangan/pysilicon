@@ -113,7 +113,7 @@ class Sender(SimObj):
         self.stream_ep = StreamIFMaster(sim=self.sim, bitwidth=self.bitwidth)
         self.schema_ep: SchemaTransferIFMaster | None = None  # set during wire-up
 
-    def run_proc(self) -> ProcessGen:
+    def run_proc(self) -> ProcessGen[None]:
         for obj in self.objects:
             yield from self.schema_ep.write(obj)
 
@@ -133,7 +133,7 @@ class Receiver(SimObj):
         self.stream_ep = StreamIFSlave(sim=self.sim, bitwidth=self.bitwidth)
         self.schema_ep: SchemaTransferIFSlave | None = None  # set during wire-up
 
-    def on_object(self, obj: Any) -> ProcessGen:
+    def on_object(self, obj: Any) -> ProcessGen[None]:
         """Default callback: collect every received object."""
         self.received.append(obj)
         yield self.env.timeout(0)
@@ -259,22 +259,22 @@ class MultiTypeDemo:
 
     # ----- dispatch table -----
 
-    def _dispatch(self, du: SensorDU) -> ProcessGen:
+    def _dispatch(self, du: SensorDU) -> ProcessGen[None]:
         handler = self._handlers.get(type(du.payload))
         if handler is not None:
             yield from handler(du.payload)
 
-    def _on_temp(self, p: TempMeasurement) -> ProcessGen:
+    def _on_temp(self, p: TempMeasurement) -> ProcessGen[None]:
         self.dispatch_log.append((TempMeasurement, p))
         print(f"  RX  TempMeasurement     temp_raw={int(p.temp_raw):+6d}  sensor_id={int(p.sensor_id)}")
         yield self.processor.env.timeout(0)
 
-    def _on_accel(self, p: AccelMeasurement) -> ProcessGen:
+    def _on_accel(self, p: AccelMeasurement) -> ProcessGen[None]:
         self.dispatch_log.append((AccelMeasurement, p))
         print(f"  RX  AccelMeasurement    ax={int(p.ax):+5d}  ay={int(p.ay):+5d}  az={int(p.az):+5d}")
         yield self.processor.env.timeout(0)
 
-    def _on_press(self, p: PressureMeasurement) -> ProcessGen:
+    def _on_press(self, p: PressureMeasurement) -> ProcessGen[None]:
         self.dispatch_log.append((PressureMeasurement, p))
         print(f"  RX  PressureMeasurement pressure_pa={int(p.pressure_pa)}  sensor_id={int(p.sensor_id)}")
         yield self.processor.env.timeout(0)
@@ -328,7 +328,7 @@ def queue_receive_demo() -> None:
 
     received: list = []
 
-    def consumer() -> ProcessGen:
+    def consumer() -> ProcessGen[None]:
         for _ in range(3):
             event = schema_slave.queue.get()
             yield event
@@ -336,7 +336,7 @@ def queue_receive_demo() -> None:
             received.append(pkt)
             print(f"  Queue.get()  temp_raw={int(pkt.temp_raw):+6d}  sensor_id={int(pkt.sensor_id)}")
 
-    def producer() -> ProcessGen:
+    def producer() -> ProcessGen[None]:
         for t, sid in [(-5, 1), (15, 2), (40, 3)]:
             yield from schema_master.write(TempPacket(temp_raw=t, sensor_id=sid))
 

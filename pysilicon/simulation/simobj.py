@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Generator
+from typing import TYPE_CHECKING, Any, Callable, Generator, TypeVar
 
 from pysilicon.hw.named import NamedObject
 
@@ -11,8 +11,9 @@ if TYPE_CHECKING:
     from .simulation import Simulation
 
 
-ProcessGen = Generator[simpy.events.Event, Any, Any]
-ProcessFactory = Callable[[], ProcessGen]
+_T = TypeVar('_T')
+ProcessGen = Generator[simpy.events.Event, Any, _T]
+ProcessFactory = Callable[[], ProcessGen[None]]
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ class SimObj(NamedObject):
         scheduling.  The default implementation is a no-op.
         """
 
-    def run_proc(self) -> ProcessGen | None:
+    def run_proc(self) -> ProcessGen[None] | None:
         """Return a SimPy generator process to schedule, or ``None``.
 
         Returning ``None`` (the default) marks the object as *passive*; it
@@ -133,7 +134,7 @@ class SimObj(NamedObject):
         """Create a plain SimPy event in the shared environment."""
         return self.env.event()
 
-    def process(self, generator: ProcessGen) -> simpy.events.Process:
+    def process(self, generator: ProcessGen[Any]) -> simpy.events.Process:
         """
         Register and start a process generator in the environment.
 
@@ -195,7 +196,7 @@ class SimObj(NamedObject):
         self,
         name: str,
         processing_delay: float = 0.0,
-    ) -> ProcessGen:
+    ) -> ProcessGen[None]:
         """
         Track one action window and optionally model its latency.
 

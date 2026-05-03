@@ -66,8 +66,8 @@ class AXIMMAddressRange:
 
 
 # Callable type aliases for slave callbacks.
-RxWriteProc = Callable[[Words, int], ProcessGen]  # (words, local_addr) -> ProcessGen
-RxReadProc  = Callable[[int,   int], ProcessGen]  # (nwords, local_addr) -> ProcessGen
+RxWriteProc = Callable[[Words, int], ProcessGen[None]]   # (words, local_addr) -> ProcessGen[None]
+RxReadProc  = Callable[[int,   int], ProcessGen[Words]]  # (nwords, local_addr) -> ProcessGen[Words]
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ class AXIMMCrossBarIFMaster(InterfaceEndpoint):
                 f"Cannot transact: {type(self).__name__} is not bound to an interface"
             )
 
-    def write(self, words: Words, global_addr: int) -> ProcessGen:
+    def write(self, words: Words, global_addr: int) -> ProcessGen[None]:
         """
         Write a burst of words to the slave at *global_addr*.
 
@@ -158,7 +158,7 @@ class AXIMMCrossBarIFMaster(InterfaceEndpoint):
         self._check_bound()
         yield self.process(self.interface.write(words, global_addr, self.master_port))
 
-    def read(self, nwords: int, global_addr: int) -> ProcessGen:
+    def read(self, nwords: int, global_addr: int) -> ProcessGen[Words]:
         """
         Read *nwords* from the slave at *global_addr*.
 
@@ -300,7 +300,7 @@ class AXIMMCrossBarIF(QueuedTransferIF):
     # Write path
     # ------------------------------------------------------------------
 
-    def write(self, words: Words, global_addr: int, master_port: int) -> ProcessGen:
+    def write(self, words: Words, global_addr: int, master_port: int) -> ProcessGen[None]:
         """
         Route a write transaction to the appropriate slave.
 
@@ -346,7 +346,7 @@ class AXIMMCrossBarIF(QueuedTransferIF):
     # Read path
     # ------------------------------------------------------------------
 
-    def read(self, nwords: int, global_addr: int, master_port: int) -> ProcessGen:
+    def read(self, nwords: int, global_addr: int, master_port: int) -> ProcessGen[Words]:
         """
         Route a read transaction to the appropriate slave and return data.
 

@@ -52,7 +52,7 @@ from pysilicon.hw.named import NamedObject
 from pysilicon.hw.clock import Clock
 from pysilicon.simulation.simobj import SimObj, ProcessGen
 
-RxProc = TypeAlias = Callable[[Words], ProcessGen]
+RxProc = TypeAlias = Callable[[Words], ProcessGen[None]]
 
 @dataclass
 class InterfaceEndpoint(SimObj):
@@ -203,8 +203,15 @@ class QueuedTransferIFSlave(InterfaceEndpoint):
         self.nrx = simpy.Container(self.env, init=0, capacity=capacity)
         self.ntx = simpy.Container(self.env, init=0)
 
-    def run_proc(self) -> ProcessGen:
-        """Continually processes incoming data bursts and invokes :attr:`rx_proc`."""
+    def run_proc(self) -> ProcessGen[None]:
+        """Continually processes incoming data bursts and invokes :attr:`rx_proc`.
+
+        When ``rx_proc`` is ``None`` the endpoint is in pull mode: this coroutine
+        exits immediately so the buffer remains available for :meth:`get`.
+        """
+        if self.rx_proc is None:
+            yield self.env.timeout(0)
+            return
         while True:
             words = yield self.data_buffer.get()
             nwords = words.shape[0]
@@ -222,8 +229,32 @@ class QueuedTransferIFSlave(InterfaceEndpoint):
                     )
                 yield self.nrx.get(brx)
 
-            if self.rx_proc is not None:
-                yield self.env.process(self.rx_proc(words))
+            yield self.env.process(self.rx_proc(words))
+
+    def get(self) -> ProcessGen[Words]:
+        """Pull the next word burst from the buffer (pull model).
+
+        The caller drives data flow by yielding from this generator rather than
+        having bursts pushed via :attr:`rx_proc`.  Do not start :meth:`run_proc`
+        when using this method.
+        """
+        words = yield self.data_buffer.get()
+        nwords = words.shape[0]
+
+        btx = min(nwords, self.ntx.level)
+        if btx > 0:
+            yield self.ntx.get(btx)
+
+        brx = nwords - btx
+        if brx > 0:
+            if self.nrx.level < brx:
+                raise RuntimeError(
+                    f"Not enough words in RX queue to read {nwords} words. "
+                    f"RX queue level: {self.nrx.level}, TX queue level: {self.ntx.level}"
+                )
+            yield self.nrx.get(brx)
+
+        return words
 
 
 @dataclass
@@ -243,11 +274,11 @@ class QueuedTransferIFMaster(InterfaceEndpoint):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-    def _make_write_call(self, words: Words) -> ProcessGen:
+    def _make_write_call(self, words: Words) -> ProcessGen[None]:
         """Return the generator that writes *words* to the bound interface."""
         return self.interface.write(words)
 
-    def write(self, words: Words) -> ProcessGen:
+    def write(self, words: Words) -> ProcessGen[None]:
         """
         Write a burst of words through the bound interface.
 
@@ -318,7 +349,7 @@ class QueuedTransferIF(Interface):
 
     def _push_to_endpoint(
         self, ep: QueuedTransferIFSlave, words: Words
-    ) -> ProcessGen:
+    ) -> ProcessGen[None]:
         """
         Model transfer latency then push *words* into *ep*'s buffer.
 
@@ -382,7 +413,7 @@ class StreamIF(QueuedTransferIF):
         self.endpoint_names = ('master', 'slave')
         super().__post_init__()
 
-    def write(self, words: Words) -> ProcessGen:
+    def write(self, words: Words) -> ProcessGen[None]:
         """
         Write a burst of words to the master (TX) side of this interface.
         This will trigger the RX process on the slave side to process the
@@ -442,7 +473,7 @@ class StreamIFSlave(QueuedTransferIFSlave):
     notify_type: TransferNotifyType = TransferNotifyType.end_only
     """The method for notifying the receiver side of transfers on this interface."""
 
-    notify_end_proc: Callable[[], ProcessGen] | None = None
+    notify_end_proc: Callable[[], ProcessGen[None]] | None = None
     """
     An optional process to call at the end of a transfer when
     `notify_type == begin_end`. This allows the slave to be notified of
@@ -522,7 +553,7 @@ class CrossBarIF(QueuedTransferIF):
         )
         super().__post_init__()
 
-    def write(self, words: Words, port_in: int) -> ProcessGen:
+    def write(self, words: Words, port_in: int) -> ProcessGen[None]:
         """
         Route words arriving at ``port_in`` to the appropriate output port.
 
@@ -614,7 +645,7 @@ class CrossBarIFInput(QueuedTransferIFMaster):
         super().__post_init__()
         self.port_in = -1
 
-    def _make_write_call(self, words: Words) -> ProcessGen:
+    def _make_write_call(self, words: Words) -> ProcessGen[None]:
         return self.interface.write(words, self.port_in)
 
 

@@ -31,7 +31,7 @@ class Master(SimObj):
         self.stream_ep = StreamIFMaster(sim=self.sim, bitwidth=self.bitwidth)
         self.tx_times: list[float] = []
 
-    def run_proc(self) -> ProcessGen:
+    def run_proc(self) -> ProcessGen[None]:
         for i, packet in enumerate(self.tx_packets):
             print(f"Master sending {i}: {packet} at time {self.env.now}")
             yield self.process( self.stream_ep.write(packet) )
@@ -58,7 +58,7 @@ class Slave(SimObj):
         self.stream_ep = StreamIFSlave(sim=self.sim, bitwidth=self.bitwidth, rx_proc=self.rx_proc, queue_size=10)
         self.rx_times: list[float] = []
 
-    def rx_proc(self, words: Words) -> ProcessGen:
+    def rx_proc(self, words: Words) -> ProcessGen[None]:
         print(f"Slave received: {words} at time {self.env.now}")
         self.rx_packets.append(np.array(words, copy=True))
         self.rx_times.append(self.now)

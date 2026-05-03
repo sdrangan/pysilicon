@@ -59,13 +59,13 @@ class MemBank(SimObj):
             rx_read_proc=self.rx_read,
         )
 
-    def rx_write(self, words: Words, local_addr: int) -> ProcessGen:
+    def rx_write(self, words: Words, local_addr: int) -> ProcessGen[None]:
         word_bytes = 4
         for i, w in enumerate(words):
             self._mem[local_addr + i * word_bytes] = int(w)
         yield self.timeout(0)   # no-op: write is non-blocking for caller
 
-    def rx_read(self, nwords: int, local_addr: int) -> ProcessGen:
+    def rx_read(self, nwords: int, local_addr: int) -> ProcessGen[Words]:
         yield self.timeout(self.access_latency / self.sim._clk_ref.freq
                            if hasattr(self.sim, '_clk_ref') else self.access_latency)
         word_bytes = 4
@@ -99,11 +99,11 @@ class RegFile(SimObj):
             latency_per_word=3.0,   # address phase + data phase + ACK
         )
 
-    def rx_write(self, words: Words, local_addr: int) -> ProcessGen:
+    def rx_write(self, words: Words, local_addr: int) -> ProcessGen[None]:
         self._regs[local_addr] = int(words[0])
         yield self.timeout(0)
 
-    def rx_read(self, nwords: int, local_addr: int) -> ProcessGen:
+    def rx_read(self, nwords: int, local_addr: int) -> ProcessGen[Words]:
         yield self.timeout(0)
         result = np.array([self._regs.get(local_addr, 0)], dtype=np.uint32)
         return result
@@ -127,7 +127,7 @@ class CPU(SimObj):
         self.master_ep = AXIMMCrossBarIFMaster(sim=self.sim, bitwidth=32)
         self.read_results: dict[str, np.ndarray] = {}
 
-    def run_proc(self) -> ProcessGen:
+    def run_proc(self) -> ProcessGen[None]:
         env = self.env
 
         # --- write 4 words to MemBank ---
@@ -181,7 +181,7 @@ class DMA(SimObj):
         self.master_ep = AXIMMCrossBarIFMaster(sim=self.sim, bitwidth=32)
         self.write_done_time: float = 0.0
 
-    def run_proc(self) -> ProcessGen:
+    def run_proc(self) -> ProcessGen[None]:
         yield self.timeout(self.start_delay)
         burst = np.arange(8, dtype=np.uint32) + 0x100
         t0 = self.now

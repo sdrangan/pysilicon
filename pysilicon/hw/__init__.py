@@ -20,6 +20,9 @@ from .dataunion import (
     register_schema,
 )
 from .schema_transfer_interface import (
+    ArrayTransferIF,
+    ArrayTransferIFMaster,
+    ArrayTransferIFSlave,
     PhysicalTransport,
     SchemaTransferIF,
     SchemaTransferIFMaster,
@@ -48,4 +51,7 @@ __all__ = [
     "SchemaTransferIFMaster",
     "SchemaTransferIFSlave",
     "SchemaTransferIF",
+    "ArrayTransferIFMaster",
+    "ArrayTransferIFSlave",
+    "ArrayTransferIF",
 ]
