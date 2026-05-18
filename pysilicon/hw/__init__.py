@@ -47,6 +47,16 @@ from .interface import (
     StreamGetPipelinedStmt,
     StreamWritePipelinedStmt,
 )
+from .regmap import (
+    Bit,
+    RegAccess,
+    RegField,
+    RegMap,
+    RegMapAccessError,
+    RegMapMMIFSlave,
+    VitisRegMap,
+    VitisRegMapMMIFSlave,
+)
 
 __all__ = [
     "DataSchema",
@@ -84,4 +94,12 @@ __all__ = [
     "MemComponent",
     "StreamGetPipelinedStmt",
     "StreamWritePipelinedStmt",
+    "Bit",
+    "RegAccess",
+    "RegField",
+    "RegMap",
+    "RegMapAccessError",
+    "RegMapMMIFSlave",
+    "VitisRegMap",
+    "VitisRegMapMMIFSlave",
 ]
