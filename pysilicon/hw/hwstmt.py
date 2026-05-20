@@ -6,11 +6,6 @@ Users never construct these nodes manually.  They are produced by
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pysilicon.hw.interface import InterfaceEndpoint
-    from pysilicon.hw.hw_component import HwComponent
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +68,8 @@ class WhileStmt(HwStmt):
 class CaseStmt(HwStmt):
     """Restricted ``if var.field <op> value:`` — maps to switch/if-else in C++.
 
-    ``op`` is ``'=='`` or ``'!='``.
+    ``op`` is ``'=='`` or ``'!='``.  ``field`` may be empty when the compared
+    expression is the bare ``HwVar`` itself (e.g. ``if err != NO_ERROR:``).
     """
     var: HwVar
     field: str

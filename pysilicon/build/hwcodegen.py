@@ -148,7 +148,7 @@ class HwStmtExtractor:
     def _visit_stmts(self, stmts: list[ast.stmt]) -> list[HwStmt]:
         return [s for s in (self._visit_stmt(n) for n in stmts) if s is not None]
 
-    def _visit_stmt(self, stmt: ast.stmt) -> HwStmt:
+    def _visit_stmt(self, stmt: ast.stmt) -> HwStmt | None:
         if isinstance(stmt, ast.While):
             return self._visit_while(stmt)
         if isinstance(stmt, ast.Continue):
@@ -220,6 +220,9 @@ class HwStmtExtractor:
 
     def _visit_expr_stmt(self, node: ast.Expr) -> HwStmt | None:
         val = node.value
+        # Docstring or other bare constant — drop silently.
+        if isinstance(val, ast.Constant):
+            return None
         # yield from self.ep.method(...)
         if isinstance(val, ast.YieldFrom):
             return self._make_call_stmt_from_node(val.value, node)
@@ -257,28 +260,36 @@ class HwStmtExtractor:
         )
 
     def _visit_if(self, node: ast.If) -> CaseStmt:
-        # Only: if var.field == EnumValue:  or  if var.field != EnumValue:
+        # Allowed: 'if var.field <op> value:' or 'if var <op> value:'
         test = node.test
         if not isinstance(test, ast.Compare):
             raise SynthesisError(
                 f"Non-synthesizable 'if' condition at line {node.lineno}; "
-                f"only 'if var.field == value:' or 'if var.field != value:' is allowed"
+                f"only 'if var.field == value:' or 'if var <op> value:' is allowed"
             )
         if (len(test.ops) != 1
-                or not isinstance(test.ops[0], (ast.Eq, ast.NotEq))
-                or not isinstance(test.left, ast.Attribute)
-                or not isinstance(test.left.value, ast.Name)):
+                or not isinstance(test.ops[0], (ast.Eq, ast.NotEq))):
             raise SynthesisError(
                 f"Non-synthesizable 'if' condition at line {node.lineno}; "
-                f"only 'if var.field == value:' or 'if var.field != value:' is allowed"
+                f"only '==' and '!=' comparisons are allowed"
             )
-        var_name = test.left.value.id
+        left = test.left
+        if isinstance(left, ast.Attribute) and isinstance(left.value, ast.Name):
+            var_name = left.value.id
+            field_name = left.attr
+        elif isinstance(left, ast.Name):
+            var_name = left.id
+            field_name = ''
+        else:
+            raise SynthesisError(
+                f"Non-synthesizable 'if' condition at line {node.lineno}; "
+                f"only 'if var.field <op> value:' or 'if var <op> value:' is allowed"
+            )
         if var_name not in self._scope:
             raise SynthesisError(
                 f"Undefined variable '{var_name}' in 'if' at line {node.lineno}"
             )
         hw_var = self._scope[var_name]
-        field_name = test.left.attr
         cmp_val = self._eval_const(test.comparators[0])
         op = '==' if isinstance(test.ops[0], ast.Eq) else '!='
         body_stmts = self._visit_stmts(node.body)

@@ -65,7 +65,7 @@ def test_return_inside_if_body():
 class _ReturnAtTopComp(HwComponent):
     def run_proc(self):
         while True:
-            x = yield from self.ep.get()
+            yield from self.ep.get()
             return
 
 
@@ -134,7 +134,7 @@ class _CaptureProcLatencyComp(HwComponent):
     def run_proc(self):
         while True:
             x = yield from self.ep.get()
-            y = self.proc_latency
+            _ = self.proc_latency  # implicit capture — should error
             yield from self.ep.write(x)
 
 
@@ -189,7 +189,7 @@ def test_synth_endpoint_call_does_not_raise():
 def test_regmap_set_produces_regmap_set_stmt():
     from pysilicon.hw.dataschema import IntField
     from pysilicon.hw.regmap import (
-        Bit, RegAccess, RegField, RegMap, RegMapSetStmt, VitisRegMap,
+        RegAccess, RegField, RegMapSetStmt, VitisRegMap,
     )
 
     class _RegMapWriteComp(HwComponent):
@@ -318,7 +318,7 @@ def test_user_method_inputs_resolve_endpoint_reference():
         def run_proc(self):
             while True:
                 x = yield from self.s_in.get()
-                y = yield from self.evaluate(x, self.s_in)
+                yield from self.evaluate(x, self.s_in)
 
     sim = Simulation()
     comp = _UserMethodWithEndpointComp(sim=sim)
@@ -334,22 +334,18 @@ def test_user_method_inputs_resolve_endpoint_reference():
 
 def test_extract_kernel_with_regmap_uses_on_start():
     """A component with a VitisRegMapMMIFSlave endpoint extracts on_start."""
-    import sys
-    from pathlib import Path
-    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
-    if str(POLY_DIR) not in sys.path:
-        sys.path.insert(0, str(POLY_DIR))
-
-    from pysilicon.build.hwcodegen import HwStmtExtractor, extract_kernel
-    from pysilicon.hw.regmap import VitisRegMapMMIFSlave
-
-    # Construct a minimal HwComponent with a VitisRegMapMMIFSlave endpoint and
-    # both run_proc and on_start methods. The kernel selector should pick on_start.
-    from pysilicon.hw.regmap import RegAccess, RegField, VitisRegMap, Bit
+    from pysilicon.build.hwcodegen import extract_kernel
+    from pysilicon.hw.interface import StreamIFSlave
+    from pysilicon.hw.regmap import (
+        Bit, RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave,
+    )
 
     class _RegMapComp(HwComponent):
         def __post_init__(self):
             super().__post_init__()
+            self.s_in = StreamIFSlave(
+                name=f'{self.name}_s_in', sim=self.sim, bitwidth=32,
+            )
             self.regmap = VitisRegMap({
                 "halted": RegField(Bit, RegAccess.R),
             })
@@ -357,8 +353,8 @@ def test_extract_kernel_with_regmap_uses_on_start():
                 name=f'{self.name}_s_lite', sim=self.sim, bitwidth=32,
                 regmap=self.regmap, on_start=self.on_start,
             )
-            self.ep_mock = _MockEndpoint()
-            self.add_endpoint(self.s_lite)
+            for ep in (self.s_in, self.s_lite):
+                self.add_endpoint(ep)
 
         def run_proc(self):
             while True:
@@ -366,7 +362,7 @@ def test_extract_kernel_with_regmap_uses_on_start():
 
         def on_start(self):
             while True:
-                x = yield from self.ep_mock.get()
+                yield from self.s_in.get()
                 return
 
     sim = Simulation()
@@ -376,3 +372,79 @@ def test_extract_kernel_with_regmap_uses_on_start():
     # on_start ends with a return; run_proc body would have produced a
     # yield self.timeout(0) which is not synthesizable.
     assert any(isinstance(s, ReturnStmt) for s in tree.body.stmts)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: End-to-end extraction of PolyAccelComponent.on_start
+# ---------------------------------------------------------------------------
+
+def _ensure_poly_on_path():
+    import sys
+    from pathlib import Path
+    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
+    if str(POLY_DIR) not in sys.path:
+        sys.path.insert(0, str(POLY_DIR))
+
+
+def test_extract_poly_accel_on_start():
+    _ensure_poly_on_path()
+    from poly import PolyAccelComponent
+    from pysilicon.build.hwcodegen import extract_kernel
+    from pysilicon.hw.interface import StreamGetStmt
+    from pysilicon.hw.regmap import RegMapSetStmt
+
+    comp = PolyAccelComponent(name='p', sim=Simulation())
+    tree = extract_kernel(comp)
+
+    # Top level: WhileStmt with a SeqStmt body
+    assert isinstance(tree, WhileStmt)
+    body = tree.body.stmts
+
+    # Expected (logging / _inc_job dropped via @sim_only):
+    #   0: cmd_hdr = yield from self.s_in.get(PolyCmdHdr)   → StreamGetStmt
+    #   1: if cmd_hdr.cmd_type == PolyCmdType.END: return    → CaseStmt(op='==')
+    #   2: err = yield from self.evaluate(...)              → FunctionStmt
+    #   3: if err != PolyError.NO_ERROR: ...                → CaseStmt(op='!=')
+    assert isinstance(body[0], StreamGetStmt)
+
+    assert isinstance(body[1], CaseStmt) and body[1].op == '=='
+    end_branch = body[1].if_true.stmts
+    assert any(isinstance(s, ReturnStmt) for s in end_branch)
+
+    assert isinstance(body[2], FunctionStmt)
+    assert body[2].method.__name__ == 'evaluate'
+
+    assert isinstance(body[3], CaseStmt) and body[3].op == '!='
+    halt_branch = body[3].if_true.stmts
+    regmap_sets = [s for s in halt_branch if isinstance(s, RegMapSetStmt)]
+    assert len(regmap_sets) == 3       # error, tx_id, halted
+    assert any(isinstance(s, ReturnStmt) for s in halt_branch)
+
+
+def test_extract_poly_accel_no_implicit_capture_violation():
+    """Cloning PolyAccelComponent and adding a self.proc_latency read in
+    on_start must raise SynthesisError mentioning proc_latency."""
+    _ensure_poly_on_path()
+    from poly import (
+        PolyAccelComponent, PolyCmdHdr, PolyCmdType, PolyError,
+    )
+    from pysilicon.build.hwcodegen import extract_kernel
+
+    class _BadPolyAccel(PolyAccelComponent):
+        def on_start(self):
+            while True:
+                cmd_hdr = yield from self.s_in.get(PolyCmdHdr)
+                # Implicit capture of plain field — should be rejected.
+                _ = self.proc_latency
+                if cmd_hdr.cmd_type == PolyCmdType.END:
+                    return
+                err = yield from self.evaluate(cmd_hdr, self.s_in, self.m_out)
+                if err != PolyError.NO_ERROR:
+                    self.regmap.set("error",  err)
+                    self.regmap.set("tx_id",  cmd_hdr.tx_id)
+                    self.regmap.set("halted", 1)
+                    return
+
+    comp = _BadPolyAccel(name='bad', sim=Simulation())
+    with pytest.raises(SynthesisError, match="proc_latency"):
+        extract_kernel(comp)
