@@ -110,3 +110,60 @@ def test_case_stmt_eq_op_default():
     case_stmt = tree.body.stmts[1]
     assert isinstance(case_stmt, CaseStmt)
     assert case_stmt.op == '=='
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: extract_kernel policy helper
+# ---------------------------------------------------------------------------
+
+def test_extract_kernel_no_regmap_uses_run_proc():
+    from pysilicon.build.hwcodegen import extract_kernel
+    comp = _make_comp(_EqIfComp)
+    tree = extract_kernel(comp)
+    assert isinstance(tree, WhileStmt)
+
+
+def test_extract_kernel_with_regmap_uses_on_start():
+    """A component with a VitisRegMapMMIFSlave endpoint extracts on_start."""
+    import sys
+    from pathlib import Path
+    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
+    if str(POLY_DIR) not in sys.path:
+        sys.path.insert(0, str(POLY_DIR))
+
+    from pysilicon.build.hwcodegen import HwStmtExtractor, extract_kernel
+    from pysilicon.hw.regmap import VitisRegMapMMIFSlave
+
+    # Construct a minimal HwComponent with a VitisRegMapMMIFSlave endpoint and
+    # both run_proc and on_start methods. The kernel selector should pick on_start.
+    from pysilicon.hw.regmap import RegAccess, RegField, VitisRegMap, Bit
+
+    class _RegMapComp(HwComponent):
+        def __post_init__(self):
+            super().__post_init__()
+            self.regmap = VitisRegMap({
+                "halted": RegField(Bit, RegAccess.R),
+            })
+            self.s_lite = VitisRegMapMMIFSlave(
+                name=f'{self.name}_s_lite', sim=self.sim, bitwidth=32,
+                regmap=self.regmap, on_start=self.on_start,
+            )
+            self.ep_mock = _MockEndpoint()
+            self.add_endpoint(self.s_lite)
+
+        def run_proc(self):
+            while True:
+                yield self.timeout(0)
+
+        def on_start(self):
+            while True:
+                x = yield from self.ep_mock.get()
+                return
+
+    sim = Simulation()
+    comp = _RegMapComp(sim=sim)
+    tree = extract_kernel(comp)
+    assert isinstance(tree, WhileStmt)
+    # on_start ends with a return; run_proc body would have produced a
+    # yield self.timeout(0) which is not synthesizable.
+    assert any(isinstance(s, ReturnStmt) for s in tree.body.stmts)

@@ -46,8 +46,9 @@ class HwStmtExtractor:
     free-running components or a ``SeqStmt`` for per-invocation ones).
     """
 
-    def __init__(self, comp: HwComponent) -> None:
+    def __init__(self, comp: HwComponent, method_name: str = 'run_proc') -> None:
         self._comp = comp
+        self._method_name = method_name
         self._scope: dict[str, HwVar] = {}
 
     # ------------------------------------------------------------------
@@ -55,12 +56,15 @@ class HwStmtExtractor:
     # ------------------------------------------------------------------
 
     def extract(self) -> HwStmt:
-        src = inspect.getsource(self._comp.run_proc)
+        method = getattr(self._comp, self._method_name)
+        src = inspect.getsource(method)
         src = textwrap.dedent(src)
         tree = ast.parse(src)
         func_def = tree.body[0]
         if not isinstance(func_def, ast.FunctionDef):
-            raise SynthesisError("run_proc source did not parse as a function")
+            raise SynthesisError(
+                f"{self._method_name} source did not parse as a function"
+            )
         stmts = self._visit_stmts(func_def.body)
         if len(stmts) == 1:
             return stmts[0]
@@ -346,3 +350,18 @@ class HwStmtExtractor:
                 f"Call to non-synthesizable method '{name}' at line {lineno}. "
                 f"Mark it @synthesizable or @sim_only."
             )
+
+
+# ---------------------------------------------------------------------------
+# Module-level kernel-body selection policy
+# ---------------------------------------------------------------------------
+
+
+def extract_kernel(comp: HwComponent) -> HwStmt:
+    """Pick ``on_start`` if the component has a ``VitisRegMapMMIFSlave`` endpoint;
+    otherwise extract ``run_proc``."""
+    from pysilicon.hw.regmap import VitisRegMapMMIFSlave  # local: avoid cycle
+    for ep in getattr(comp, 'endpoints', {}).values():
+        if isinstance(ep, VitisRegMapMMIFSlave):
+            return HwStmtExtractor(comp, method_name='on_start').extract()
+    return HwStmtExtractor(comp, method_name='run_proc').extract()
