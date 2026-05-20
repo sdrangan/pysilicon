@@ -274,7 +274,8 @@ def test_function_stmt_with_typed_output():
         inputs=[HwVar(name='cmd', typ=None)],
         outputs=[HwVar(name='err', typ=DemoError)],
     )
-    assert to_cpp(stmt, _ctx()) == "    DemoError err = process(cmd);"
+    # _ctx() uses bare HwComponent → resolved_namespace == "hw".
+    assert to_cpp(stmt, _ctx()) == "    DemoError err = hw::process(cmd);"
 
 
 def test_function_stmt_no_outputs():
@@ -284,7 +285,7 @@ def test_function_stmt_no_outputs():
         inputs=[HwVar(name='cmd', typ=None)],
         outputs=[],
     )
-    assert to_cpp(stmt, _ctx()) == "    process(cmd);"
+    assert to_cpp(stmt, _ctx()) == "    hw::process(cmd);"
 
 
 def test_function_stmt_with_endpoint_arg():
@@ -302,7 +303,43 @@ def test_function_stmt_with_endpoint_arg():
         inputs=[HwVar(name='cmd', typ=None), s_in, m_out],
         outputs=[],
     )
-    assert to_cpp(stmt, ctx) == "    process(cmd, s_in, m_out);"
+    assert to_cpp(stmt, ctx) == "    hw::process(cmd, s_in, m_out);"
+
+
+def test_function_stmt_opt_out_no_qualifier():
+    from typing import ClassVar
+    from pysilicon.hw.hwstmt import FunctionStmt
+
+    class _NoNs(HwComponent):
+        cpp_namespace: ClassVar[str | None] = ""
+
+    sim = Simulation()
+    comp = _NoNs(name='c', sim=sim)
+    ctx = CodegenCtx(comp=comp)
+    stmt = FunctionStmt(
+        method=_FakeMethod('process'),
+        inputs=[HwVar(name='cmd', typ=None)],
+        outputs=[],
+    )
+    assert to_cpp(stmt, ctx) == "    process(cmd);"
+
+
+def test_function_stmt_custom_namespace():
+    from typing import ClassVar
+    from pysilicon.hw.hwstmt import FunctionStmt
+
+    class _CustomNs(HwComponent):
+        cpp_namespace: ClassVar[str | None] = "custom"
+
+    sim = Simulation()
+    comp = _CustomNs(name='c', sim=sim)
+    ctx = CodegenCtx(comp=comp)
+    stmt = FunctionStmt(
+        method=_FakeMethod('process'),
+        inputs=[HwVar(name='cmd', typ=None)],
+        outputs=[],
+    )
+    assert to_cpp(stmt, ctx) == "    custom::process(cmd);"
 
 
 def test_function_stmt_multi_output_raises():
@@ -664,7 +701,7 @@ def test_kernel_body_to_cpp_demo_component_contains_expected_substrings():
         "cmd.read_axi4_stream<WORD_BW>(s_in);",
         "if (cmd.cmd_type == DemoCmdType::END)",
         "return;",
-        "DemoError err = process(cmd",
+        "DemoError err = demo::process(cmd",
         "if (err != DemoError::OK)",
         "error = err;",
         "tx_id = cmd.tx_id;",

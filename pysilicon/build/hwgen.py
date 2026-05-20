@@ -181,27 +181,31 @@ def _emit_regmap_set(stmt: RegMapSetStmt, ctx: CodegenCtx) -> str:
 def _emit_function_call(stmt: FunctionStmt, ctx: CodegenCtx) -> str:
     """Emit a call to a ``@synthesizable`` user hook.
 
-    The hook is a free function in C++ (no class wrapping). Inputs become
-    positional arguments; the return value (if any) is assigned to the
-    output ``HwVar``, which is also declared inline.
+    The hook is a free function in C++ (no class wrapping); when a namespace
+    is resolved for the component, the call site is explicitly qualified
+    (``demo::process(...)``). Inputs become positional arguments; the
+    return value (if any) is assigned to the output ``HwVar``, which is
+    also declared inline.
     """
     if len(stmt.outputs) > 1:
         raise NotImplementedError(
             "Multi-output FunctionStmt (tuple return) is not supported"
         )
     func_name = stmt.method.__name__  # type: ignore[attr-defined]
+    ns = resolved_namespace(type(ctx.comp))
+    qualified = func_name if ns is None else f"{ns}::{func_name}"
     args = [_emit_call_arg(a, ctx) for a in stmt.inputs]
     arg_str = ", ".join(args)
     pad = ctx.pad()
     if not stmt.outputs:
-        return f"{pad}{func_name}({arg_str});"
+        return f"{pad}{qualified}({arg_str});"
     out = stmt.outputs[0]
-    cpp_type = (
+    cpp_t = (
         out.typ.cpp_class_name()
         if hasattr(out.typ, 'cpp_class_name')
         else _cpp_type_for(out.typ)
     )
-    return f"{pad}{cpp_type} {out.name} = {func_name}({arg_str});"
+    return f"{pad}{cpp_t} {out.name} = {qualified}({arg_str});"
 
 
 def _cpp_type_for(typ) -> str:
