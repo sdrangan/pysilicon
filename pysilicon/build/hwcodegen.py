@@ -274,12 +274,13 @@ class HwStmtExtractor:
                 f"only '==' and '!=' comparisons are allowed"
             )
         left = test.left
+        field_name: str | None
         if isinstance(left, ast.Attribute) and isinstance(left.value, ast.Name):
             var_name = left.value.id
             field_name = left.attr
         elif isinstance(left, ast.Name):
             var_name = left.id
-            field_name = ''
+            field_name = None
         else:
             raise SynthesisError(
                 f"Non-synthesizable 'if' condition at line {node.lineno}; "

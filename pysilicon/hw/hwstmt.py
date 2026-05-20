@@ -68,11 +68,11 @@ class WhileStmt(HwStmt):
 class CaseStmt(HwStmt):
     """Restricted ``if var.field <op> value:`` — maps to switch/if-else in C++.
 
-    ``op`` is ``'=='`` or ``'!='``.  ``field`` may be empty when the compared
+    ``op`` is ``'=='`` or ``'!='``.  ``field`` is ``None`` when the compared
     expression is the bare ``HwVar`` itself (e.g. ``if err != NO_ERROR:``).
     """
     var: HwVar
-    field: str
+    field: str | None
     value: object  # enum value or literal
     if_true: SeqStmt
     if_false: SeqStmt | None = None
