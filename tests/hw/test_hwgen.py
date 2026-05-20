@@ -314,6 +314,34 @@ def test_function_stmt_multi_output_raises():
         to_cpp(stmt, _ctx())
 
 
+# ---------------------------------------------------------------------------
+# Phase 5: kernel_body_to_cpp end-to-end
+# ---------------------------------------------------------------------------
+
+def test_kernel_body_to_cpp_demo_component_contains_expected_substrings():
+    from pysilicon.build.hwgen import kernel_body_to_cpp
+    # Reuse the DemoComponent fixture from tests/hw/test_resolve.py.
+    from tests.hw.test_resolve import DemoComponent
+
+    comp = DemoComponent(name="demo", sim=Simulation())
+    body = kernel_body_to_cpp(comp)
+
+    expected = [
+        "while (true)",
+        "DemoCmdHdr cmd;",
+        "cmd.read_axi4_stream<WORD_BW>(s_in);",
+        "if (cmd.cmd_type == DemoCmdType::END)",
+        "return;",
+        "DemoError err = process(cmd",
+        "if (err != DemoError::OK)",
+        "error = err;",
+        "tx_id = cmd.tx_id;",
+        "halted = 1;",
+    ]
+    for sub in expected:
+        assert sub in body, f"Missing substring: {sub!r}\n--- body ---\n{body}"
+
+
 def test_endpoint_name_not_found_raises():
     from pysilicon.hw.interface import StreamGetStmt
     rogue = _FakeEndpoint()

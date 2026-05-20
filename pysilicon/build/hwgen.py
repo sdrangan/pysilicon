@@ -119,7 +119,7 @@ def _emit_stream_get(stmt: StreamGetStmt, ctx: CodegenCtx) -> str:
     schema_cls = stmt.inputs[0]
     out = stmt.outputs[0]
     cpp_type = schema_cls.cpp_class_name()
-    stream_name = _endpoint_name(stmt.method.__self__, ctx)
+    stream_name = _endpoint_name(stmt.method.__self__, ctx)  # type: ignore[attr-defined]
     pad = ctx.pad()
     return (
         f"{pad}{cpp_type} {out.name};\n"
@@ -130,13 +130,13 @@ def _emit_stream_get(stmt: StreamGetStmt, ctx: CodegenCtx) -> str:
 def _emit_stream_write(stmt: StreamWriteStmt, ctx: CodegenCtx) -> str:
     # stmt.inputs = [HwVar of the value to write]
     value = stmt.inputs[0]
-    stream_name = _endpoint_name(stmt.method.__self__, ctx)
+    stream_name = _endpoint_name(stmt.method.__self__, ctx)  # type: ignore[attr-defined]
     pad = ctx.pad()
     return f"{pad}{value.name}.write_axi4_stream<WORD_BW>({stream_name}, true);"
 
 
 def _emit_stream_drain(stmt: StreamDrainStmt, ctx: CodegenCtx) -> str:
-    stream_name = _endpoint_name(stmt.method.__self__, ctx)
+    stream_name = _endpoint_name(stmt.method.__self__, ctx)  # type: ignore[attr-defined]
     pad = ctx.pad()
     return f"{pad}streamutils::flush_axi4_stream_to_tlast<WORD_BW>({stream_name});"
 
@@ -186,7 +186,7 @@ def _emit_function_call(stmt: FunctionStmt, ctx: CodegenCtx) -> str:
         raise NotImplementedError(
             "Multi-output FunctionStmt (tuple return) is not supported"
         )
-    func_name = stmt.method.__name__
+    func_name = stmt.method.__name__  # type: ignore[attr-defined]
     args = [_emit_call_arg(a, ctx) for a in stmt.inputs]
     arg_str = ", ".join(args)
     pad = ctx.pad()
@@ -236,3 +236,20 @@ def _emit_literal(value) -> str:
     if isinstance(value, str):
         return f'"{value}"'
     return repr(value)
+
+
+def kernel_body_to_cpp(comp: HwComponent) -> str:
+    """Top-level driver: extract + resolve + codegen.
+
+    Returns the body of the kernel function (opened with ``{``, closed with
+    ``}``).  No function signature, no pragmas — just the body.  Wrap
+    separately in the next phase.
+    """
+    from pysilicon.build.hwcodegen import extract_kernel
+    from pysilicon.hw.hw_component import SynthContext
+
+    tree = extract_kernel(comp)
+    synth_ctx = SynthContext.from_component(comp)
+    ctx = CodegenCtx(comp=comp, params=synth_ctx.params, indent=1)
+    body = to_cpp(tree, ctx)
+    return f"{{\n{body}\n}}"
