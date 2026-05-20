@@ -395,6 +395,24 @@ def cpp_kernel_name(comp_class) -> str:
     return snake.removesuffix('_component')
 
 
+def resolved_namespace(comp_class) -> str | None:
+    """Return the C++ namespace to use for this component's hooks.
+
+    ``None`` means "no namespace, emit in global." Otherwise the returned
+    string is the namespace name to wrap hooks in. Resolution rules:
+
+    - ``cpp_namespace = ""`` → ``None`` (opt out; hooks emitted in global).
+    - ``cpp_namespace = None`` → auto-derive from :func:`cpp_kernel_name`.
+    - ``cpp_namespace = "<name>"`` → return ``"<name>"`` verbatim.
+    """
+    ns = getattr(comp_class, 'cpp_namespace', None)
+    if ns == "":
+        return None
+    if ns is None:
+        return cpp_kernel_name(comp_class)
+    return ns
+
+
 def _collect_schemas(tree: HwStmt, comp) -> list[type]:
     """Return the unique ``DataSchema`` subclasses referenced by the kernel.
 

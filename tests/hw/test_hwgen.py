@@ -418,6 +418,64 @@ def test_cpp_kernel_name_override():
 
 
 # ---------------------------------------------------------------------------
+# Namespace Phase 1: resolved_namespace
+# ---------------------------------------------------------------------------
+
+def test_resolved_namespace_default_uses_kernel_name():
+    from pysilicon.build.hwgen import resolved_namespace
+    from tests.hw.test_resolve import DemoComponent
+    assert resolved_namespace(DemoComponent) == "demo"
+
+
+def test_resolved_namespace_explicit_string():
+    from typing import ClassVar
+    from pysilicon.build.hwgen import resolved_namespace
+
+    class _NsCustom(HwComponent):
+        cpp_namespace: ClassVar[str | None] = "custom"
+
+    assert resolved_namespace(_NsCustom) == "custom"
+
+
+def test_resolved_namespace_empty_opts_out():
+    from typing import ClassVar
+    from pysilicon.build.hwgen import resolved_namespace
+
+    class _NsOptOut(HwComponent):
+        cpp_namespace: ClassVar[str | None] = ""
+
+    assert resolved_namespace(_NsOptOut) is None
+
+
+def test_resolved_namespace_explicit_none_is_auto():
+    from typing import ClassVar
+    from pysilicon.build.hwgen import resolved_namespace
+
+    class _NsAuto(HwComponent):
+        cpp_namespace: ClassVar[str | None] = None
+
+    # Auto-derives from cpp_kernel_name; default of HwComponent name is "hw".
+    assert resolved_namespace(_NsAuto) == cpp_kernel_name_for(_NsAuto)
+
+
+def cpp_kernel_name_for(cls):
+    from pysilicon.build.hwgen import cpp_kernel_name
+    return cpp_kernel_name(cls)
+
+
+def test_resolved_namespace_independent_from_kernel_name_override():
+    from typing import ClassVar
+    from pysilicon.build.hwgen import cpp_kernel_name, resolved_namespace
+
+    class _Both(HwComponent):
+        cpp_namespace: ClassVar[str | None] = "alpha"
+        cpp_kernel_name: ClassVar[str | None] = "beta"
+
+    assert resolved_namespace(_Both) == "alpha"
+    assert cpp_kernel_name(_Both) == "beta"
+
+
+# ---------------------------------------------------------------------------
 # Kernel-files Phase 2: hook_signature derivation
 # ---------------------------------------------------------------------------
 # Hook fixtures defined at module level so typing.get_type_hints() can

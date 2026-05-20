@@ -81,3 +81,13 @@ class HwComponent(Component):
 
     control_mode: ClassVar[ControlMode] = ControlMode.AUTO
     cpp_kernel_name: ClassVar[str | None] = None
+    cpp_namespace: ClassVar[str | None] = None
+    """Override for the C++ namespace wrapping hooks for this component.
+
+        None (default): namespace is auto-derived from cpp_kernel_name(cls).
+        "":             opt out; hooks emitted in global namespace.
+        "<name>":       use this string as the namespace verbatim.
+
+    The kernel function itself is always emitted in the global namespace
+    (Vitis HLS requires this).
+    """
