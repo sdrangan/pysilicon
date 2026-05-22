@@ -122,26 +122,32 @@ def _emit_stream_get(stmt: StreamGetStmt, ctx: CodegenCtx) -> str:
     schema_cls = stmt.inputs[0]
     out = stmt.outputs[0]
     cpp_type = schema_cls.cpp_class_name()
-    stream_name = _endpoint_name(stmt.method.__self__, ctx)  # type: ignore[attr-defined]
+    ep = stmt.method.__self__  # type: ignore[attr-defined]
+    stream_name = _endpoint_name(ep, ctx)
+    bw = ep.bitwidth
     pad = ctx.pad()
     return (
         f"{pad}{cpp_type} {out.name};\n"
-        f"{pad}{out.name}.read_axi4_stream<WORD_BW>({stream_name});"
+        f"{pad}{out.name}.read_axi4_stream<{bw}>({stream_name});"
     )
 
 
 def _emit_stream_write(stmt: StreamWriteStmt, ctx: CodegenCtx) -> str:
     # stmt.inputs = [HwVar of the value to write]
     value = stmt.inputs[0]
-    stream_name = _endpoint_name(stmt.method.__self__, ctx)  # type: ignore[attr-defined]
+    ep = stmt.method.__self__  # type: ignore[attr-defined]
+    stream_name = _endpoint_name(ep, ctx)
+    bw = ep.bitwidth
     pad = ctx.pad()
-    return f"{pad}{value.name}.write_axi4_stream<WORD_BW>({stream_name}, true);"
+    return f"{pad}{value.name}.write_axi4_stream<{bw}>({stream_name}, true);"
 
 
 def _emit_stream_drain(stmt: StreamDrainStmt, ctx: CodegenCtx) -> str:
-    stream_name = _endpoint_name(stmt.method.__self__, ctx)  # type: ignore[attr-defined]
+    ep = stmt.method.__self__  # type: ignore[attr-defined]
+    stream_name = _endpoint_name(ep, ctx)
+    bw = ep.bitwidth
     pad = ctx.pad()
-    return f"{pad}streamutils::flush_axi4_stream_to_tlast<WORD_BW>({stream_name});"
+    return f"{pad}streamutils::flush_axi4_stream_to_tlast<{bw}>({stream_name});"
 
 
 def _endpoint_name(endpoint, ctx: CodegenCtx) -> str:
@@ -287,6 +293,72 @@ def cpp_type(typ) -> str:
     raise RuntimeError(f"cpp_type: cannot translate {typ!r}")
 
 
+def _validate_no_name_collisions(comp) -> None:
+    """Raise if ``HwParam``, regmap-field, and endpoint-attr names overlap."""
+    import sys
+    import typing
+    from pysilicon.build.hwcodegen import SynthesisError
+    from pysilicon.hw.hw_component import HwParam
+
+    hw_param_names: set[str] = set()
+    for klass in type(comp).__mro__:
+        for name, hint in getattr(klass, '__annotations__', {}).items():
+            if isinstance(hint, str):
+                mod = sys.modules.get(klass.__module__)
+                globs: dict = vars(mod) if mod is not None else {}
+                try:
+                    hint = eval(hint, globs)  # noqa: S307
+                except Exception:
+                    continue
+            if typing.get_origin(hint) is HwParam:
+                hw_param_names.add(name)
+
+    endpoint_attrs = {name for name, _ in _discover_stream_endpoints(comp)}
+    regmap_field_names: set[str] = set()
+    regmap_slave = _discover_regmap(comp)
+    if regmap_slave is not None:
+        regmap_field_names = set(regmap_slave.regmap._fields.keys())
+
+    pairs = [
+        ('HwParam', 'endpoint',     hw_param_names & endpoint_attrs),
+        ('HwParam', 'regmap field', hw_param_names & regmap_field_names),
+        ('endpoint', 'regmap field', endpoint_attrs & regmap_field_names),
+    ]
+    collisions = [(a, b, names) for a, b, names in pairs if names]
+    if collisions:
+        msg = "; ".join(
+            f"{a} vs {b}: {sorted(n)}" for a, b, n in collisions
+        )
+        raise SynthesisError(
+            f"Name collisions in component {type(comp).__name__}: {msg}"
+        )
+
+
+def _collect_template_params(comp) -> list[str]:
+    """Return ordered, deduplicated ``HwParam`` names used by endpoint bitwidths."""
+    from pysilicon.hw.hw_component import HwParamValue
+    params: list[str] = []
+    seen: set[str] = set()
+    for _attr, ep in _discover_stream_endpoints(comp):
+        bw = ep.bitwidth
+        if isinstance(bw, HwParamValue) and bw.param_name not in seen:
+            params.append(bw.param_name)
+            seen.add(bw.param_name)
+    return params
+
+
+def _stream_template_arg(ep) -> str:
+    """Return the template argument string for an endpoint's bitwidth.
+
+    ``HwParamValue`` → the param name. Plain ``int`` → the literal value.
+    """
+    from pysilicon.hw.hw_component import HwParamValue
+    bw = ep.bitwidth
+    if isinstance(bw, HwParamValue):
+        return bw.param_name
+    return str(int(bw))
+
+
 def _discover_stream_endpoints(comp) -> list[tuple[str, object]]:
     """Return ``[(attr_name, endpoint)]`` for each stream endpoint on ``comp``."""
     from pysilicon.hw.interface import StreamIFMaster, StreamIFSlave
@@ -311,18 +383,31 @@ def kernel_signature(comp) -> str:
 
     Returns a multi-line string ending with the opening ``{`` of the function
     body and the pragmas. The caller appends the body and the closing ``}``.
+
+    When ``HwParam``-driven endpoint bitwidths exist, a ``template <int p1,
+    int p2>`` block is emitted preceding ``void <name>(``.
     """
+    _validate_no_name_collisions(comp)
     name = cpp_kernel_name(type(comp))
+    template_params = _collect_template_params(comp)
+    template_decl = ""
+    if template_params:
+        decl_block = ", ".join(f"int {p}" for p in template_params)
+        template_decl = f"template <{decl_block}>\n"
+
     arg_lines: list[str] = []
     pragma_lines: list[str] = []
-    for attr, _ep in _discover_stream_endpoints(comp):
+    for attr, ep in _discover_stream_endpoints(comp):
+        tmpl_arg = _stream_template_arg(ep)
         arg_lines.append(
-            f"    hls::stream<streamutils::axi4s_word<WORD_BW>>& {attr}"
+            f"    hls::stream<streamutils::axi4s_word<{tmpl_arg}>>& {attr}"
         )
         pragma_lines.append(f"#pragma HLS INTERFACE axis port={attr}")
     regmap_slave = _discover_regmap(comp)
     if regmap_slave is not None:
         for fname, fld in regmap_slave.regmap._fields.items():
+            if fld.is_vitis_auto:
+                continue
             arg_lines.append(f"    {cpp_type(fld.schema)}& {fname}")
             pragma_lines.append(
                 f"#pragma HLS INTERFACE s_axilite port={fname:<12} bundle=control"
@@ -332,7 +417,7 @@ def kernel_signature(comp) -> str:
     )
     arg_block = ",\n".join(arg_lines)
     pragma_block = "\n".join(pragma_lines)
-    return f"void {name}(\n{arg_block}\n) {{\n{pragma_block}"
+    return f"{template_decl}void {name}(\n{arg_block}\n) {{\n{pragma_block}"
 
 
 def hook_signature(method) -> tuple[str, list[tuple[str, str]]]:
