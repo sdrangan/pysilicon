@@ -737,7 +737,8 @@ def header_to_cpp(comp) -> str:
         lines.append("")
         kn = cpp_kernel_name(type(comp))
         for hook, _ in templated:
-            lines.append(f'#include "{kn}_{hook.__name__}_impl.tpp"')
+            hname = hook.__name__  # type: ignore[attr-defined]
+            lines.append(f'#include "{kn}_{hname}_impl.tpp"')
 
     return "\n".join(lines) + "\n"
 
@@ -862,10 +863,11 @@ def kernel_files_to_str(comp) -> dict[str, str]:
     }
     tree = extract_kernel(comp)
     for hook, tparams in _collect_hooks_with_params(tree):
+        hname = hook.__name__  # type: ignore[attr-defined]
         if tparams:
-            files[f"{name}_{hook.__name__}_impl.tpp"] = impl_stub_to_tpp(
+            files[f"{name}_{hname}_impl.tpp"] = impl_stub_to_tpp(
                 comp, hook, tparams,
             )
         else:
-            files[f"{name}_{hook.__name__}_impl.cpp"] = impl_stub_to_cpp(comp, hook)
+            files[f"{name}_{hname}_impl.cpp"] = impl_stub_to_cpp(comp, hook)
     return files

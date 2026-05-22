@@ -56,7 +56,7 @@ class HlsCodegenStep(BuildStep):
         result: list[tuple[str, str]] = []
         for hook, tparams in _collect_hooks_with_params(tree):
             ext = "tpp" if tparams else "cpp"
-            result.append((hook.__name__, ext))
+            result.append((hook.__name__, ext))  # type: ignore[attr-defined]
         return result
 
     @property

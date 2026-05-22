@@ -1,7 +1,9 @@
 """Tests for the C++ codegen pass (pysilicon/build/hwgen.py)."""
 from __future__ import annotations
 
+from dataclasses import dataclass as _dataclass
 from enum import IntEnum
+from typing import ClassVar
 
 import pytest
 
@@ -17,12 +19,18 @@ from pysilicon.hw.hwstmt import (
 )
 from pysilicon.hw.interface import StreamIFMaster as _StreamIFMaster
 from pysilicon.hw.interface import StreamIFSlave as _StreamIFSlave
+from pysilicon.hw.regmap import (
+    Bit as _Bit,
+    RegAccess as _RegAccess,
+    RegField as _RegField,
+    VitisRegMap as _VitisRegMap,
+    VitisRegMapMMIFSlave as _VitisRegMapMMIFSlave,
+)
 from pysilicon.hw.synth import synthesizable as _synthesizable
 from pysilicon.simulation.simobj import ProcessGen as _ProcessGen
 from pysilicon.simulation.simulation import Simulation
 from tests.hw.test_resolve import DemoCmdHdr
 from tests.hw.test_resolve import DemoCmdHdr as _DemoCmdHdr
-from tests.hw.test_resolve import DemoError
 from tests.hw.test_resolve import DemoError as _DemoError
 from tests.hw.test_resolve import DemoErrorField
 
@@ -362,7 +370,6 @@ def test_function_stmt_with_endpoint_arg():
 
 
 def test_function_stmt_opt_out_no_qualifier():
-    from typing import ClassVar
     from pysilicon.hw.hwstmt import FunctionStmt
 
     class _NoNs(HwComponent):
@@ -380,7 +387,6 @@ def test_function_stmt_opt_out_no_qualifier():
 
 
 def test_function_stmt_custom_namespace():
-    from typing import ClassVar
     from pysilicon.hw.hwstmt import FunctionStmt
 
     class _CustomNs(HwComponent):
@@ -501,7 +507,6 @@ def test_cpp_kernel_name_poly_accel():
 
 def test_cpp_kernel_name_override():
     from pysilicon.build.hwgen import cpp_kernel_name
-    from typing import ClassVar
 
     class _Overridden(HwComponent):
         cpp_kernel_name: ClassVar[str | None] = "my_custom_name"
@@ -520,7 +525,6 @@ def test_resolved_namespace_default_uses_kernel_name():
 
 
 def test_resolved_namespace_explicit_string():
-    from typing import ClassVar
     from pysilicon.build.hwgen import resolved_namespace
 
     class _NsCustom(HwComponent):
@@ -530,7 +534,6 @@ def test_resolved_namespace_explicit_string():
 
 
 def test_resolved_namespace_empty_opts_out():
-    from typing import ClassVar
     from pysilicon.build.hwgen import resolved_namespace
 
     class _NsOptOut(HwComponent):
@@ -540,7 +543,6 @@ def test_resolved_namespace_empty_opts_out():
 
 
 def test_resolved_namespace_explicit_none_is_auto():
-    from typing import ClassVar
     from pysilicon.build.hwgen import resolved_namespace
 
     class _NsAuto(HwComponent):
@@ -556,7 +558,6 @@ def cpp_kernel_name_for(cls):
 
 
 def test_resolved_namespace_independent_from_kernel_name_override():
-    from typing import ClassVar
     from pysilicon.build.hwgen import cpp_kernel_name, resolved_namespace
 
     class _Both(HwComponent):
@@ -587,18 +588,6 @@ def _hook_with_stream(
     s_in: _StreamIFSlave,
 ) -> _ProcessGen[None]:
     yield None
-
-
-from dataclasses import dataclass as _dataclass
-from typing import ClassVar
-
-from pysilicon.hw.regmap import (
-    Bit as _Bit,
-    RegAccess as _RegAccess,
-    RegField as _RegField,
-    VitisRegMap as _VitisRegMap,
-    VitisRegMapMMIFSlave as _VitisRegMapMMIFSlave,
-)
 
 
 @_dataclass
