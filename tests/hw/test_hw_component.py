@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -72,8 +73,6 @@ def test_synthesizable_wraps_original_function():
 # ---------------------------------------------------------------------------
 # HwParam detection
 # ---------------------------------------------------------------------------
-
-import typing
 
 
 def test_hwparam_detectable_via_get_origin():

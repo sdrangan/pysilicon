@@ -11,7 +11,7 @@ import numpy.typing as npt
 from pysilicon.hw.arrayutils import SchemaArray, read_array, read_uint32_file, write_array
 from pysilicon.hw.clock import Clock
 from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
-from pysilicon.hw.hw_component import HwComponent, HwParam
+from pysilicon.hw.hw_component import HwComponent, HwConst, HwParam
 from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
 from pysilicon.hw.memif import DirectMMIF, MMIFMaster
 from pysilicon.hw.regmap import (
@@ -54,7 +54,7 @@ PolyCmdTypeField = EnumField.specialize(enum_type=PolyCmdType)
 
 class CoeffArray(DataArray):
     """Array of polynomial coefficients in ascending order (constant term first)."""
-    ncoeff: int = 4
+    ncoeff: HwConst[int] = 4
     element_type = Float32
     static = True
     max_shape = (ncoeff,)

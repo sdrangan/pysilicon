@@ -340,7 +340,7 @@ def _collect_template_params(comp) -> list[str]:
     params: list[str] = []
     seen: set[str] = set()
     for _attr, ep in _discover_stream_endpoints(comp):
-        bw = ep.bitwidth
+        bw = ep.bitwidth  # type: ignore[attr-defined]
         if isinstance(bw, HwParamValue) and bw.param_name not in seen:
             params.append(bw.param_name)
             seen.add(bw.param_name)
