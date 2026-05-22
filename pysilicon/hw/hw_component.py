@@ -172,6 +172,32 @@ class HwComponent(Component):
         # HwParamValue instances.
         self._wrap_hw_params()
         super().__post_init__()
+        # Sentinel that flips immutability on. HwParam fields cannot be
+        # reassigned once construction has completed.
+        object.__setattr__(self, '_hw_construction_complete', True)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, '_hw_construction_complete', False):
+            for klass in type(self).__mro__:
+                klass_hints = getattr(klass, '__annotations__', {})
+                if name not in klass_hints:
+                    continue
+                hint = klass_hints[name]
+                if isinstance(hint, str):
+                    mod = sys.modules.get(klass.__module__)
+                    globs: dict = vars(mod) if mod is not None else {}
+                    try:
+                        hint = eval(hint, globs)  # noqa: S307
+                    except Exception:
+                        break
+                if typing.get_origin(hint) is HwParam:
+                    current = getattr(self, name, None)
+                    raise AttributeError(
+                        f"Cannot reassign HwParam field '{name}' after "
+                        f"construction (current value: {current!r})"
+                    )
+                break
+        object.__setattr__(self, name, value)
 
     def _wrap_hw_params(self) -> None:
         """Replace each ``HwParam[T]`` field value with a ``HwParamValue`` wrapper."""

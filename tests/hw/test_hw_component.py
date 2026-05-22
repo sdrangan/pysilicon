@@ -226,6 +226,48 @@ def test_plain_field_not_wrapped():
     assert type(comp.proc_latency) is int
 
 
+# ---------------------------------------------------------------------------
+# Phase 3: HwParam immutability
+# ---------------------------------------------------------------------------
+
+def test_hwparam_reassignment_raises_attribute_error():
+    comp = ParamComp(sim=Simulation(), in_bw=32, out_bw=64)
+    with pytest.raises(AttributeError, match="in_bw"):
+        comp.in_bw = 64
+
+
+def test_hwparam_reassign_error_mentions_current_value():
+    comp = ParamComp(sim=Simulation(), in_bw=32, out_bw=64)
+    with pytest.raises(AttributeError, match="32"):
+        comp.in_bw = 64
+
+
+def test_plain_field_remains_mutable_after_construction():
+    from dataclasses import dataclass
+
+    @dataclass
+    class _PlainMutableComp(HwComponent):
+        in_bw: HwParam[int] = 32
+        proc_ii: int = 1
+
+    comp = _PlainMutableComp(sim=Simulation())
+    comp.proc_ii = 2
+    assert comp.proc_ii == 2
+
+
+def test_internal_state_attribute_remains_mutable():
+    """Names without an annotation (e.g. counters) can be reassigned freely."""
+    comp = ParamComp(sim=Simulation(), in_bw=32, out_bw=64)
+    comp._job = 42  # noqa: SLF001 — exercising the mutability path
+    assert comp._job == 42
+
+
+def test_construction_still_works():
+    """Sanity: instantiation isn't blocked by the immutability guard."""
+    comp = ParamComp(sim=Simulation(), in_bw=16, out_bw=32)
+    assert int(comp.in_bw) == 16
+
+
 def test_subclass_post_init_sees_wrapped_param():
     """Endpoints constructed in subclass __post_init__ must read HwParamValue."""
     from dataclasses import dataclass
