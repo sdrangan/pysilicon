@@ -15,6 +15,7 @@ from pysilicon.hw.hwstmt import (
     SeqStmt,
     WhileStmt,
 )
+from pysilicon.hw.interface import StreamIFMaster as _StreamIFMaster
 from pysilicon.hw.interface import StreamIFSlave as _StreamIFSlave
 from pysilicon.hw.synth import synthesizable as _synthesizable
 from pysilicon.simulation.simobj import ProcessGen as _ProcessGen
@@ -586,6 +587,16 @@ def _hook_with_stream(
 
 
 @_synthesizable
+def _hook_two_streams(
+    self,
+    cmd: _DemoCmdHdr,
+    s_in: _StreamIFSlave,
+    m_out: _StreamIFMaster,
+) -> _ProcessGen[None]:
+    yield None
+
+
+@_synthesizable
 def _hook_bad(self, x):  # no annotation
     return x
 
@@ -995,6 +1006,39 @@ def test_validate_single_call_site_consistent_ok():
         FunctionStmt(method=method, inputs=[ep], outputs=[]),
     ])
     _validate_single_call_site(tree, method, ["in_bw"])
+
+
+# ---------------------------------------------------------------------------
+# Hook-template Phase 2: hook_signature_str accepts template_params
+# ---------------------------------------------------------------------------
+
+def test_hook_signature_str_without_template_params_unchanged():
+    """Default behaviour (no template_params) still emits symbolic WORD_BW."""
+    from pysilicon.build.hwgen import hook_signature_str
+    sig = hook_signature_str(_hook_with_stream)
+    assert sig.startswith("void _hook_with_stream(")
+    assert "axi4s_word<WORD_BW>" in sig
+    assert "template <" not in sig
+
+
+def test_hook_signature_str_with_one_template_param():
+    from pysilicon.build.hwgen import hook_signature_str
+    sig = hook_signature_str(_hook_with_stream, template_params=["in_bw"])
+    assert sig.startswith("template <int in_bw>\n")
+    assert "axi4s_word<in_bw>" in sig
+    assert "axi4s_word<WORD_BW>" not in sig
+
+
+def test_hook_signature_str_with_two_template_params():
+    """Two stream args, two template params — substituted in order."""
+    from pysilicon.build.hwgen import hook_signature_str
+    sig = hook_signature_str(
+        _hook_two_streams, template_params=["in_bw", "out_bw"],
+    )
+    assert sig.startswith("template <int in_bw, int out_bw>\n")
+    assert "axi4s_word<in_bw>" in sig
+    assert "axi4s_word<out_bw>" in sig
+    assert "WORD_BW" not in sig
 
 
 def test_validate_single_call_site_inconsistent_raises():

@@ -420,12 +420,18 @@ def kernel_signature(comp) -> str:
     return f"{template_decl}void {name}(\n{arg_block}\n) {{\n{pragma_block}"
 
 
-def hook_signature(method) -> tuple[str, list[tuple[str, str]]]:
+def hook_signature(
+    method, template_params: list[str] | None = None,
+) -> tuple[str, list[tuple[str, str]]]:
     """Return ``(return_cpp_type, [(arg_name, arg_decl), ...])`` for a hook.
 
     Drops ``self``. Unwraps ``ProcessGen[T]`` return annotations (which alias
-    to ``Generator[Event, Any, T]``). Endpoint-typed args become axis
+    to ``Generator[Event, Any, T]``). Stream-endpoint args become axis
     ``hls::stream<...>&`` references; other args translate via :func:`cpp_type`.
+
+    When ``template_params`` is non-empty, the i-th stream-typed arg uses
+    the i-th template-param name in its ``axi4s_word<...>`` expression
+    instead of the symbolic ``WORD_BW``.
     """
     import collections.abc
     import inspect
@@ -436,6 +442,7 @@ def hook_signature(method) -> tuple[str, list[tuple[str, str]]]:
     hints = typing.get_type_hints(method)
     sig = inspect.signature(method)
     param_names = [name for name in sig.parameters if name != 'self']
+    tparam_queue = list(template_params) if template_params else []
     args: list[tuple[str, str]] = []
     for name in param_names:
         annot = hints.get(name)
@@ -444,8 +451,9 @@ def hook_signature(method) -> tuple[str, list[tuple[str, str]]]:
                 f"Hook '{method.__name__}' parameter '{name}' has no type annotation"
             )
         if isinstance(annot, type) and issubclass(annot, (StreamIFSlave, StreamIFMaster)):
+            tmpl = tparam_queue.pop(0) if tparam_queue else "WORD_BW"
             args.append(
-                (name, f"hls::stream<streamutils::axi4s_word<WORD_BW>>& {name}")
+                (name, f"hls::stream<streamutils::axi4s_word<{tmpl}>>& {name}")
             )
             continue
         args.append((name, f"{cpp_type(annot)} {name}"))
@@ -462,11 +470,21 @@ def hook_signature(method) -> tuple[str, list[tuple[str, str]]]:
     return ret_cpp, args
 
 
-def hook_signature_str(method) -> str:
-    """Return the full C++ declaration string for a hook (no body, no semicolon)."""
-    ret_cpp, args = hook_signature(method)
+def hook_signature_str(
+    method, template_params: list[str] | None = None,
+) -> str:
+    """Return the full C++ declaration string for a hook (no body, no semicolon).
+
+    When ``template_params`` is non-empty, the result is prefixed with a
+    ``template <int p1, int p2, ...>`` line.
+    """
+    ret_cpp, args = hook_signature(method, template_params=template_params)
     arg_str = ", ".join(arg_decl for _, arg_decl in args)
-    return f"{ret_cpp} {method.__name__}({arg_str})"
+    prefix = ""
+    if template_params:
+        params = ", ".join(f"int {p}" for p in template_params)
+        prefix = f"template <{params}>\n"
+    return f"{prefix}{ret_cpp} {method.__name__}({arg_str})"
 
 
 # ---------------------------------------------------------------------------
