@@ -555,6 +555,16 @@ def _validate_single_call_site(tree, hook_method, template_params: list[str]) ->
         )
 
 
+def _snake_case(name: str) -> str:
+    """``CamelCase`` / ``PascalCase`` / ``mixedCase`` → ``snake_case``.
+
+    Inserts an underscore before each upper-case letter (except a leading
+    one), then lowercases the whole string. Digits stay attached to the
+    preceding word: ``Float32`` → ``float32``.
+    """
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+
 def cpp_kernel_name(comp_class) -> str:
     """Default kernel function name.
 
@@ -712,7 +722,7 @@ def header_to_cpp(comp) -> str:
     lines = ['#pragma once', '']
     lines.append('#include "include/streamutils_hls.h"')
     for s in schemas:
-        lines.append(f'#include "include/{s.cpp_class_name().lower()}.h"')  # type: ignore[attr-defined]
+        lines.append(f'#include "include/{_snake_case(s.cpp_class_name())}.h"')  # type: ignore[attr-defined]
     lines.append('')
     lines.append(_kernel_signature_decl(comp))
 

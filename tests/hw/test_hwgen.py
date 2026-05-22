@@ -488,6 +488,16 @@ def test_cpp_type_none_raises():
         cpp_type(None)
 
 
+def test_snake_case_helper():
+    from pysilicon.build.hwgen import _snake_case
+    assert _snake_case("PolyCmdHdr") == "poly_cmd_hdr"
+    assert _snake_case("Float32") == "float32"
+    assert _snake_case("CoeffArray") == "coeff_array"
+    assert _snake_case("DemoErrorField") == "demo_error_field"
+    # Already-snake names pass through.
+    assert _snake_case("already_snake") == "already_snake"
+
+
 def test_cpp_kernel_name_demo():
     from pysilicon.build.hwgen import cpp_kernel_name
     from tests.hw.test_resolve import DemoComponent
@@ -763,7 +773,7 @@ def test_header_to_cpp_demo_component_substrings():
     for sub in [
         "#pragma once",
         '#include "include/streamutils_hls.h"',
-        '#include "include/democmdhdr.h"',
+        '#include "include/demo_cmd_hdr.h"',
         "void demo(",
         ");",  # forward decl terminator
         "namespace demo {",
