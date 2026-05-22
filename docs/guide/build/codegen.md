@@ -6,7 +6,7 @@ nav_order: 2
 
 # Code Generation Steps
 
-PySilicon ships four built-in build steps that generate the C++ headers and helpers a Vitis HLS kernel needs from Python schema definitions. All four are `Buildable` subclasses — the legacy code-generation base class — and are imported from their respective modules:
+PySilicon ships four built-in build steps that generate the C++ headers and helpers a Vitis HLS kernel needs from Python schema definitions. All four are `Buildable` subclasses — the convenience base class for steps that write text-file outputs — and are imported from their respective modules:
 
 | Step | Purpose | Module |
 |---|---|---|
@@ -166,12 +166,15 @@ dag.add(ArrayUtilsStep(Float32, [32, 64]))
 
 ## A note on `Buildable` and rebuild semantics
 
-All four steps above subclass `Buildable`, which predates the `consumes` / `produces` model used by newer `BuildStep` subclasses. Practical implications for users:
+All four steps above subclass `Buildable` rather than `BuildStep` directly. `Buildable` is the convenience base for steps whose output is "a fixed set of named text files written from string-valued generators." Practical implications for users:
 
-- The DAG cannot mtime-skip Buildable steps — they re-run on every `dag.run()`. This is normally fine because writing four small text files is cheap and deterministic, and downstream Vitis steps are skipped on freshness only if these outputs land unchanged. If you need finer control, force a single step with `force=["StreamUtilsStep"]` to trigger downstream cascade.
+- The DAG cannot mtime-skip Buildable steps — they re-run on every `dag.run()`. This is normally fine because writing a few small text files is cheap and deterministic, and downstream Vitis steps are still skipped on freshness if these outputs land unchanged. If you need finer control, force a single step with `force=["StreamUtilsStep"]` to trigger downstream cascade.
 - Buildable steps wire their dependencies via a `resolve_deps()` hook rather than declared `consumes` lists. `DataSchemaStep` and `ArrayUtilsStep` use this to find the `StreamUtilsStep` in the DAG; you don't need to set anything up.
 
-New code-generation steps you write should subclass `BuildStep` directly with explicit `consumes` / `produces` — see [Core Components](./corecomp.md#buildstep) for the modern pattern.
+When to subclass `Buildable` vs `BuildStep`:
+
+- `Buildable` is the right choice when the step writes a fixed set of text files generated as strings, has no in-memory artifacts to pass downstream, and doesn't depend on artifact values from prior steps.
+- `BuildStep` (with explicit `consumes` / `produces`) is the right choice for anything else — steps that read upstream artifact values, produce in-memory results, mix file and object outputs, or want proper mtime-based freshness. See [Core Components](./corecomp.md#buildstep) for the API.
 
 ---
 

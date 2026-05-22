@@ -1,714 +1,319 @@
-# HwComponent Synthesis Plan
+# HwComponent Phase 3.5: Extractor End-to-End on `on_start`
 
-_Status: draft — delete when feature ships_
+## Goal
 
----
+Make `HwStmtExtractor` produce a valid `HwStmt` tree from the real `PolyAccelComponent.on_start` (in [examples/poly/poly.py](../examples/poly/poly.py)) by extending the synthesizable subset and adding the missing statement types. No C++ codegen — just the IR tree.
 
-## 0. Module layout
+## Already done (do NOT redo)
 
-### New files
+- `@synthesizable`, `@sim_only`, `HwComponent`, `HwParam`, `SynthContext`, `ControlMode` — in [pysilicon/hw/synth.py](../pysilicon/hw/synth.py) and [pysilicon/hw/hw_component.py](../pysilicon/hw/hw_component.py).
+- `HwStmt` IR (`SeqStmt`, `WhileStmt`, `CaseStmt`, `ContinueStmt`, `SynthCallStmt`, `HookStmt`, `HwVar`, `Ref`, `FieldRef`) — in [pysilicon/hw/hwstmt.py](../pysilicon/hw/hwstmt.py).
+- `HwStmtExtractor` and `SynthesisError` — in [pysilicon/build/hwcodegen.py](../pysilicon/build/hwcodegen.py).
+- Stream stmt classes (`StreamGetStmt`, `StreamWriteStmt`, `StreamDrainStmt`, `StreamGetPipelinedStmt`, `StreamWritePipelinedStmt`) — in [pysilicon/hw/interface.py](../pysilicon/hw/interface.py).
+- `VitisRegMap` / `VitisRegMapMMIFSlave` — in [pysilicon/hw/regmap.py](../pysilicon/hw/regmap.py).
 
-| File | Contents | Layer |
-|---|---|---|
-| `pysilicon/hw/synth.py` | `@synthesizable` decorator (`synth_fn` optional; omitting defaults to stub) | `hw` — no build deps |
-| `pysilicon/hw/hw_component.py` | `HwComponent`, `HwParam[T]`, `SynthContext`, `ControlMode` | `hw` |
-| `pysilicon/hw/hwstmt.py` | `HwStmt` base hierarchy, `HwVar`, `HwExpr` (`Ref`, `FieldRef`), `SynthCallStmt` | `hw` — IR types only, no codegen |
-| `pysilicon/build/hwcodegen.py` | `HwStmtExtractor`, `HlsKernelStep`, `HlsImplStep` | `build` |
+## Design decisions (already settled — do NOT re-litigate)
 
-### Where endpoint `HwStmt` subclasses live
+1. **Kernel body method:** for components with a `VitisRegMapMMIFSlave` endpoint, extract `on_start`. Otherwise, extract `run_proc`. Selection lives in a module-level `extract_kernel(comp)` helper.
+2. **No implicit captures in synthesizable methods.** Inside any synthesizable method body, `self.foo` attribute *reads* are forbidden unless `foo` is `@sim_only`. Method *calls* on `self.X.method(...)` are allowed only if `method` is `@synthesizable`. Extractor enforces both at extraction time.
+3. **User compute methods become `FunctionStmt`, NOT recursive extraction.** When the extractor sees `yield from self.method(...)` where `method` is `@synthesizable` with no `synth_fn`, produce a `FunctionStmt` referencing the method by name. Do not walk the method body. The C++ implementation is hand-written by the user.
+4. **One impl file per hook:** `<component>_<function>_impl.cpp`. Override via `@synthesizable(impl_file="...")`.
+5. **Prototypes live in `<component>.hpp`** for both the kernel function and every hook.
+6. **`VitisRegMap.set` and `.get` are synthesizable.** They become AXI-Lite scalar writes/reads in C++. Each gets a dedicated `SynthCallStmt` subclass (`RegMapSetStmt`, `RegMapGetStmt`).
+7. **`return` (with or without value)** is allowed inside `if` bodies and at the top level of `while True:`. Added as `ReturnStmt`.
+8. **`!=` is allowed in `CaseStmt` test** in addition to `==`.
 
-Endpoint-owned statement classes stay alongside their endpoint:
+## Reference reading (read once before starting)
 
-| Statement class | Lives in |
-|---|---|
-| `StreamGetStmt`, `StreamWriteStmt`, `StreamDrainStmt` | `pysilicon/hw/interface.py` |
-| `MMArrayReadStmt`, `MMArrayWriteStmt`, `MMSchemaReadStmt`, `MMSchemaWriteStmt` | `pysilicon/hw/memif.py` |
+- [docs/guide/interface/regmap.md](../docs/guide/interface/regmap.md) — `VitisRegMap`, hook contract, `on_start` lifecycle.
+- [pysilicon/hw/regmap.py](../pysilicon/hw/regmap.py) — actual `RegMap` / `VitisRegMap` API.
+- [pysilicon/build/hwcodegen.py](../pysilicon/build/hwcodegen.py) — current extractor.
+- [pysilicon/hw/hwstmt.py](../pysilicon/hw/hwstmt.py) — current IR.
+- [examples/poly/poly.py](../examples/poly/poly.py) lines 149–235 — `PolyAccelComponent.__post_init__`, `on_start`, and `evaluate`. The end-to-end test target.
 
-All import `SynthCallStmt` from `pysilicon/hw/hwstmt.py`.
+## Working convention
 
-### Dependency graph (no cycles)
-
-```
-dataschema.py ──────────────────────────────────────────────┐
-arrayutils.py ──────────────────────────────────────────────┤
-synth.py      (no hw deps)                                  │
-                                                            ▼
-interface.py  → dataschema.py, synth.py                    hwstmt.py → dataschema.py, arrayutils.py
-memif.py      → interface.py                                           (interface.py, hw_component.py
-component.py  → (interface.py TYPE_CHECKING only)                       under TYPE_CHECKING)
-                                                            │
-hw_component.py → component.py, synth.py                   │
-                  (hwstmt.py TYPE_CHECKING only)            │
-                                                            │
-build/hwcodegen.py → hw/hw_component.py, hw/hwstmt.py, build/build.py
-```
-
-`synth.py` has no imports from other `hw/` files — only `typing` — so both `interface.py` and `hw_component.py` can safely import `@synthesizable` from it without creating cycles.
-
-`hwstmt.py` references `InterfaceEndpoint` and `HwComponent` only under `TYPE_CHECKING` (for `HwVar.producer` and `SynthCallStmt` input types), avoiding a cycle with `interface.py`.
+- Each phase is a separate commit; push after each commit.
+- Run `pytest tests/hw/test_hw_component.py tests/hw/test_phase3.py` after every phase. All previously-passing tests must continue to pass.
+- New tests live in `tests/hw/test_extract_poly.py` (one new file).
 
 ---
 
-## 1. What exists today
+## Phase 1: `ReturnStmt`
 
-### Core simulation infrastructure
+**Goal:** Allow `return` (with or without a value) inside `if` bodies and at the top level of `while True:`.
 
-| Concept | Class | File |
-|---|---|---|
-| Simulation entity base | `SimObj(NamedObject)` | `pysilicon/simulation/simobj.py` |
-| Hardware component | `Component(SimObj)` | `pysilicon/hw/component.py` |
-| Endpoint base | `InterfaceEndpoint(SimObj)` | `pysilicon/hw/interface.py` |
-| Interface base | `Interface(SimObj)` | `pysilicon/hw/interface.py` |
-| AXI-Stream (sim) | `StreamIF`, `StreamIFMaster`, `StreamIFSlave` | `pysilicon/hw/interface.py` |
-| Crossbar (sim) | `CrossBarIF`, `CrossBarIFInput`, `CrossBarIFOutput` | `pysilicon/hw/interface.py` |
-| Type system | `DataSchema`, `DataList`, `DataArray`, `IntField`, `FloatField`, `EnumField` | `pysilicon/hw/dataschema.py` |
-| Build DAG | `BuildDag`, `BuildStep`, `Buildable`, `BuildConfig` | `pysilicon/build/build.py` |
+**Changes:**
 
-**`SimObj` lifecycle** (critical for codegen mapping):
+- In [pysilicon/hw/hwstmt.py](../pysilicon/hw/hwstmt.py), add:
 
-```
-pre_sim()     →  initialization / callback registration
-run_proc()    →  simpy generator — the behavior specification
-post_sim()    →  teardown / logging
-```
+  ```python
+  @dataclass
+  class ReturnStmt(HwStmt):
+      """`return` from the kernel function. Optional return value."""
+      value: HwExpr | None = None
+  ```
 
-**`Component`** is currently minimal — a `SimObj` with `endpoints: dict[str, InterfaceEndpoint]` and `add_endpoint()`. There is no `HwComponent` subclass yet.
+- In [pysilicon/build/hwcodegen.py](../pysilicon/build/hwcodegen.py), extend `_visit_stmt` to handle `ast.Return`:
+  - `return` with no value → `ReturnStmt(value=None)`.
+  - `return <Name>` where the name is a bound `HwVar` → `ReturnStmt(value=Ref(var=...))`.
+  - `return <Attribute>` where it's a known `FieldRef` pattern → `ReturnStmt(value=FieldRef(...))`.
+  - Anything else → `SynthesisError`.
 
-**`DataSchema`** already has C++ codegen methods: `gen_write(word_bw, dst_type, ...)` and `gen_read(word_bw, src_type, ...)`. These emit the serialization/deserialization code that kernel functions use. `nwords_per_inst(word_bw)` gives the word count for any type. This is the most significant existing codegen asset.
+**Tests** (new file `tests/hw/test_extract_poly.py`):
 
-**`pysilicon/build/`** already has `DataSchemaStep(Buildable)` (generates schema headers) and stream utility files (`streamutils.py`, `streamutils_hls.h`, `streamutils_tb.h`, `memmgr.hpp`). The build DAG is functional.
+- Extract a tiny synthetic component whose `run_proc` is `while True: yield from self.s_in.get(...); if x.f == V: return`. Assert the inner `if` body's first stmt is a `ReturnStmt`.
+- Extract a `run_proc` that returns at top level after one operation. Assert the outer tree contains a `ReturnStmt`.
 
-### What `poly_demo_simpy.py` shows about the target
-
-`PolyAccelComponent` is the clearest concrete example of the pattern we want to synthesize:
-
-```python
-@dataclass
-class PolyAccelComponent(Component):
-    in_bw: int = 32
-    out_bw: int = 32
-
-    def __post_init__(self):
-        self.s_in  = StreamIFSlave(...)   # → hls::stream in the kernel
-        self.m_out = StreamIFMaster(...)  # → hls::stream in the kernel
-
-    def run_proc(self):               # → kernel function body
-        while True:
-            cmd_words = yield from self.s_in.get(nwords_max=N)
-            cmd_hdr   = PolyCmdHdr().deserialize(cmd_words, word_bw=32)
-            ...
-            samp_out  = self.evaluate(cmd_hdr, samp_in)   # ← compute hook
-            yield from self.m_out.write(resp_hdr.serialize(word_bw=32))
-```
-
-The kernel orchestration (`run_proc`) is already clean and mechanical. The algorithmic body (`evaluate`) is already factored out. This is the pattern codegen must formalize.
+**Commit:** `extractor: add ReturnStmt support inside if-body and while-true`
 
 ---
 
-## 2. Goal
+## Phase 2: `!=` in `CaseStmt`
 
-Make every `Component` with the right structure synthesizable to a Vitis HLS kernel. Two integration backends on top of shared module-level codegen:
+**Goal:** Allow `if x.f != V:` in addition to `if x.f == V:`.
 
-- **Vitis acceleration flow** — `v++`, `.xo`, `.xclbin`, `connectivity.cfg`, PyXRT host. Targets Alveo, Versal.
-- **Vivado IPI flow** — IP packaging, block-design Tcl, PYNQ overlay driver. Targets RFSoC 4x2 and other Zynq/RFSoC boards where the RF Data Converter requires Vivado IPI.
+**Changes:**
 
-Module codegen (Layer 1) is identical for both backends. Backends differ only in system integration (Layer 2) and host code (Layer 3).
+- In [pysilicon/hw/hwstmt.py](../pysilicon/hw/hwstmt.py), add an `op` field to `CaseStmt`:
 
----
+  ```python
+  @dataclass
+  class CaseStmt(HwStmt):
+      var:      HwVar
+      field:    str
+      value:    object
+      if_true:  SeqStmt
+      if_false: SeqStmt | None = None
+      op:       str = '=='                # '==' or '!='
+  ```
 
-## 3. HwComponent
+- In `_visit_if`, accept `ast.NotEq` in addition to `ast.Eq`. Store the operator on the resulting `CaseStmt`.
 
-### 3.1 New marker class
+**Tests:**
 
-A synthesizable component is a `Component` that additionally carries:
+- Extract a `run_proc` with `if err != PolyError.NO_ERROR:` and assert the resulting `CaseStmt.op == '!='`.
+- Existing `==` cases continue to extract with `op == '=='` (regression check).
 
-| Addition | What it is | Status |
-|---|---|---|
-| `HwParam[T]` field annotations | compile-time template parameters | **Gap** |
-| `@synthesizable` methods (no `synth_fn`) | Python reference impl + C++ stub target | **Gap** |
-| Control mode declaration | `free_running` vs `per_invocation` | **Gap** |
-| Typed endpoints | already in `Component.endpoints` via `DataSchema` | Exists |
-| `run_proc` returning `HwStmt` tree | dual-use orchestration spec | Exists (needs `HwStmt` classes) |
-
-Proposed class, subject to revision:
-
-```python
-class HwComponent(Component):
-    control_mode: ClassVar[ControlMode] = ControlMode.AUTO
-```
-
-`ControlMode` is inferred from the top-level `HwStmt` returned by `run_proc`: `WhileStmt` at the root → free-running (`ap_ctrl_none`); `SeqStmt` → per-invocation (`ap_ctrl_chain`). The explicit `control_mode` class attribute exists only as an override for unusual cases where inference is insufficient.
-
-### 3.2 `HwParam[T]` — synthesis template parameters
-
-Dataclass fields on an `HwComponent` fall into three categories for synthesis:
-
-| Annotation | Synthesis treatment | Example |
-|---|---|---|
-| `ClassVar[T]` | Literal constant — substituted directly in generated C++ | `MAX_TAPS: ClassVar[int] = 64` |
-| `HwParam[T]` | C++ template parameter — referenced by name in generated C++ | `in_bw: HwParam[int] = 32` |
-| Plain field (no marker) | Simulation-only — not accessible in synthesis | `name`, `sim`, etc. |
-
-`HwParam[T]` is a generic wrapper that in simulation behaves as `T` (just a normal Python attribute). At build time, the extractor collects all `HwParam` fields and generates a C++ template signature:
-
-```python
-@dataclass
-class PolyAccelComponent(HwComponent):
-    in_bw:     HwParam[int] = 32
-    out_bw:    HwParam[int] = 32
-    nwords_max: HwParam[int] = 256
-```
-
-Generated C++ signature:
-
-```cpp
-template <int IN_BW, int OUT_BW, int NWORDS_MAX>
-void poly_accel(
-    hls::stream<ap_uint<IN_BW>>& s_in,
-    hls::stream<ap_uint<OUT_BW>>& m_out,
-    ...
-)
-```
-
-#### `HwParam[T]` implementation
-
-`HwParam` is a plain `Generic[T]` class. This makes `HwParam[int]` a standard `typing._GenericAlias` detectable via `typing.get_origin` and `typing.get_args`:
-
-```python
-from typing import Generic, TypeVar
-T = TypeVar('T')
-
-class HwParam(Generic[T]):
-    """Marks a dataclass field as a C++ template parameter.
-    
-    In simulation the field behaves as a normal Python attribute (dataclass
-    does not enforce types). At build time the extractor collects all
-    HwParam fields from get_type_hints() and maps them to C++ template names.
-    """
-```
-
-Detection at build time:
-```python
-import typing
-hints = typing.get_type_hints(type(component))
-hw_params = {
-    name: name.upper()          # in_bw → IN_BW, nwords_max → NWORDS_MAX
-    for name, hint in hints.items()
-    if typing.get_origin(hint) is HwParam
-}
-```
-
-C++ name convention: `field_name.upper()` — snake_case becomes UPPER_SNAKE_CASE. `in_bw → IN_BW`, `nwords_max → NWORDS_MAX`.
-
-`HwParam` lives in `hw_component.py` (not `synth.py`) since it is only relevant to `HwComponent` field annotations.
-
-#### `SynthContext` carries the parameter mapping
-
-`SynthContext` is passed to every `synth_fn`. It exposes `HwParam` fields both as values (for simulation-side checks) and as C++ name strings (for code emission):
-
-```python
-@dataclass
-class SynthContext:
-    component: HwComponent
-    params: dict[str, str]   # Python name → C++ template param name, e.g. {'in_bw': 'IN_BW'}
-
-    def cpp_param(self, py_name: str) -> str:
-        """Return C++ expression for a parameter: template name if HwParam, literal if ClassVar."""
-        if py_name in self.params:
-            return self.params[py_name]              # e.g. 'IN_BW'
-        return repr(getattr(self.component, py_name))  # e.g. '64'
-```
-
-A `synth_fn` for `StreamIFSlave.get` uses `ctx.cpp_param('in_bw')` to emit `hls::stream<ap_uint<IN_BW>>` rather than the hard-coded literal `32`. The same `synth_fn` works for any bitwidth configuration without modification.
-
-### 3.3 Synthesizable compute methods
-
-User-implemented algorithmic leaves are decorated with `@synthesizable` (no `synth_fn`). When `synth_fn` is omitted, the decorator defaults to stub behavior: at build time it emits a call to a user-written function in `_impl.cpp` rather than generating the full implementation. The Python body is the simulation golden reference and also drives HLS C-sim.
-
-```python
-class PolyAccelComponent(HwComponent):
-    @synthesizable
-    def evaluate(self,
-                 cmd_hdr: PolyCmdHdr,
-                 samp_in: SchemaArray[Float32],
-                 ) -> tuple[PolyRespHdr, SchemaArray[Float32], PolyRespFtr]:
-        """Reference implementation — also the C-sim golden."""
-        ...
-```
-
-All arguments and return values must be `DataSchema` instances or `SchemaArray[T]` — the two synthesizable data types (§4.0). `MMIFMaster` endpoints for sub-component memory are passed as additional arguments before the data args.
-
-
-### 3.4 Synthesis hints — deferred
-
-Pragma surface (`PIPELINE`, `DATAFLOW`, `ARRAY_PARTITION`, etc.) is deferred. When needed, hints will be expressed as arguments on the `@synthesizable` decorator rather than as a separate `SynthesisHints` class. Interface pragmas (`m_axi`, `axis`, `s_axilite`) are always derived automatically from endpoint types.
+**Commit:** `extractor: support != in CaseStmt test`
 
 ---
 
-## 4. `HwStmt` — synthesizable orchestration via AST parsing
+## Phase 3: `extract_kernel(comp)` policy helper
 
-`run_proc` on an `HwComponent` is written as normal Python. In simulation it runs as a SimPy generator unchanged. At build time an `HwStmtExtractor` parses its AST, maps recognized patterns to `HwStmt` nodes, and raises `SynthesisError` for anything outside the synthesizable subset. The user never constructs `HwStmt` objects manually.
+**Goal:** The extractor must be able to target `on_start` for regmap-bearing components.
 
-### 4.0 Synthesizable data types
+**Changes:**
 
-Exactly two data types cross synthesis boundaries (stream endpoints, memory endpoints, hook arguments):
+- In [pysilicon/build/hwcodegen.py](../pysilicon/build/hwcodegen.py):
+  - Add `method_name: str = 'run_proc'` parameter to `HwStmtExtractor.__init__`. Store on `self._method_name`. Use it in `extract()` where `comp.run_proc` is currently hard-coded.
+  - Add a module-level helper:
 
-| Type | Python representation | HLS C++ representation | Notes |
-|---|---|---|---|
-| `DataSchema` subclass | Python object with field attributes | C++ struct | Structured, named fields |
-| `SchemaArray[T]` | `np.ndarray` (scalar `T`) or `list[T]` (complex `T`) | `T arr[N]` | Homogeneous array of a scalar field type |
+    ```python
+    def extract_kernel(comp: HwComponent) -> HwStmt:
+        """Pick on_start if the component has a VitisRegMapMMIFSlave; else run_proc."""
+        from pysilicon.hw.regmap import VitisRegMapMMIFSlave   # local import: avoid cycle
+        for ep in getattr(comp, 'endpoints', {}).values():
+            if isinstance(ep, VitisRegMapMMIFSlave):
+                return HwStmtExtractor(comp, method_name='on_start').extract()
+        return HwStmtExtractor(comp, method_name='run_proc').extract()
+    ```
 
-`SchemaArray` is **not** a `DataSchema` subclass — it is a separate generic container for runtime transfer buffers. `T` is a scalar field type (`Float32`, `IntField` subclass, `EnumField` subclass).
+**Tests:**
 
-`DataArray` (which already exists as a `DataSchema` subclass) is for static-shape embedded arrays *inside* a schema definition, not for variable-count stream or memory buffers. The two are distinct:
+- Extract from a small `HwComponent` with no regmap → confirm `extract_kernel` calls `run_proc`.
+- Extract from a small `HwComponent` with a `VitisRegMapMMIFSlave` endpoint → confirm `extract_kernel` targets `on_start`.
 
-| | `DataArray` | `SchemaArray[T]` |
-|---|---|---|
-| Is a `DataSchema` | Yes — appears inside schema definitions | No — used at transfer boundaries |
-| Shape | Static (`nrows` fixed at class definition) | Dynamic (count comes from a `HwVar` or literal) |
-| Python repr | `list` of schema instances | `np.ndarray` or `list` |
-| HLS repr | struct field | local array argument |
-
-`HwVar.schema` holds either a `type[DataSchema]` or a `SchemaArray[T]` instance (which carries `elem_type` and an optional static `count`).
-
-### 4.1 Synthesizable subset
-
-The allowed patterns in `run_proc` are deliberately narrow:
-
-| Python construct | Maps to | Notes |
-|---|---|---|
-| `while True:` | `WhileStmt` | only `while True` — no condition expression |
-| `var: T = yield from self.ep.method(...)` | `SynthCallStmt` + `HwVar` binding | `ep` method must have `@synthesizable`; `T` is `DataSchema` or `SchemaArray[T]` |
-| `yield from self.ep.method(var)` | `SynthCallStmt` (no binding) | write / drain — no output variable |
-| `a, b = self.hook(var1, var2)` | `SynthCallStmt` + multiple `HwVar` bindings | hook must have `@synthesizable`; types from return annotation |
-| `if var.field == EnumValue:` | `CaseStmt` | restricted form only; body may contain `continue` |
-| `continue` | `ContinueStmt` | only inside `while True` |
-
-The underlying `HwStmt` type for any `@synthesizable` call is `SynthCallStmt`, which holds the `synth_fn` and the resolved input/output `HwVar`s. Typed subclasses (`StreamGetStmt`, `MMArrayReadStmt`, etc.) extend this for better error messages and introspection.
-
-Everything else — `for`, general `if`, arithmetic, comprehensions, calls to non-`@synthesizable` methods — raises `SynthesisError` at build time with a message pointing to the offending AST node.
-
-### 4.2 What `run_proc` looks like
-
-```python
-def run_proc(self):
-    while True:
-        cmd_hdr: PolyCmdHdr           = yield from self.s_in.get(PolyCmdHdr)
-        samp_in: SchemaArray[Float32] = yield from self.s_in.get(Float32, count=cmd_hdr.nsamp)
-        resp_hdr, samp_out, resp_ftr  = self.evaluate(cmd_hdr, samp_in)
-        yield from self.m_out.write(resp_hdr)
-        yield from self.m_out.write(samp_out)
-        yield from self.m_out.write(resp_ftr)
-```
-
-This is valid SimPy Python — no special objects, no tree construction. The AST extractor runs only when `HwComponent.build()` is called.
-
-### 4.3 `HwVar` and `HwExpr` — internal, not user-facing
-
-`HwVar` and `HwExpr` are implementation details of the extractor and codegen. Users never construct them.
-
-`HwVar` is created by the extractor for each binding (`var: T = ...`):
-
-```python
-@dataclass
-class HwVar:
-    name:     str                              # Python variable name → C++ identifier
-    typ:      type[DataSchema] | SchemaArray   # from the type annotation
-    producer: HwStmt                           # for ordering validation
-```
-
-`typ` is either a `DataSchema` subclass (for structured values) or a `SchemaArray[T]` instance (for homogeneous arrays). The extractor reads the annotation; the codegen uses `typ` to emit the correct C++ declaration.
-
-#### C++ mapping for `HwVar`
-
-| `typ` | C++ declaration | Example |
-|---|---|---|
-| `DataSchema` subclass | `schema_type.cpp_repr() name;` | `PolyCmdHdr cmd_hdr;` |
-| `SchemaArray[T]` (static count) | `T.cpp_repr() name[N];` | `float samp_in[256];` |
-| `SchemaArray[T]` (dynamic count from `HwVar`) | `T.cpp_repr() name[MAX_N];` + `int name_count;` | `float samp_in[MAX_NSAMP]; int samp_in_count;` |
-
-For dynamic count, `MAX_N` comes from the `nwords_max` argument on the endpoint call (a static upper bound required by HLS). The runtime count is tracked as a paired `int name_count` variable, initialised from the `FieldRef` expression (e.g., `cmd_hdr.nsamp`).
-
-#### C++ mapping for `InterfaceEndpoint` arguments
-
-Each `InterfaceEndpoint` subclass defines `to_cpp_arg(name: str) -> str` returning the C++ parameter declaration:
-
-| Endpoint | C++ argument | Notes |
-|---|---|---|
-| `StreamIFSlave` | `hls::stream<ap_uint<BW>>& name` | `BW` from endpoint `bitwidth` |
-| `StreamIFMaster` | `hls::stream<ap_uint<BW>>& name` | same |
-| `MMIFMaster` (local sub-component, `inline=True`) | `T (&name)[N]` | C array reference; `T` from `elem_type.cpp_repr()`, `N` from `nwords_tot` |
-| `MMIFMaster` (external, `inline=False`) | `T* name` | pointer; `m_axi` pragma emitted separately |
-
-These mappings are used both for kernel function signatures (top-level arguments) and for `synth_fn` argument lists in hook calls.
-
-`HwExpr` covers field access needed in synthesizable expressions (`cmd_hdr.nsamp`):
-
-```
-HwExpr
-├── Ref(var: HwVar)
-└── FieldRef(var: HwVar, field: str)   # validated against var.schema at extraction time
-```
-
-`Compare` and `BinOp` are deferred — arithmetic belongs in compute hooks, not in orchestration.
-
-### 4.4 `HwStmt` class hierarchy (internal)
-
-The extractor produces a tree of these; codegen walks it via `to_cpp(ctx)`:
-
-```
-HwStmt (base)
-├── WhileStmt          — while(true) + ap_ctrl_none
-├── SeqStmt            — sequential list of child HwStmts
-├── CaseStmt           — enum match (→ switch/if-else in C++)
-├── ForStmt            — constant-trip-count loop
-├── HookStmt           — @synthesizable (no synth_fn) call → C++ stub in _impl.cpp
-└── ContinueStmt       — continue in while body
-```
-
-I/O statements are owned by their `InterfaceEndpoint`, not in this hierarchy:
-
-```
-StreamIFSlave.get(...)    → StreamGetStmt(HwStmt)
-StreamIFMaster.write(...) → StreamWriteStmt(HwStmt)
-StreamIFSlave.drain(...)  → StreamDrainStmt(HwStmt)
-MMIFMaster.read_array(…)  → MMArrayReadStmt(HwStmt)   # in aximm.py
-```
-
-Each endpoint `HwStmt` subclass lives alongside its endpoint class. Codegen calls `to_cpp(ctx)` polymorphically with no central registry.
-
-### 4.5 `@synthesizable` — the unified decorator
-
-#### Implementation (`pysilicon/hw/synth.py`)
-
-`@synthesizable` must work both with and without parentheses. The standard Python pattern:
-
-```python
-def synthesizable(fn=None, *, synth_fn=None):
-    def decorator(f):
-        f._is_synthesizable = True
-        f._synth_fn = synth_fn   # None → stub behavior at codegen time
-        return f
-    if fn is not None:
-        return decorator(fn)   # used as @synthesizable (no parens)
-    return decorator           # used as @synthesizable(...) with args
-```
-
-The extractor detects synthesizable methods via `getattr(method, '_is_synthesizable', False)`. The `_synth_fn` attribute is `None` for user compute methods (stub) or a callable for endpoint methods (full codegen).
-
-`synth.py` imports only from `typing` — no other `pysilicon` modules.
-
-Every call that appears in a synthesizable `run_proc` must be on a method decorated with `@synthesizable`. This applies equally to **interface endpoint methods** and **user compute methods** — there is no separate concept, no `@compute_hook`.
-
-`synth_fn` is optional:
-
-| Usage | Meaning |
-|---|---|
-| `@synthesizable(synth_fn=_gen_fn)` | custom codegen — used on interface endpoint methods |
-| `@synthesizable` (no `synth_fn`) | stub codegen — emits a call to user-written C++ in `_impl.cpp` |
-
-```python
-# Interface endpoint — explicit synth_fn generates full inline HLS code
-def _gen_stream_get(ctx: SynthContext,
-                    inputs: list[HwVar | InterfaceEndpoint],
-                    outputs: list[HwVar]) -> str: ...
-
-class StreamIFSlave(InterfaceEndpoint):
-    @synthesizable(synth_fn=_gen_stream_get)
-    def get(self, schema_type, count=None):
-        ...  # SimPy body unchanged
-
-# User compute method — no synth_fn; stub emits a call to _impl.cpp
-class PolyAccelComponent(HwComponent):
-    @synthesizable
-    def evaluate(self, cmd_hdr, samp_in): ...
-```
-
-The `synth_fn` signature is always `(ctx: SynthContext, inputs: list[HwVar | InterfaceEndpoint], outputs: list[HwVar]) -> str`. Inputs may be typed values (`HwVar`) or interface endpoints (`InterfaceEndpoint` subclasses such as `MMIFMaster`) passed directly from `self`. Outputs are always `HwVar` — bound to Python variable names by the extractor. The extractor calls `synth_fn` when walking the `HwStmt` tree during `to_cpp()`.
-
-**Why module-level functions instead of class methods?** At class definition time `self` and `cls` are not yet available, so `synth_fn=self.get_synth` cannot work. A module-level function avoids the forward-reference problem entirely.
-
-The `HwStmt` subclasses for I/O operations (`StreamGetStmt`, `MMArrayReadStmt`, etc.) remain as typed wrappers — they hold the `synth_fn` reference, the input/output `HwVar`s, and produce helpful error messages. They are created by the extractor, not by the user.
-
-### 4.6 Error handling in `run_proc`
-
-A TLAST framing error in normal Python:
-
-```python
-def run_proc(self):
-    while True:
-        cmd_hdr: PolyCmdHdr = yield from self.s_in.get(PolyCmdHdr)
-        if cmd_hdr.tlast_error:
-            yield from self.status.write_reg(PolyError.TLAST_EARLY_CMD_HDR)
-            yield from self.s_in.drain()
-            continue
-        ...
-```
-
-**Wait — `if` is not in the synthesizable subset.** This is where `CaseStmt` is needed: a restricted `if` that only tests a single `DataSchema` field against a literal or enum value maps to `CaseStmt`. The extractor recognises:
-
-```python
-if var.field == EnumValue:
-    ...
-    continue
-```
-
-as a `CaseStmt(..., if_true=SeqStmt([..., ContinueStmt()]))`. Any `if` that does not match this pattern raises `SynthesisError`.
-
-### 4.7 `HwStmtExtractor`
-
-A build-time visitor (`ast.NodeVisitor`) over the `run_proc` source. Runs when `HwComponent.build()` is called. Returns the root `HwStmt` for codegen.
-
-Validation performed:
-- Every statement is in the allowed set (error otherwise)
-- Every variable used is bound by an earlier statement in the same scope
-- Every `FieldRef` matches a real field on its schema type
-- Every `@synthesizable` method call matches the declared signature
-
-| | AST visitor | `HwStmt` |
-|---|---|---|
-| Parsing | required (fragile) | none |
-| Error detection | at codegen time | at construction time |
-| Inspectable at runtime | no | yes |
-| Serializable | no | yes (future) |
-| SimPy compatibility | unchanged `run_proc` | `__iter__` on each node |
-| New I/O construct | extend vocabulary list | endpoint owns its `HwStmt` subclass; core unchanged |
+**Commit:** `extractor: add method_name param and extract_kernel policy helper`
 
 ---
 
-## 5. Error handling — why `simpy.Event` is wrong and what to do instead
+## Phase 4: No-implicit-capture rule
 
-The current `poly_demo_simpy.py` error model uses a one-off `simpy.Event` (`self._reset_event`) to block `run_proc` after a TLAST error. **This is not synthesizable.** There is no hardware analog to a process blocking on an arbitrary event — the component either polls a control register or drains and continues.
+**Goal:** Extractor refuses any `self.foo` *attribute read* in a synthesizable method body unless `foo` is `@sim_only` or `foo.method(...)` is a `@synthesizable` method call. Method calls on `@synthesizable` paths (including endpoint methods and regmap methods) are always allowed.
 
-### Synthesizable error model
+**Changes:**
 
-Every `HwComponent` gets an implicit AXI-Lite control/status register block:
+- In [pysilicon/build/hwcodegen.py](../pysilicon/build/hwcodegen.py):
+  - Add a pre-pass `_validate_no_implicit_capture(func_def)` that walks the AST of the body before extraction. For every `ast.Attribute` node:
+    - If the attribute root is `self` and the access is the *function* part of an `ast.Call` (i.e., `self.X.method(...)`), require `method` to be `@synthesizable`. Allow.
+    - If the attribute root is `self` and the access is a *read* (not a call function), check if it resolves to a `@sim_only` callable. If yes (the read is `self.logger.log` etc.), allow. Otherwise raise `SynthesisError` naming the attribute and the line number.
+    - `self.foo()` where `foo` is `@sim_only` → drop silently (already handled by `_visit_expr_stmt`).
+  - The existing `_require_synthesizable` already handles method calls; the new check is specifically for *reads*.
 
-| Register | Purpose | HLS mapping |
-|---|---|---|
-| `STATUS` | error code written by kernel | `s_axilite` read-only |
-| `CTRL` | bit 0: sw-reset | `s_axilite` write |
+- Note: `var.field` reads (where `var` is a bound `HwVar`) are still allowed — they become `FieldRef` expressions. The rule only applies to `self.X` reads, not to `<HwVar>.X` reads.
 
-In simulation, these are Python attributes on the component:
+**Tests:**
 
-```python
-self.status_reg: int = 0   # written by run_proc on error; host reads it
-```
+- Component whose `run_proc` reads `self.proc_latency` (plain field, not `@sim_only`) → expect `SynthesisError` mentioning `proc_latency`.
+- Component whose `run_proc` calls `self.logger.log(...)` where `log` is `@sim_only` → no error, statement is dropped.
+- Component whose `run_proc` calls `self.s_in.get(...)` (endpoint, `@synthesizable`) → no error.
 
-On a framing error, `run_proc` sets `status_reg` and drains its input stream (no `simpy.Event`):
-
-```python
-# framing error — set status, drain stream, loop back
-self.status_reg = PolyError.TLAST_EARLY_CMD_HDR
-while True:                            # drain remaining words in burst
-    words = yield from self.s_in.get()
-    if words.shape[0] == 0:
-        break
-continue                               # restart outer while True
-```
-
-The testbench polls `status_reg` to detect the error, just as host software polls the AXI-Lite STATUS register. This maps directly to synthesizable hardware with no special sim primitives.
-
-**Gap**: the AXI-Lite CSR endpoint for `HwComponent` does not yet exist. The `status_reg` attribute needs to become a typed `AxiLiteIFSlave` endpoint that codegen auto-generates the `s_axilite` pragma for.
+**Commit:** `extractor: enforce no-implicit-capture rule on self.X reads`
 
 ---
 
-## 6. Three generated files per component
+## Phase 5: `RegMapGetStmt`, `RegMapSetStmt`, decorate `VitisRegMap.get` and `.set`
 
-```
-<component>.h          → types, signatures. Fully generated. Overwritten on regen.
-<component>.cpp        → kernel function, pragmas, DataSchema I/O, hook calls. Fully generated.
-<component>_impl.cpp   → compute hook bodies. User-editable. Regen preserves existing bodies;
-                          adds stubs only for newly introduced hooks.
-```
+**Goal:** Allow `self.regmap.get(name)` and `self.regmap.set(name, value)` calls in `on_start` and synthesizable user methods. Each becomes a typed `SynthCallStmt` subclass.
 
-### `<component>.cpp` structure (sketch)
+**Changes:**
 
-```cpp
-#include "<component>.h"
-#include "streamutils_hls.h"
+- In [pysilicon/hw/regmap.py](../pysilicon/hw/regmap.py):
+  - Add two stmt classes (place near the top of the file, after imports):
 
-void poly_accel(
-    hls::stream<ap_uint<32>>& in_stream,
-    hls::stream<ap_uint<32>>& out_stream,
-    volatile uint32_t& status_reg          // AXI-Lite STATUS
-) {
-#pragma HLS INTERFACE axis port=in_stream
-#pragma HLS INTERFACE axis port=out_stream
-#pragma HLS INTERFACE s_axilite port=status_reg bundle=ctrl
-#pragma HLS INTERFACE ap_ctrl_none port=return
+    ```python
+    from pysilicon.hw.hwstmt import SynthCallStmt
+    from dataclasses import dataclass
 
-    while (true) {
-        // generated by WhileStmt.to_cpp() → SeqStmt.to_cpp() → ...
-        PolyCmdHdr cmd_hdr;
-        read_PolyCmdHdr(in_stream, cmd_hdr);   // gen_read() output
-        // ...
-        evaluate(cmd_hdr, samp_in, resp_hdr, samp_out);  // hook call
-        write_PolyRespHdr(out_stream, resp_hdr);          // gen_write() output
-    }
-}
-```
+    @dataclass
+    class RegMapGetStmt(SynthCallStmt):
+        """Synthesizable read of a regmap field — emits an AXI-Lite scalar read."""
 
-The `gen_write()` and `gen_read()` methods on `DataSchema` already produce the bodies of `write_*` / `read_*` helpers. The kernel function structure comes from `HwStmt.to_cpp()` walking the tree returned by `run_proc`.
+    @dataclass
+    class RegMapSetStmt(SynthCallStmt):
+        """Synthesizable write to a regmap field — emits an AXI-Lite scalar write."""
+    ```
+
+  - Decorate `RegMap.set` and `RegMap.get` (the base class — `VitisRegMap` inherits):
+    - `set`: `@synthesizable(stmt_class=RegMapSetStmt)`
+    - `get`: `@synthesizable(stmt_class=RegMapGetStmt)`
+  - Import `synthesizable` from `pysilicon.hw.synth`. No `synth_fn` is provided (codegen lives in a later phase).
+  - These decorators must not change runtime behavior — verify existing regmap tests still pass.
+
+**Tests:**
+
+- Extract a `run_proc` containing `self.regmap.set("error", v)` where `v` is a bound `HwVar`. Assert the produced stmt `isinstance(s, RegMapSetStmt)` and that its `inputs` list contains the right field name (as an `ast.Constant` or string) and the `HwVar`.
+- Extract a `run_proc` containing `coeffs = self.regmap.get("coeffs")`. Assert the produced stmt is a `RegMapGetStmt`, `coeffs` is bound in scope.
+- All tests in `tests/hw/test_regmap.py` continue to pass.
+
+**Commit:** `regmap: make get/set synthesizable with RegMapGetStmt and RegMapSetStmt`
 
 ---
 
-## 7. Build integration
+## Phase 6: `FunctionStmt` + `@synthesizable(impl_file=...)`
 
-Codegen plugs into the existing `BuildDag` as new `Buildable` steps:
+**Goal:** Calls to user-written `@synthesizable` methods (no `synth_fn`) produce a `FunctionStmt` carrying the hook name and impl-file location. The extractor does not recurse into the method body.
 
-```
-DataSchemaStep      (exists)  →  <component>.h (type declarations)
-HlsKernelStep       (new)     →  <component>.cpp + int main() for TB components
-HlsImplStep         (new)     →  <component>_impl.cpp (preserve user edits)
-```
+**Changes:**
 
-There is no separate `HlsCsimTbStep`. A testbench is just another `HwComponent` synthesized by `HlsKernelStep`. The only TB-specific difference is that interface pragmas are suppressed (no `#pragma HLS INTERFACE` directives) and `HlsKernelStep` emits a short `int main()` wrapper when `is_testbench=True` is set on the component. The transformation from `run_proc` → C++ is identical for both DUT and TB.
+- In [pysilicon/hw/synth.py](../pysilicon/hw/synth.py):
+  - Add `impl_file: str | None = None` parameter to the `synthesizable` decorator. Store as `f._impl_file = impl_file`.
 
-Backend-specific steps extend `BuildStep` and consume the outputs above:
+- In [pysilicon/hw/hwstmt.py](../pysilicon/hw/hwstmt.py):
+  - Add:
 
-```
-VitisBackend:   ConnectivityStep, XoStep, XclbinStep, PyXrtHostStep
-VivadoBackend:  IpPackageStep, BlockDesignTclStep, PynqOverlayStep
-```
+    ```python
+    @dataclass
+    class FunctionStmt(SynthCallStmt):
+        """Call to a user-written @synthesizable method (no synth_fn).
 
-A `Backend` ABC with `VitisBackend` and `VivadoBackend` implementations.
+        Codegen emits a forward declaration in <component>.hpp and a call site
+        in <component>.cpp. The implementation lives in the impl_file (default
+        `<component>_<function>_impl.cpp`), hand-written by the user.
+        """
+        impl_file: str | None = None
+    ```
 
----
+- In [pysilicon/build/hwcodegen.py](../pysilicon/build/hwcodegen.py):
+  - Modify `_make_call_stmt`: when the method has `_synth_fn is None` and `_is_synthesizable is True`, produce a `FunctionStmt`. Read `_impl_file` from the method and set it on the `FunctionStmt`.
+  - Remove the `HookStmt` import.
 
-## 8. Verification ladder
+- **Delete `HookStmt` entirely:**
+  - Remove the class from [pysilicon/hw/hwstmt.py](../pysilicon/hw/hwstmt.py).
+  - Remove any docstring references to `HookStmt` in [pysilicon/hw/synth.py](../pysilicon/hw/synth.py).
+  - Update [tests/hw/test_hwstmt.py](../tests/hw/test_hwstmt.py) to remove any `HookStmt` tests; replace with equivalent `FunctionStmt` tests where relevant.
+  - Run `grep -r HookStmt` to confirm zero remaining references in the tree.
 
-1. **pysilicon native** — `run_proc` golden vectors at every component boundary (`.npy` files)
-2. **HLS C-sim** — TB `HwComponent` synthesized by `HlsKernelStep` loads `.npy` goldens, drives the DUT kernel
-3. **SW-emu** — `v++ -t sw_emu` (Vitis) or VFS (Versal) for multi-component integration
-4. **HW-emu / XSIM** — cycle-level checks, post-route timing
+**Tests:**
 
-Same golden vectors at every level. No hand-written testbench.
+- Extract a `run_proc` that calls `yield from self.evaluate(cmd_hdr, ...)` where `evaluate` is `@synthesizable` (no `synth_fn`). Assert the produced stmt is a `FunctionStmt`, its `method.__name__ == 'evaluate'`, `impl_file is None`.
+- Same with `@synthesizable(impl_file="custom.cpp")` → assert `impl_file == "custom.cpp"`.
+- The `FunctionStmt` inputs list resolves call-site arguments (including endpoint references like `self.s_in`).
 
----
-
-## 9. Identified gaps (not yet in repo)
-
-| Gap | File | Needed for |
-|---|---|---|
-| `@synthesizable(synth_fn=...)` decorator (optional `synth_fn`; omitting it defaults to stub behavior) | `pysilicon/hw/synth.py` (NEW) | unified marker for all synthesizable calls |
-| `HwComponent(Component)`, `ControlMode` | `pysilicon/hw/hw_component.py` (NEW) | synthesizable component base |
-| `HwParam[T]` generic annotation | `pysilicon/hw/hw_component.py` (NEW) | compile-time template parameters |
-| `SynthContext` dataclass with `cpp_param()` | `pysilicon/hw/hw_component.py` (NEW) | parameter mapping passed to every `synth_fn` |
-| `HwStmt` base + control flow subclasses (`WhileStmt`, `SeqStmt`, `CaseStmt`, `ContinueStmt`, `HookStmt`) | `pysilicon/hw/hwstmt.py` (NEW) | internal IR for codegen |
-| `SynthCallStmt` base | `pysilicon/hw/hwstmt.py` (NEW) | base for all endpoint I/O statements |
-| `HwVar` + `HwExpr` (`Ref`, `FieldRef`) | `pysilicon/hw/hwstmt.py` (NEW) | symbolic values used by extractor and codegen |
-| `StreamGetStmt`, `StreamWriteStmt`, `StreamDrainStmt` | `pysilicon/hw/interface.py` (extend) | stream I/O IR nodes (endpoint-owned) |
-| `MMArrayReadStmt`, `MMArrayWriteStmt`, `MMSchemaReadStmt`, `MMSchemaWriteStmt` | `pysilicon/hw/memif.py` (extend) | MM I/O IR nodes (endpoint-owned) |
-| `HwStmtExtractor` (`ast.NodeVisitor`) | `pysilicon/build/hwcodegen.py` (NEW) | parses `run_proc` AST → `HwStmt` tree at build time |
-| `HlsKernelStep` (`is_testbench` flag suppresses pragmas + emits `int main()`), `HlsImplStep` | `pysilicon/build/hwcodegen.py` (NEW) | HLS module codegen |
-| `Backend` ABC + `VitisBackend`, `VivadoBackend` | `pysilicon/build/hwcodegen.py` or separate (NEW) | system integration |
-| AXI-Lite CSR endpoint for `HwComponent` | TBD | synthesizable error/control model |
+**Commit:** `extractor: produce FunctionStmt for user-written synthesizable methods`
 
 ---
 
-## 10. Open questions
+## Phase 7: End-to-end test on `PolyAccelComponent.on_start`
 
-1. **Compute hook argument types**: require `DataSchema`-typed args at synthesis boundaries, or allow annotated `np.ndarray` with a shape declaration? Former is stricter; latter is more ergonomic for array-heavy kernels.
+**Goal:** Prove the extractor produces a structurally correct `HwStmt` tree for the real poly kernel body, with no errors.
 
-2. **Hook signature derivation**: infer C++ signature from the Python call site in `run_proc` (more reliable, avoids annotation drift) or from the Python method signature on the class?
+**Changes:**
 
-3. **`DataSchema.cpp_repr`**: field exists but its semantics for kernel argument types vs. stream word types need to be confirmed before codegen starts.
+- In `tests/hw/test_extract_poly.py`, add:
 
-4. **`gen_write` / `gen_read` exact call conventions**: these methods exist; the exact invocation pattern that `HlsKernelStep` will use needs to be established.
+  ```python
+  def test_extract_poly_accel_on_start():
+      from examples.poly.poly import PolyAccelComponent
+      from pysilicon.build.hwcodegen import extract_kernel
+      from pysilicon.hw.hwstmt import (
+          WhileStmt, SeqStmt, CaseStmt, ReturnStmt, FunctionStmt,
+      )
+      from pysilicon.hw.interface import StreamGetStmt
+      from pysilicon.hw.regmap import RegMapSetStmt
+      from pysilicon.simulation.simulation import Simulation
 
-5. **AXI-Lite CSR**: auto-added to every `HwComponent` (clean default, simpler error model) or opt-in (smaller port count for components that don't need it)?
+      comp = PolyAccelComponent(name='p', sim=Simulation())
+      tree = extract_kernel(comp)
 
-6. **`has_tlast` on endpoints**: just added to `StreamIF`/`StreamIFSlave`/`StreamIFMaster`. For codegen, `has_tlast=False` maps to `hls::stream` without TLAST; `has_tlast=True` maps to `hls::stream` with TLAST (AXI-Stream). Confirm this is the right mapping before implementing `HlsKernelStep`.
+      # Top level: WhileStmt with a SeqStmt body
+      assert isinstance(tree, WhileStmt)
+      body = tree.body.stmts
+
+      # Expected (logging / _inc_job dropped via @sim_only):
+      #   0: cmd_hdr = yield from self.s_in.get(PolyCmdHdr)   → StreamGetStmt
+      #   1: if cmd_hdr.cmd_type == PolyCmdType.END: return    → CaseStmt(op='==')
+      #   2: err = yield from self.evaluate(...)              → FunctionStmt
+      #   3: if err != PolyError.NO_ERROR: ...                → CaseStmt(op='!=')
+      assert isinstance(body[0], StreamGetStmt)
+
+      assert isinstance(body[1], CaseStmt) and body[1].op == '=='
+      end_branch = body[1].if_true.stmts
+      assert any(isinstance(s, ReturnStmt) for s in end_branch)
+
+      assert isinstance(body[2], FunctionStmt)
+      assert body[2].method.__name__ == 'evaluate'
+
+      assert isinstance(body[3], CaseStmt) and body[3].op == '!='
+      halt_branch = body[3].if_true.stmts
+      regmap_sets = [s for s in halt_branch if isinstance(s, RegMapSetStmt)]
+      assert len(regmap_sets) == 3       # error, tx_id, halted
+      assert any(isinstance(s, ReturnStmt) for s in halt_branch)
+  ```
+
+- Also add `test_extract_poly_accel_no_implicit_capture_violation`: a deliberately-malformed clone of `PolyAccelComponent` whose `on_start` reads `self.proc_latency`. Assert `extract_kernel(comp)` raises `SynthesisError` mentioning `proc_latency`.
+
+**Verification commands:**
+
+```bash
+pytest tests/hw/test_extract_poly.py -v
+pytest tests/hw/                            # nothing else regressed
+pytest tests/                               # full suite still green
+mypy pysilicon/hw/regmap.py pysilicon/hw/hwstmt.py pysilicon/hw/synth.py pysilicon/build/hwcodegen.py
+ruff check pysilicon/hw/regmap.py pysilicon/hw/hwstmt.py pysilicon/hw/synth.py pysilicon/build/hwcodegen.py tests/hw/test_extract_poly.py
+```
+
+**Commit:** `tests: end-to-end extractor validation on PolyAccelComponent.on_start`
 
 ---
 
-## 11. Phased plan
+## Final acceptance
 
-| Phase | Deliverable | Files touched | Dependency |
-|---|---|---|---|
-| 1 | `@synthesizable` (with optional `synth_fn`); `HwComponent`, `HwParam[T]`, `SynthContext` — no codegen | `hw/synth.py` (NEW), `hw/hw_component.py` (NEW) | nothing |
-| 2 | `HwStmt` IR + `HwVar`/`HwExpr`; `HwStmtExtractor` (AST → IR) | `hw/hwstmt.py` (NEW), `build/hwcodegen.py` (NEW) | Phase 1 |
-| 3 | `StreamGetStmt`, `StreamWriteStmt`, `StreamDrainStmt`; rewrite `PolyAccelComponent.run_proc` to synthesizable subset; fix error model | `hw/interface.py` (extend) | Phase 2 |
-| 4 | `HlsKernelStep`, `HlsImplStep` (codegen via `HwStmt.to_cpp()`); TB component uses `is_testbench=True` flag | `build/hwcodegen.py` (extend) | Phase 3 + existing `gen_write`/`gen_read` |
-| 5 | C-sim round-trip on `PolyAccelComponent` + TB component | — | Phase 4 |
-| 6 | `VitisBackend` (connectivity.cfg, .xo/.xclbin, PyXRT host) | `build/hwcodegen.py` or `build/vitis.py` (NEW) | Phase 5 |
-| 7 | `VivadoBackend` (IPI Tcl, IP packaging, PYNQ driver) | `build/vivado.py` (NEW) | Phase 5 |
-| 8 | Cross-backend regression: same scenario through both backends vs pysilicon golden | — | Phases 6 + 7 |
+- `pytest tests/hw/test_extract_poly.py` passes.
+- `pytest tests/` passes with no regressions.
+- `mypy` and `ruff` clean on the touched files.
+- 7 commits on the branch, one per phase, pushed in order.
+- No changes outside the file list above (do **not** modify `examples/poly/poly.py`, build steps, or anything in `docs/`).
 
-**First codegen target**: `PolyAccelComponent`. Two stream endpoints, a factored compute method, `DataSchema`-typed I/O — structurally ready. Blocked only on Phases 2–3.
+## Out of scope (do NOT do)
 
----
+- `to_cpp()` on any `HwStmt` subclass.
+- `HlsKernelStep` / `HlsImplStep` build steps.
+- Stub file generation in `<component>_<function>_impl.cpp` (that's the next phase).
+- `MMArrayReadStmt` / `MMArrayWriteStmt` for the MM endpoints (no poly path needs them).
+- Modifying `PolyAccelComponent` or any other production code outside the extractor and IR.
+- Type resolution for `HwVar` (leaving `typ=None` is fine for now).
+- Any backend integration (Vitis, Vivado).
 
-## 12. Phase 1 implementation spec
-
-**Scope**: `pysilicon/hw/synth.py` and `pysilicon/hw/hw_component.py`. No `HwStmt`, no `HwStmtExtractor`, no `HwComponent.build()` — those are Phase 2.
-
-### `pysilicon/hw/synth.py`
-
-```python
-def synthesizable(fn=None, *, synth_fn=None):
-    def decorator(f):
-        f._is_synthesizable = True
-        f._synth_fn = synth_fn
-        return f
-    if fn is not None:
-        return decorator(fn)
-    return decorator
-```
-
-No other contents. No imports from `pysilicon`.
-
-### `pysilicon/hw/hw_component.py`
-
-```python
-from __future__ import annotations
-from dataclasses import dataclass
-from enum import Enum, auto
-from typing import ClassVar, Generic, TypeVar, TYPE_CHECKING
-import typing
-
-from pysilicon.hw.component import Component
-
-T = TypeVar('T')
-
-class HwParam(Generic[T]):
-    """Marks a dataclass field as a C++ template parameter."""
-
-class ControlMode(Enum):
-    AUTO = auto()          # inferred from HwStmt root at build time
-    FREE_RUNNING = auto()  # ap_ctrl_none
-    PER_INVOCATION = auto() # ap_ctrl_chain
-
-@dataclass
-class SynthContext:
-    component: HwComponent
-    params: dict[str, str]   # Python name → C++ template param name
-
-    def cpp_param(self, py_name: str) -> str:
-        if py_name in self.params:
-            return self.params[py_name]
-        return repr(getattr(self.component, py_name))
-
-    @classmethod
-    def from_component(cls, comp: HwComponent) -> SynthContext:
-        hints = typing.get_type_hints(type(comp))
-        params = {
-            name: name.upper()
-            for name, hint in hints.items()
-            if typing.get_origin(hint) is HwParam
-        }
-        return cls(component=comp, params=params)
-
-class HwComponent(Component):
-    control_mode: ClassVar[ControlMode] = ControlMode.AUTO
-```
-
-### Tests (`tests/hw/test_hw_component.py`)
-
-- `@synthesizable` with no args sets `_is_synthesizable=True`, `_synth_fn=None`
-- `@synthesizable(synth_fn=fn)` sets `_is_synthesizable=True`, `_synth_fn=fn`
-- `HwParam[int]` annotation is detectable via `typing.get_origin(hint) is HwParam`
-- `SynthContext.from_component` correctly extracts `HwParam` fields and builds `params` dict
-- `SynthContext.cpp_param` returns `'IN_BW'` for a `HwParam` field and `repr(value)` for a `ClassVar`
-- `HwComponent` can be instantiated with a `Simulation` (same as `Component`)
+If a design question arises that this plan doesn't answer, stop and ask — do not invent a new convention.

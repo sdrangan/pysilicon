@@ -18,7 +18,7 @@ This page is the reference for everything the build framework exports from [pysi
 | `BuildResult` | Outcome of one step's run — success/failure/skipped + produced artifacts |
 | `BuildStep` (ABC) | Base class: declares `consumes` / `produces` / `params`, implements `run()` |
 | `SourceStep` | Step subclass representing a source file at the root of the DAG |
-| `Buildable` | Legacy base for steps that write generated files (kept for codegen steps) |
+| `Buildable` | Convenience base for steps that write fixed sets of generated text files |
 | `BuildDag` | Owns steps, wires dependencies, runs in topological order |
 
 ---
@@ -173,11 +173,13 @@ Use `SourceStep` as the DAG-roots convention. Don't manually pass paths into ste
 
 ---
 
-## Buildable (legacy)
+## Buildable
 
-`Buildable` is an older `BuildStep` subclass that predates the `consumes` / `produces` model. It declares its outputs through a `build_outputs` property (a dict of name → relative `Path`) and generates each file's content via a `generate(key, config) -> str` method. The default `run()` iterates over `build_outputs` and writes each file.
+`Buildable` is a `BuildStep` subclass that provides a fixed shape for the common case of "write a fixed set of named text files generated as strings." Subclasses declare a `build_outputs` property (a dict of name → relative `Path`) and a `generate(key, config) -> str` method that returns the contents of each named file. The default `run()` iterates over `build_outputs` and writes each file.
 
-It is kept because the codegen steps (`DataSchemaStep`, `StreamUtilsStep`, `MemMgrStep`, `ArrayUtilsStep`) were written against it before the `BuildStep` API was finalised. Buildable steps **always run** under the modern DAG (the freshness check is bypassed for them — see [Incremental rebuild](#incremental-rebuild) below). For new steps, subclass `BuildStep` directly.
+Used by the codegen steps (`DataSchemaStep`, `StreamUtilsStep`, `MemMgrStep`, `ArrayUtilsStep`). Buildable steps **always run** under the DAG (the freshness check is bypassed for them — see [Incremental rebuild](#incremental-rebuild) below); writing a handful of small generated text files is cheap, and downstream steps still skip on freshness when these outputs land unchanged.
+
+Use `Buildable` for steps that fit its shape (text files, no upstream artifact consumption, no in-memory outputs). Use `BuildStep` directly with explicit `consumes` / `produces` for everything else.
 
 See [Code Generation Steps](./codegen.md) for the steps that use `Buildable`.
 
@@ -247,7 +249,7 @@ The freshness model is mtime-based with two propagation rules. The DAG computes 
 A step runs if any of the following are true:
 
 1. It is in the forced set (`force=True` or the step's name is in the `force=[...]` iterable).
-2. It is a legacy `Buildable` step (Buildable doesn't participate in skip logic — those steps always run).
+2. It is a `Buildable` step (Buildable doesn't participate in skip logic — those steps always run).
 3. **Files are stale:** any of its produced files are missing, or any of its consumed files are newer than its oldest produced file.
 4. **Cascade:** any of its direct dependencies must run (computed by transitively applying rules 1–5).
 5. **In-memory demand:** it produces an `ObjectArtifact` (declared as `None` in `produces`) that is consumed by some other step that must run. Object artifacts have no on-disk representation to mtime-check, so anyone downstream forces them to recompute.
