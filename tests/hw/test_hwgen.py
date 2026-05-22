@@ -1148,3 +1148,72 @@ def test_header_to_cpp_templated_hook_emits_template_and_tpp_include():
     # The include must come AFTER the templated decl.
     assert hpp.index("template <int in_bw>") < hpp.index("tcomp_process_impl.tpp")
 
+
+# ---------------------------------------------------------------------------
+# Hook-template Phase 4: impl_stub_to_tpp + kernel_files_to_str routing
+# ---------------------------------------------------------------------------
+
+def test_impl_stub_to_tpp_substrings():
+    from pysilicon.build.hwcodegen import extract_kernel
+    from pysilicon.build.hwgen import (
+        _collect_hooks_with_params,
+        impl_stub_to_tpp,
+    )
+
+    comp = _TmplComp(name="tcomp", sim=Simulation())
+    tree = extract_kernel(comp)
+    hooks = _collect_hooks_with_params(tree)
+    assert len(hooks) == 1
+    hook, tparams = hooks[0]
+    assert tparams == ["in_bw"]
+
+    stub = impl_stub_to_tpp(comp, hook, tparams)
+    for sub in [
+        "// This file is included from tcomp.hpp",
+        "template <int in_bw>",
+        "ap_uint<8> process(",
+        "axi4s_word<in_bw>",
+        "// TODO: implement process",
+        "return ap_uint<8>(0);",
+        "namespace tcomp {",
+    ]:
+        assert sub in stub, f"Missing substring: {sub!r}\n--- stub ---\n{stub}"
+
+
+def test_impl_stub_to_tpp_does_not_include_header():
+    """The .tpp is included from the .hpp, so it must NOT include the .hpp itself."""
+    from pysilicon.build.hwcodegen import extract_kernel
+    from pysilicon.build.hwgen import (
+        _collect_hooks_with_params,
+        impl_stub_to_tpp,
+    )
+
+    comp = _TmplComp(name="tcomp", sim=Simulation())
+    tree = extract_kernel(comp)
+    hook, tparams = _collect_hooks_with_params(tree)[0]
+    stub = impl_stub_to_tpp(comp, hook, tparams)
+    assert '#include "tcomp.hpp"' not in stub
+
+
+def test_kernel_files_to_str_uses_tpp_for_templated_hook():
+    from pysilicon.build.hwgen import kernel_files_to_str
+
+    comp = _TmplComp(name="tcomp", sim=Simulation())
+    files = kernel_files_to_str(comp)
+    assert "tcomp.hpp" in files
+    assert "tcomp.cpp" in files
+    # Templated hook → .tpp, NOT .cpp.
+    assert "tcomp_process_impl.tpp" in files
+    assert "tcomp_process_impl.cpp" not in files
+
+
+def test_kernel_files_to_str_uses_cpp_for_non_templated_hook():
+    """DemoComponent's process hook has no stream args, so still .cpp."""
+    from pysilicon.build.hwgen import kernel_files_to_str
+    from tests.hw.test_resolve import DemoComponent
+
+    comp = DemoComponent(name="demo", sim=Simulation())
+    files = kernel_files_to_str(comp)
+    assert "demo_process_impl.cpp" in files
+    assert "demo_process_impl.tpp" not in files
+

@@ -813,8 +813,46 @@ def impl_stub_to_cpp(comp, hook_method) -> str:
     )
 
 
+def impl_stub_to_tpp(comp, hook_method, template_params: list[str]) -> str:
+    """Build the first-time stub content for one templated hook's ``.tpp`` file.
+
+    The ``.tpp`` is meant to be ``#include``'d from ``<component>.hpp`` at the
+    bottom, so it does **not** include the header itself — types declared in
+    the header are already in scope.  The function definition is wrapped in
+    a ``namespace <ns> { ... }`` block when one is resolved.
+    """
+    ret_cpp, args = hook_signature(hook_method, template_params=template_params)
+    arg_str = ", ".join(arg_decl for _, arg_decl in args)
+    default = _stub_default_return(ret_cpp)
+    body_lines = [f"    // TODO: implement {hook_method.__name__}"]
+    if default:
+        body_lines.append(f"    {default}")
+    body = "\n".join(body_lines)
+    tparam_str = ", ".join(f"int {p}" for p in template_params)
+    func_def = (
+        f"template <{tparam_str}>\n"
+        f"{ret_cpp} {hook_method.__name__}({arg_str}) {{\n"
+        f"{body}\n"
+        f"}}"
+    )
+    ns = resolved_namespace(type(comp))
+    if ns is not None:
+        func_def = f"namespace {ns} {{\n{func_def}\n}}"
+    kn = cpp_kernel_name(type(comp))
+    header_comment = (
+        f"// This file is included from {kn}.hpp at the bottom — types\n"
+        "// declared there are in scope. Do not include this file directly\n"
+        "// except via the .hpp.\n\n"
+    )
+    return header_comment + func_def + "\n"
+
+
 def kernel_files_to_str(comp) -> dict[str, str]:
-    """Top-level driver. Returns ``{filename: contents}`` for all generated files."""
+    """Top-level driver. Returns ``{filename: contents}`` for all generated files.
+
+    Per-hook routing: a hook with a non-empty ``hook_template_params`` list
+    is emitted as a templated ``.tpp`` stub; otherwise a plain ``.cpp`` stub.
+    """
     from pysilicon.build.hwcodegen import extract_kernel
 
     name = cpp_kernel_name(type(comp))
@@ -823,6 +861,11 @@ def kernel_files_to_str(comp) -> dict[str, str]:
         f"{name}.cpp": kernel_to_cpp(comp),
     }
     tree = extract_kernel(comp)
-    for hook in _collect_hooks(tree):
-        files[f"{name}_{hook.__name__}_impl.cpp"] = impl_stub_to_cpp(comp, hook)
+    for hook, tparams in _collect_hooks_with_params(tree):
+        if tparams:
+            files[f"{name}_{hook.__name__}_impl.tpp"] = impl_stub_to_tpp(
+                comp, hook, tparams,
+            )
+        else:
+            files[f"{name}_{hook.__name__}_impl.cpp"] = impl_stub_to_cpp(comp, hook)
     return files
