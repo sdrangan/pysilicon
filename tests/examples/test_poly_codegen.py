@@ -52,6 +52,59 @@ def test_poly_codegen_step_kernel_contains_raw_coeffs(tmp_path: Path):
     assert "CoeffArray& coeffs" not in hpp
 
 
+def test_poly_swap_over_state():
+    """Headless verification of the final Phase 12b state.
+
+    - The hand-written ``poly.cpp`` / ``poly.hpp`` are gone from the
+      source tree.
+    - ``poly_evaluate_impl.tpp`` exists at the source-tree root.
+    - ``poly_tb.cpp`` uses the generated signature's arg names + the
+      generated header path.
+    - ``poly_build.py`` has no ``handwritten_poly_*`` references.
+    """
+    from pathlib import Path as _P
+
+    poly_root = _P(__file__).resolve().parents[2] / "examples" / "poly"
+
+    # Hand-written kernel files are gone.
+    assert not (poly_root / "poly.cpp").exists()
+    assert not (poly_root / "poly.hpp").exists()
+
+    # The sticky hand-written evaluate body is committed at the root.
+    tpp = poly_root / "poly_evaluate_impl.tpp"
+    assert tpp.exists()
+    tpp_text = tpp.read_text(encoding="utf-8")
+    assert "namespace poly" in tpp_text
+    assert "evaluate" in tpp_text
+    assert "eval_poly_horner" in tpp_text
+
+    # Testbench uses the new arg names and includes the generated header.
+    tb = (poly_root / "poly_tb.cpp").read_text(encoding="utf-8")
+    assert '#include "gen/poly.hpp"' in tb
+    assert "poly(s_in, m_out, halted, error, tx_id, coeffs)" in tb
+    # The old hand-written-only symbols must be gone.
+    assert "in_stream" not in tb
+    assert "out_stream" not in tb
+    assert "error_code" not in tb
+    assert "tx_id_status" not in tb
+
+    # poly_build.py no longer references the renamed handwritten artifacts.
+    build_text = (poly_root / "poly_build.py").read_text(encoding="utf-8")
+    assert "handwritten_poly" not in build_text
+
+
+def test_poly_gen_hpp_uses_relative_impl_include(tmp_path: Path):
+    """gen/poly.hpp must reference the .tpp via ``../poly_evaluate_impl.tpp``."""
+    from examples.poly.poly_build import build_poly_dag
+    from pysilicon.build.build import BuildConfig
+
+    dag = build_poly_dag()
+    results = dag.run(BuildConfig(root_dir=tmp_path), through="gen_kernel")
+    assert results["gen_kernel"].success, results["gen_kernel"].message
+    hpp = (tmp_path / "gen" / "poly.hpp").read_text(encoding="utf-8")
+    assert '#include "../poly_evaluate_impl.tpp"' in hpp
+
+
 def test_poly_gen_hpp_includes_hook_schemas_and_utility_headers(tmp_path: Path):
     """Phase 12a verification: hook-referenced schemas and utility headers appear.
 
