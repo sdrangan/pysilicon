@@ -68,6 +68,21 @@ class DataSchema(ABC):
         """Return generated-schema dependencies required by this schema header."""
         return []
 
+    @classmethod
+    def get_utility_includes(cls) -> list[str]:
+        """Return paths to utility headers this schema (or its dependencies) requires.
+
+        Default: empty. ``DataArray`` overrides to return its element type's
+        array-utils header. ``DataList`` overrides to recursively collect from
+        its member schemas. Scalar field types return empty unless they appear
+        inside a ``DataArray``.
+
+        Paths are emitted verbatim as ``#include "<path>"`` lines in the
+        generated component header; they must match the file layout that
+        ``ArrayUtilsStep`` (or whichever step produces the utility header) writes.
+        """
+        return []
+
     @staticmethod
     def _get_indent(level: int) -> str:
         """Return consistent indentation for generated C++ code."""
@@ -2167,6 +2182,18 @@ class DataList(DataSchema):
         return deps
 
     @classmethod
+    def get_utility_includes(cls) -> list[str]:
+        """Recursively collect utility-include paths from every member schema.
+
+        Dedup happens at the consumer (``_collect_utility_includes`` in
+        ``hwgen.py``); this method may return duplicates across members.
+        """
+        paths: list[str] = []
+        for _, schema_cls in cls._iter_element_schemas():
+            paths.extend(schema_cls.get_utility_includes())
+        return paths
+
+    @classmethod
     def gen_pack(cls, indent_level: int = 0) -> str:
         indent = cls._get_indent(indent_level)
         inner_indent = cls._get_indent(indent_level + 1)
@@ -2801,6 +2828,19 @@ class DataArray(DataSchema):
         if elem_type.can_gen_include and elem_type is not cls:
             return [elem_type]
         return []
+
+    @classmethod
+    def get_utility_includes(cls) -> list[str]:
+        """``DataArray`` always pulls in the element type's array-utils header.
+
+        Recurses into the element type so a ``DataArray`` of a composite
+        picks up that composite's own utility includes transitively.
+        """
+        from pysilicon.hw.arrayutils import _array_utils_include_path
+        elem_type = cls._element_type()
+        paths: list[str] = [_array_utils_include_path(elem_type)]
+        paths.extend(elem_type.get_utility_includes())
+        return paths
 
     @classmethod
     def get_param_str(cls, write: bool) -> str:
