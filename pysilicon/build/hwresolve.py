@@ -14,12 +14,15 @@ from typing import TYPE_CHECKING
 
 from pysilicon.hw.hwstmt import (
     CaseStmt,
+    DutBindStmt,
     FieldRef,
     HwStmt,
     HwVar,
+    KernelCallStmt,
     ReturnStmt,
     SeqStmt,
     SynthCallStmt,
+    TbCallStmt,
     WhileStmt,
 )
 
@@ -86,6 +89,17 @@ def _walk(stmt, scope, comp, module, globs):
             _walk(stmt.if_false, scope, comp, module, globs)
         return
     if isinstance(stmt, ReturnStmt):
+        return
+    if isinstance(stmt, (DutBindStmt, KernelCallStmt)):
+        # Phase 3: nothing to resolve — values are already concrete classes /
+        # literals captured by the extractor.
+        return
+    if isinstance(stmt, TbCallStmt):
+        # Phase 4 will lower TbCallStmt.inputs against ``scope`` / ``globs``
+        # the same way SynthCallStmt does.  Nothing to do for now beyond
+        # tracking outputs as scope bindings.
+        for v in stmt.outputs:
+            scope[v.name] = v
         return
     if isinstance(stmt, SynthCallStmt):
         stmt.inputs = [

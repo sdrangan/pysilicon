@@ -18,14 +18,17 @@ if TYPE_CHECKING:
 from pysilicon.hw.hwstmt import (
     CaseStmt,
     ContinueStmt,
+    DutBindStmt,
     FieldRef,
     FunctionStmt,
     HwStmt,
     HwVar,
+    KernelCallStmt,
     Ref,
     ReturnStmt,
     SeqStmt,
     SynthCallStmt,
+    TbCallStmt,
     WhileStmt,
 )
 
@@ -78,7 +81,14 @@ class HwStmtExtractor:
             raise SynthesisError(
                 f"{self._method_name} source did not parse as a function"
             )
-        self._validate_no_implicit_capture(func_def)
+        if not self._is_testbench:
+            # The implicit-capture rule applies to @synthesizable hook bodies
+            # and on_start/run_proc.  Testbench main() bodies legitimately
+            # read attributes of local DUTs (``dut.s_in.push(...)``), local
+            # schema instances (``cmd_hdr.write_uint32_file(...)``), etc.,
+            # so the rule isn't meaningful in TB mode — structural pattern
+            # matching in _visit_stmt_tb handles validation instead.
+            self._validate_no_implicit_capture(func_def)
         stmts = self._visit_stmts(func_def.body)
         if len(stmts) == 1:
             return stmts[0]
@@ -162,6 +172,13 @@ class HwStmtExtractor:
         return [s for s in (self._visit_stmt(n) for n in stmts) if s is not None]
 
     def _visit_stmt(self, stmt: ast.stmt) -> HwStmt | None:
+        if self._is_testbench:
+            tb_result = self._visit_stmt_tb(stmt)
+            if tb_result is not None:
+                return tb_result
+            # Fall through to the kernel-mode handlers for statements that
+            # apply identically in both modes (Return, If, Continue,
+            # bare-Constant docstrings, etc.).
         if isinstance(stmt, ast.While):
             return self._visit_while(stmt)
         if isinstance(stmt, ast.Continue):
@@ -180,6 +197,106 @@ class HwStmtExtractor:
             f"Non-synthesizable statement {type(stmt).__name__}"
             + (f" at line {stmt.lineno}" if hasattr(stmt, 'lineno') else "")
         )
+
+    # ------------------------------------------------------------------
+    # Testbench-mode statement handlers
+    # ------------------------------------------------------------------
+
+    def _visit_stmt_tb(self, stmt: ast.stmt) -> HwStmt | None:
+        """Match TB-only stmt shapes. Return ``None`` to fall through to
+        the kernel-mode handler (for stmts that have identical semantics in
+        both modes, e.g. ``return``, ``if``, bare docstring constants).
+        """
+        # `dut = <HwComponentSubclass>(**kwargs)` — DUT binding.
+        if (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+            and isinstance(stmt.value, ast.Call)
+        ):
+            local_name = stmt.targets[0].id
+            bind = self._try_dut_bind(local_name, stmt.value, stmt)
+            if bind is not None:
+                return bind
+        # `dut.run()` — kernel-call lowering.
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            if (
+                isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id in self._duts
+                and call.func.attr == 'run'
+            ):
+                if call.args or call.keywords:
+                    raise SynthesisError(
+                        f"dut.run() takes no arguments (line {stmt.lineno})"
+                    )
+                return KernelCallStmt(local_name=call.func.value.id)
+        return None
+
+    def _try_dut_bind(
+        self,
+        local_name: str,
+        call_node: ast.Call,
+        parent_stmt: ast.stmt,
+    ) -> DutBindStmt | None:
+        """If ``call_node`` constructs a ``HwComponent`` subclass, return a
+        matching ``DutBindStmt``; otherwise ``None`` so the dispatcher can
+        try other patterns.
+        """
+        from pysilicon.hw.hw_component import HwComponent
+
+        cls = self._resolve_tb_class(call_node.func)
+        if not (isinstance(cls, type) and issubclass(cls, HwComponent)):
+            return None
+        if call_node.args:
+            raise SynthesisError(
+                f"DUT construction must use keyword arguments only "
+                f"(line {parent_stmt.lineno})"
+            )
+        kwargs: dict[str, object] = {}
+        for kw in call_node.keywords:
+            if kw.arg is None:
+                raise SynthesisError(
+                    f"DUT construction does not accept **kwargs "
+                    f"(line {parent_stmt.lineno})"
+                )
+            if not isinstance(kw.value, ast.Constant):
+                raise SynthesisError(
+                    f"DUT construction kwargs must be literal constants "
+                    f"(line {parent_stmt.lineno})"
+                )
+            kwargs[kw.arg] = kw.value.value
+        self._duts[local_name] = cls
+        return DutBindStmt(
+            local_name=local_name, comp_class=cls, kwargs=kwargs,
+        )
+
+    def _resolve_tb_class(self, func_node: ast.expr) -> object | None:
+        """Resolve a class reference in the testbench's ``main`` globals.
+
+        Supports bare names (``PolyAccelComponent``) and attribute chains
+        rooted in a global (``mod.PolyAccelComponent``).
+        """
+        method = getattr(self._comp, self._method_name)
+        globs = getattr(method, '__globals__', {})
+        if isinstance(func_node, ast.Name):
+            return globs.get(func_node.id)
+        if isinstance(func_node, ast.Attribute):
+            path: list[str] = []
+            node: ast.expr = func_node
+            while isinstance(node, ast.Attribute):
+                path.append(node.attr)
+                node = node.value
+            if not isinstance(node, ast.Name):
+                return None
+            obj = globs.get(node.id)
+            for attr in reversed(path):
+                if obj is None:
+                    return None
+                obj = getattr(obj, attr, None)
+            return obj
+        return None
 
     # ------------------------------------------------------------------
     # Individual statement handlers

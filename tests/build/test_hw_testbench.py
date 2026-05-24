@@ -184,3 +184,105 @@ def test_tb_files_to_str_returns_single_file():
     files = tb_files_to_str(_PolyTbStub, output_dir="gen")
     assert set(files) == {"poly_tb.cpp"}
     assert "int main(" in files["poly_tb.cpp"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — DUT binding + dut.run() lowering
+# ---------------------------------------------------------------------------
+
+from examples.poly.poly import PolyAccelComponent
+
+
+@dataclass
+class _PolyTBPhase3(HwTestbench):
+    """Minimal Phase-3 fixture: bind a PolyAccelComponent DUT and call run().
+
+    Exercises the two IR nodes added in Phase 3 — ``DutBindStmt`` and
+    ``KernelCallStmt`` — and the corresponding emitter logic in
+    ``hwgen.tb_to_cpp``.  Subsequent phases extend the body with stream
+    push/pop and file I/O against the same DUT binding.
+    """
+
+    cpp_kernel_name: ClassVar[str | None] = "poly"
+
+    def main(self) -> None:
+        dut = PolyAccelComponent()
+        dut.run()
+
+
+@pytest.mark.phase3
+def test_phase3_extractor_produces_dut_bind_and_kernel_call():
+    """The TB-mode extractor turns ``dut = PolyAccelComponent()`` + ``dut.run()``
+    into a SeqStmt of [DutBindStmt, KernelCallStmt]."""
+    from pysilicon.build.hwcodegen import extract_testbench
+    from pysilicon.hw.hwstmt import DutBindStmt, KernelCallStmt
+    tb = _PolyTBPhase3(name='tb', sim=Simulation())
+    tree = extract_testbench(tb)
+    assert isinstance(tree, SeqStmt)
+    assert len(tree.stmts) == 2
+    bind, call = tree.stmts
+    assert isinstance(bind, DutBindStmt)
+    assert bind.local_name == 'dut'
+    assert bind.comp_class is PolyAccelComponent
+    assert bind.kwargs == {}
+    assert isinstance(call, KernelCallStmt)
+    assert call.local_name == 'dut'
+
+
+@pytest.mark.phase3
+def test_phase3_emits_stream_and_regmap_locals_and_kernel_call():
+    """The TB emitter produces stream local decls, regmap field decls
+    (scalars and the raw-array ``coeffs``), and the kernel-call line."""
+    from pysilicon.build.hwgen import tb_files_to_str
+    files = tb_files_to_str(_PolyTBPhase3, output_dir="gen")
+    body = files["poly_tb.cpp"]
+    # Stream endpoints
+    assert "hls::stream<streamutils::axi4s_word<32>> s_in;" in body
+    assert "hls::stream<streamutils::axi4s_word<32>> m_out;" in body
+    # Regmap scalars
+    assert "ap_uint<1> halted = 0;" in body
+    assert "ap_uint<8> error = 0;" in body
+    assert "ap_uint<16> tx_id = 0;" in body
+    # Raw-array regmap field
+    assert "float coeffs[4] = {};" in body
+    # Kernel call: arg order matches kernel_signature
+    assert "poly(s_in, m_out, halted, error, tx_id, coeffs);" in body
+
+
+@pytest.mark.phase3
+def test_phase3_rejects_positional_dut_args():
+    """DUT construction must use keyword arguments only — positional
+    args are rejected at extraction time so the failure is surfaced
+    before downstream emitter logic runs."""
+    from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
+
+    @dataclass
+    class _BadPositionalTB(HwTestbench):
+        cpp_kernel_name: ClassVar[str | None] = "poly"
+
+        def main(self) -> None:
+            dut = PolyAccelComponent("bad")  # noqa: F841
+            dut.run()
+
+    tb = _BadPositionalTB(name='tb', sim=Simulation())
+    with pytest.raises(SynthesisError, match="keyword arguments only"):
+        extract_testbench(tb)
+
+
+@pytest.mark.phase3
+def test_phase3_dut_run_with_args_is_rejected():
+    """``dut.run(...)`` with any args is rejected — the run-method
+    surface is fixed (no inputs, no outputs) in v1."""
+    from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
+
+    @dataclass
+    class _BadRunArgsTB(HwTestbench):
+        cpp_kernel_name: ClassVar[str | None] = "poly"
+
+        def main(self) -> None:
+            dut = PolyAccelComponent()
+            dut.run(42)
+
+    tb = _BadRunArgsTB(name='tb', sim=Simulation())
+    with pytest.raises(SynthesisError, match="dut.run\\(\\) takes no arguments"):
+        extract_testbench(tb)

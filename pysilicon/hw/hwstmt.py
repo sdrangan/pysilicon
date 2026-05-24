@@ -111,3 +111,57 @@ class FunctionStmt(SynthCallStmt):
 class ReturnStmt(HwStmt):
     """``return`` from the kernel function. Optional return value."""
     value: HwExpr | None = None
+
+
+# ---------------------------------------------------------------------------
+# Testbench-mode IR nodes (Phase 14)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DutBindStmt(HwStmt):
+    """A ``dut = <HwComponentSubclass>(**kwargs)`` binding inside ``main()``.
+
+    The testbench emitter expands this into a block of local-variable
+    declarations: one ``hls::stream<...>`` per stream endpoint plus one
+    AXI-Lite scalar/array per regmap field.  The emitter also records a
+    binding from the Python-side ``dut`` name to those locals so later
+    statements (``dut.s_in.push(...)``, ``dut.run()`` etc.) can find the
+    right C++ symbol.
+    """
+    local_name: str                 # Python-side local (e.g. "dut")
+    comp_class: type                # The HwComponent subclass being bound
+    kwargs: dict[str, object]       # Construction kwargs (resolved to literals)
+
+
+@dataclass
+class KernelCallStmt(HwStmt):
+    """A ``<dut>.run()`` call site: invoke the DUT's kernel function.
+
+    The emitter resolves the kernel name from the DUT's component class
+    (via ``cpp_kernel_name``) and emits ``poly(s_in, m_out, halted,
+    error, tx_id, coeffs);`` — passing the locals introduced by the
+    matching ``DutBindStmt`` in canonical kernel-signature order.
+    """
+    local_name: str                 # Python-side DUT local (e.g. "dut")
+
+
+@dataclass
+class TbCallStmt(HwStmt):
+    """A testbench-mode method call (push, pop, read_uint32_file, ...).
+
+    Generic carrier: ``method_name`` is the Python-side method (e.g.
+    ``"push"``), ``receiver`` is the bound object (a ``StreamIFSlave``,
+    a ``DataSchema`` class, a regmap, etc. — resolved by the extractor),
+    ``inputs`` and ``outputs`` follow the same shape as ``SynthCallStmt``.
+    The testbench-mode emitter dispatches on ``method_name`` +
+    ``type(receiver)`` to pick the right C++ lowering.
+    """
+    method_name: str
+    receiver: object
+    inputs: list
+    outputs: list[HwVar]
+    # Optional: for stream ops, the bound DUT's local name + endpoint attr
+    # so the emitter can resolve "dut.s_in" → the right C++ stream variable.
+    dut_local: str | None = None
+    endpoint_attr: str | None = None

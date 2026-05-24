@@ -10,10 +10,12 @@ from pysilicon.hw.dataschema import DataArray, DataSchema, EnumField, FloatField
 from pysilicon.hw.hwstmt import (
     CaseStmt,
     ContinueStmt,
+    DutBindStmt,
     FieldRef,
     FunctionStmt,
     HwStmt,
     HwVar,
+    KernelCallStmt,
     Ref,
     ReturnStmt,
     SeqStmt,
@@ -1012,42 +1014,138 @@ def tb_files_to_str(
     filename: testbench classes are expected to set it to match the DUT
     they test (e.g. ``cpp_kernel_name = "poly"`` on a ``PolyTBHls``
     yields ``gen/poly_tb.cpp``).
-
-    Phase 14 / Phase 2: the body is a Phase-2 skeleton — Phase 3 + 4
-    wire in DUT binding, stream push/pop, file I/O, and the kernel
-    call.  For now this confirms the file shape and the mode routing.
     """
     name = cpp_kernel_name(tb_class)
-    return {f"{name}_tb.cpp": _tb_skeleton(tb_class)}
+    return {f"{name}_tb.cpp": _testbench_cpp(tb_class)}
 
 
-def _tb_skeleton(tb_class) -> str:
-    """Phase-2 placeholder: minimal compilable ``int main()`` skeleton.
+@dataclass
+class TbCodegenCtx:
+    """Codegen context for the testbench-mode emitter.
 
-    Includes the standard library headers the hand-written ``poly_tb.cpp``
-    pulls in, parses the data-dir argv, and returns 0.  No DUT
-    instantiation, no stream I/O — those land in Phase 3 + 4.
-
-    The ``<kernel>.hpp`` include is intentionally added even though the
-    skeleton doesn't yet call the kernel — downstream phases need the
-    DUT's signature visible, and including the empty header costs
-    nothing.
+    Mirrors :class:`CodegenCtx` but with a side table for instantiated
+    DUTs: each :class:`DutBindStmt` constructs a concrete component and
+    stashes it under the Python-side local name, so a downstream
+    :class:`KernelCallStmt` can introspect the same instance to build the
+    kernel call signature.
     """
-    kn = cpp_kernel_name(tb_class)
-    return (
-        f'#include "{kn}.hpp"\n'
-        "#include <fstream>\n"
-        "#include <cstdint>\n"
-        "#include <string>\n"
-        "#include <stdexcept>\n"
-        "\n"
-        "int main(int argc, char** argv) {\n"
-        '    const std::string data_dir = (argc > 1) ? argv[1] : "data";\n'
-        "    (void)data_dir;\n"
-        "    // Phase-2 skeleton; Phase 3+ emits the real testbench body.\n"
-        "    return 0;\n"
-        "}\n"
+    comp: object   # the HwTestbench instance
+    indent: int = 1
+    duts: dict[str, object] = field(default_factory=dict)
+
+    def pad(self) -> str:
+        return "    " * self.indent
+
+    def child(self) -> TbCodegenCtx:
+        return TbCodegenCtx(
+            comp=self.comp,
+            indent=self.indent + 1,
+            duts=self.duts,
+        )
+
+
+def tb_to_cpp(stmt: HwStmt, ctx: TbCodegenCtx) -> str:
+    """Emit C++ source for a testbench-mode statement."""
+    if isinstance(stmt, SeqStmt):
+        return "\n".join(tb_to_cpp(c, ctx) for c in stmt.stmts)
+    if isinstance(stmt, DutBindStmt):
+        return _emit_dut_bind(stmt, ctx)
+    if isinstance(stmt, KernelCallStmt):
+        return _emit_kernel_call(stmt, ctx)
+    raise NotImplementedError(
+        f"Testbench codegen for {type(stmt).__name__} not implemented yet"
     )
+
+
+def _emit_dut_bind(stmt: DutBindStmt, ctx: TbCodegenCtx) -> str:
+    """Emit stream + regmap-field local decls for the bound DUT."""
+    from pysilicon.simulation.simulation import Simulation
+    dut = stmt.comp_class(
+        name=f"_{stmt.local_name}",
+        sim=Simulation(),
+        **stmt.kwargs,
+    )
+    ctx.duts[stmt.local_name] = dut
+    pad = ctx.pad()
+    lines: list[str] = []
+    for attr, ep in _discover_stream_endpoints(dut):
+        tmpl = _stream_template_arg(ep)
+        lines.append(
+            f"{pad}hls::stream<streamutils::axi4s_word<{tmpl}>> {attr};"
+        )
+    regmap_slave = _discover_regmap(dut)
+    if regmap_slave is not None:
+        for fname, fld in regmap_slave.regmap._fields.items():
+            if fld.is_vitis_auto:
+                continue
+            schema = fld.schema
+            if (isinstance(schema, type) and issubclass(schema, DataArray)
+                    and getattr(schema, 'cpp_storage', 'struct') == 'raw'):
+                elem_cpp = cpp_type(schema.element_type)
+                count = schema._declared_count()
+                lines.append(f"{pad}{elem_cpp} {fname}[{count}] = {{}};")
+            else:
+                lines.append(f"{pad}{cpp_type(schema)} {fname} = 0;")
+    return "\n".join(lines)
+
+
+def _emit_kernel_call(stmt: KernelCallStmt, ctx: TbCodegenCtx) -> str:
+    """Emit ``<kernel_name>(args...);`` matching the DUT's kernel signature.
+
+    Arg order is canonical: stream endpoints (in ``vars(comp)`` order),
+    then non-vitis-auto regmap fields (in declaration order) — the same
+    iteration :func:`kernel_signature` uses, so emitter and signature
+    stay in lockstep.
+    """
+    dut = ctx.duts.get(stmt.local_name)
+    if dut is None:
+        raise RuntimeError(
+            f"KernelCallStmt for unbound DUT '{stmt.local_name}' — extractor "
+            f"and emitter side tables are out of sync."
+        )
+    kn = cpp_kernel_name(type(dut))
+    args: list[str] = [attr for attr, _ in _discover_stream_endpoints(dut)]
+    regmap_slave = _discover_regmap(dut)
+    if regmap_slave is not None:
+        for fname, fld in regmap_slave.regmap._fields.items():
+            if fld.is_vitis_auto:
+                continue
+            args.append(fname)
+    return f"{ctx.pad()}{kn}({', '.join(args)});"
+
+
+def _testbench_cpp(tb_class) -> str:
+    """Build the full ``<kernel>_tb.cpp`` content for a testbench class.
+
+    Wraps the IR-driven body in the standard ``int main()`` boilerplate:
+    a fixed include block, ``argv`` parsing into ``data_dir``, the
+    extracted body, and ``return 0``.
+    """
+    from pysilicon.build.hwcodegen import extract_testbench
+    from pysilicon.simulation.simulation import Simulation
+
+    kn = cpp_kernel_name(tb_class)
+    tb = tb_class(name="_codegen", sim=Simulation())
+    tree = extract_testbench(tb)
+    ctx = TbCodegenCtx(comp=tb, indent=1)
+    body = tb_to_cpp(tree, ctx)
+
+    lines = [
+        f'#include "{kn}.hpp"',
+        '#include <fstream>',
+        '#include <cstdint>',
+        '#include <string>',
+        '#include <stdexcept>',
+        '',
+        'int main(int argc, char** argv) {',
+        '    const std::string data_dir = (argc > 1) ? argv[1] : "data";',
+        '    (void)data_dir;',
+    ]
+    if body:
+        lines.append(body)
+    lines.append('    return 0;')
+    lines.append('}')
+    return "\n".join(lines) + "\n"
 
 
 def kernel_files_to_str(
