@@ -4,7 +4,7 @@ set_top poly
 # evaluate body lives in poly_evaluate_impl.tpp at the source-tree root and
 # is #include'd from gen/poly.hpp via "../poly_evaluate_impl.tpp".
 add_files gen/poly.cpp -cflags "-I."
-add_files -tb poly_tb.cpp -cflags "-I."
+add_files -tb gen/poly_tb.cpp -cflags "-I."
 
 set script_dir [file dirname [file normalize [info script]]]
 set streamutils_cpp [file join $script_dir "streamutils.cpp"]

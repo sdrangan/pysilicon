@@ -12,6 +12,7 @@ import numpy as np
 from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
 from pysilicon.build.hwcodegen_steps import HlsCodegenStep
 from pysilicon.build.streamutils import StreamUtilsStep
+from pysilicon.build.verify_steps import FunctionalVerifyStep
 from pysilicon.hw.arrayutils import ArrayUtilsStep, read_uint32_file, write_uint32_file
 from pysilicon.hw.clock import Clock
 from pysilicon.hw.dataschema import DataSchemaStep
@@ -22,14 +23,14 @@ from pysilicon.toolchain import toolchain
 try:
     from examples.poly.poly import (
         Float32, PolyAccelComponent, PolyCmdHdr, PolyCmdType,
-        PolyError, PolyRespHdr, PolyTB,
+        PolyError, PolyRespHdr, PolyTB, PolyTBHls,
         SCHEMA_CLASSES, WORD_BW_SUPPORTED, CoeffArray,
         connect,
     )
 except ModuleNotFoundError:
     from poly import (  # type: ignore[no-redef]  # direct execution
         Float32, PolyAccelComponent, PolyCmdHdr, PolyCmdType,
-        PolyError, PolyRespHdr, PolyTB,
+        PolyError, PolyRespHdr, PolyTB, PolyTBHls,
         SCHEMA_CLASSES, WORD_BW_SUPPORTED, CoeffArray,
         connect,
     )
@@ -223,65 +224,6 @@ class CSimStep(BuildStep):
 
 
 @dataclass(kw_only=True)
-class ValidateCSimStep(BuildStep):
-    description = "Compare Vitis C-sim outputs against the Python model and write results/vitis/."
-    consumes    = ["sim_dir", "csim_data_dir", "data_cmd_hdr"]
-    produces    = {"vitis_dir": Path("results/vitis")}
-    params      = {}
-
-    def run(self, config: BuildConfig, sim_dir, csim_data_dir, data_cmd_hdr) -> dict:
-        data_dir = csim_data_dir
-        try:
-            data_hdr = PolyCmdHdr().read_uint32_file(data_cmd_hdr)
-            nsamp = int(data_hdr.nsamp)
-            sim_resp_hdr = PolyRespHdr().read_uint32_file(sim_dir / "resp_hdr.bin")
-            sim_status = json.loads(
-                (sim_dir / "regmap_status.json").read_text(encoding="utf-8")
-            )
-            sim_samp_out = np.array(
-                read_uint32_file(sim_dir / "samp_out.bin", elem_type=Float32,
-                                 shape=nsamp),
-                dtype=np.float32,
-            )
-            got_resp_hdr = PolyRespHdr().read_uint32_file(data_dir / "resp_hdr_data.bin")
-            got_status = json.loads(
-                (data_dir / "regmap_status.json").read_text(encoding="utf-8")
-            )
-            got_samp_out = np.array(
-                read_uint32_file(data_dir / "samp_out_data.bin", elem_type=Float32,
-                                 shape=nsamp),
-                dtype=np.float32,
-            )
-        except Exception as exc:
-            raise RuntimeError(f"Failed to read sim or Vitis outputs: {exc}")
-        if not got_resp_hdr.is_close(sim_resp_hdr):
-            raise RuntimeError("Response header mismatch after Vitis C-simulation.")
-        for label, status in (("python", sim_status), ("vitis", got_status)):
-            if int(status.get("halted", 0)) != 0:
-                raise RuntimeError(
-                    f"{label} regmap_status reports halted=1 (error={status.get('error')}, "
-                    f"tx_id={status.get('tx_id')})."
-                )
-            if int(status.get("error", 0)) != int(PolyError.NO_ERROR):
-                raise RuntimeError(
-                    f"{label} regmap_status reports error={status.get('error')} "
-                    f"(expected NO_ERROR=0)."
-                )
-        if not np.allclose(got_samp_out, sim_samp_out[:got_samp_out.size],
-                           rtol=1e-6, atol=1e-6):
-            raise RuntimeError("Sample output mismatch after Vitis C-simulation.")
-        vitis_dir = config.root_dir / "results" / "vitis"
-        vitis_dir.mkdir(parents=True, exist_ok=True)
-        got_resp_hdr.write_uint32_file(vitis_dir / "resp_hdr.bin")
-        write_uint32_file(got_samp_out, elem_type=Float32,
-                          file_path=vitis_dir / "samp_out.bin", nwrite=len(got_samp_out))
-        (vitis_dir / "regmap_status.json").write_text(
-            json.dumps(got_status, indent=2), encoding="utf-8"
-        )
-        return {"vitis_dir": vitis_dir}
-
-
-@dataclass(kw_only=True)
 class CSynthStep(BuildStep):
     description = "Run Vitis HLS C-synthesis and RTL co-simulation."
     consumes    = [
@@ -376,10 +318,6 @@ def build_poly_dag() -> BuildDag:
         artifact="poly_source", path=_SOURCE_DIR / "poly.py",
         description="Python source for schemas, accelerator, and testbench.",
     ))
-    dag.add(SourceStep(
-        artifact="poly_tb", path=_SOURCE_DIR / "poly_tb.cpp",
-        description="C++ testbench driving the Vitis kernel.",
-    ))
     # Build steps — instance names (snake_case) for nicer CLI output
     dag.add(BuildInputsStep(name="build_inputs"))
     dag.add(GenCppStep(name="gen_cpp"))
@@ -393,10 +331,47 @@ def build_poly_dag() -> BuildDag:
         output_dir="gen",
         impl_dir=".",
     ))
+    # Phase-14 testbench codegen: a second HlsCodegenStep configured for
+    # is_testbench=True consumes PolyTBHls and emits gen/poly_tb.cpp,
+    # producing the ``poly_tb`` artifact that CSimStep consumes (replaces
+    # the legacy SourceStep wrapping the hand-written .cpp).
+    dag.add(HlsCodegenStep(
+        name="gen_tb",
+        comp_class=PolyTBHls,
+        source_artifact="poly_source",
+        output_dir="gen",
+        is_testbench=True,
+    ))
     dag.add(PySimStep(name="py_sim"))
     dag.add(ValidateTimingStep(name="validate_timing"))
     dag.add(CSimStep(name="csim"))
-    dag.add(ValidateCSimStep(name="validate_csim"))
+    dag.add(FunctionalVerifyStep(
+        name="validate_csim",
+        golden_dir_artifact="sim_dir",
+        actual_dir_artifact="csim_data_dir",
+        extra_artifacts=["data_cmd_hdr"],
+        schemas=[
+            {"filename": "resp_hdr_data.bin",
+             "golden_filename": "resp_hdr.bin",
+             "schema": PolyRespHdr},
+        ],
+        arrays=[
+            {"filename": "samp_out_data.bin",
+             "golden_filename": "samp_out.bin",
+             "elem_type": Float32,
+             "count_from_extra": "data_cmd_hdr",
+             "count_schema": PolyCmdHdr,
+             "count_field": "nsamp",
+             "rtol": 1e-6, "atol": 1e-6},
+        ],
+        jsons=[
+            {"filename": "regmap_status.json",
+             "expect_zero": ["halted", "error"]},
+        ],
+        output_dir="results/vitis",
+        output_artifact="vitis_dir",
+        report_path="results/verify_csim.json",
+    ))
     dag.add(CSynthStep(name="csynth"))
     dag.add(InspectSynthStep(name="inspect_synth"))
     return dag

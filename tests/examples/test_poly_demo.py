@@ -41,8 +41,14 @@ POLY_EXAMPLE_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
 
 
 def _copy_poly_vitis_resources(dst_dir: Path) -> None:
-    """Copy the canonical poly Vitis sources into a temporary test directory."""
-    for name in ("poly.cpp", "poly.hpp", "poly_tb.cpp", "run.tcl"):
+    """Copy the persistent (non-generated) poly Vitis sources into a temp dir.
+
+    Phase 14 of the codegen pipeline emits ``gen/poly.{hpp,cpp}`` and
+    ``gen/poly_tb.cpp`` from Python sources, so only the TCL driver and
+    the sticky ``poly_evaluate_impl.tpp`` implementation file need to be
+    seeded — the build DAG generates the rest.
+    """
+    for name in ("run.tcl", "poly_evaluate_impl.tpp"):
         shutil.copy(POLY_EXAMPLE_DIR / name, dst_dir / name)
 
 

@@ -53,22 +53,24 @@ def test_poly_codegen_step_kernel_contains_raw_coeffs(tmp_path: Path):
 
 
 def test_poly_swap_over_state():
-    """Headless verification of the final Phase 12b state.
+    """Headless verification of the final Phase 14 source-tree state.
 
-    - The hand-written ``poly.cpp`` / ``poly.hpp`` are gone from the
-      source tree.
-    - ``poly_evaluate_impl.tpp`` exists at the source-tree root.
-    - ``poly_tb.cpp`` uses the generated signature's arg names + the
-      generated header path.
-    - ``poly_build.py`` has no ``handwritten_poly_*`` references.
+    - All hand-written kernel + testbench C++ files are gone from the
+      source tree (``poly.cpp`` / ``poly.hpp`` removed by Phase 12b;
+      ``poly_tb.cpp`` removed by Phase 14).
+    - ``poly_evaluate_impl.tpp`` (the sticky hand-written hook impl)
+      still lives at the source-tree root.
+    - ``poly_build.py`` carries no references to the legacy names and
+      wires in both kernel + testbench HlsCodegenStep instances.
     """
     from pathlib import Path as _P
 
     poly_root = _P(__file__).resolve().parents[2] / "examples" / "poly"
 
-    # Hand-written kernel files are gone.
+    # Hand-written kernel + testbench files are gone (now codegen'd).
     assert not (poly_root / "poly.cpp").exists()
     assert not (poly_root / "poly.hpp").exists()
+    assert not (poly_root / "poly_tb.cpp").exists()
 
     # The sticky hand-written evaluate body is committed at the root.
     tpp = poly_root / "poly_evaluate_impl.tpp"
@@ -78,19 +80,12 @@ def test_poly_swap_over_state():
     assert "evaluate" in tpp_text
     assert "eval_poly_horner" in tpp_text
 
-    # Testbench uses the new arg names and includes the generated header.
-    tb = (poly_root / "poly_tb.cpp").read_text(encoding="utf-8")
-    assert '#include "gen/poly.hpp"' in tb
-    assert "poly(s_in, m_out, halted, error, tx_id, coeffs)" in tb
-    # The old hand-written-only symbols must be gone.
-    assert "in_stream" not in tb
-    assert "out_stream" not in tb
-    assert "error_code" not in tb
-    assert "tx_id_status" not in tb
-
-    # poly_build.py no longer references the renamed handwritten artifacts.
+    # poly_build.py: no legacy refs, both codegen steps wired in.
     build_text = (poly_root / "poly_build.py").read_text(encoding="utf-8")
     assert "handwritten_poly" not in build_text
+    assert 'comp_class=PolyTBHls' in build_text
+    assert 'is_testbench=True' in build_text
+    assert 'FunctionalVerifyStep' in build_text
 
 
 def test_poly_gen_hpp_uses_relative_impl_include(tmp_path: Path):
