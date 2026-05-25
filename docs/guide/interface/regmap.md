@@ -173,6 +173,46 @@ Internally each field's backing store is a numpy array of `nwords_per_inst(bus_b
 
 ---
 
+## Host-side: BoundRegMap
+
+Kernel-side `RegMap.get()` / `RegMap.set()` run in-process on the component object. On the host side, you usually have an `MMIFMaster` endpoint plus a base address, so reading and writing fields directly means repeating address arithmetic and schema wrapping at every call site.
+
+`BoundRegMap` provides that host-side convenience surface by binding a `RegMap` instance to a master endpoint:
+
+- `regmap.bind_master(master, base_addr=0) -> BoundRegMap`
+- `BoundRegMap.get(name)` (coroutine): reads through `master.read_schema(...)` and returns native Python values (`int`, `IntEnum`, `float`, or schema instances for array/list fields).
+- `BoundRegMap.set(name, value)` (coroutine): writes through `master.write_schema(...)`, auto-wrapping raw values using the field schema.
+- `BoundRegMap.start()` (coroutine): convenience launch helper for `VitisRegMap` that writes `ap_start`.
+
+Source class: [`BoundRegMap`](../../../pysilicon/hw/regmap.py).
+
+### Example (host-side testbench)
+
+From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyTB.run_proc`:
+
+```python
+rm = self._regmap().bind_master(self.m_lite, base_addr=self.base_addr)
+
+yield from rm.set("coeffs", self.coeffs)
+yield from rm.start()
+
+self.halted       = yield from rm.get("halted")
+self.error        = yield from rm.get("error")
+self.tx_id_status = yield from rm.get("tx_id")
+```
+
+This keeps host-side register access aligned with kernel-side ergonomics while preserving typed schema conversions.
+
+### Quick reference
+
+- Use `bind_master(...)` once per `(master, base_addr)` pair.
+- `get(name)` returns deserialized typed values.
+- `set(name, value)` accepts either schema instances or raw values.
+- `start()` is available on `VitisRegMap`-backed maps for `ap_start`.
+- `BoundRegMap` is host-side only; kernel logic still uses `RegMap.get/set`.
+
+---
+
 ## RegMapMMIFSlave
 
 ```python

@@ -9,20 +9,19 @@ has_children: true
 
 ## Example
 
-It is easiest to illustrate data schemas via an example. In the [polynomial evaluation example](../../examples/poly/), a command header is sent to the accelerator to describe the polynomial that should be evaluated on a set of real-valued data samples. This command is defined by the `PolyCmdHdr` data schema in Python:
+A representative schema appears in the [polynomial example](../../examples/poly/):
 
 ```python
-include_dir = 'include'  # Directory to generate headers
+include_dir = "include"
 
-# Coefficients for a cubic polynomial
 class CoeffArray(DataArray):
     element_type = Float32
     static = True
-    ncoeffs = 4
-    max_shape = (ncoeffs,)
+    ncoeff = 4
+    max_shape = (ncoeff,)
+    cpp_storage = "raw"
     include_dir = include_dir
 
-# Command header schema
 class PolyCmdHdr(DataList):
     elements = {
         "tx_id": {
@@ -41,28 +40,22 @@ class PolyCmdHdr(DataList):
     include_dir = include_dir
 ```
 
-Key features illustrated here:
+Key points:
 
-- Fields can use standard types (float, arbitrary-precision integers, etc.). See other examples for enums.
-- Data schemas can represent *arrays* (like `CoeffArray`) or *lists/structs* (like `PolyCmdHdr`).
-- The schema defines exact bitwidth, type, and (optionally) a description for each field.
+- `DataList` models structured records (field dictionaries with types/descriptions).
+- `DataArray` models typed arrays and can be nested inside `DataList` fields.
+- Bitwidth and schema typing are explicit and shared across Python and generated C++.
 
----
-
-## Creating Instances in Python
-
-Once you have defined a data schema class, you can create and assign values like regular Python objects. For instance, from `poly_demo.py`:
+## Creating instances in Python
 
 ```python
-# Example coefficients
 coeffs = CoeffArray()
 coeffs.val = np.array([1.0, -2.0, -3.0, 4.0], dtype=np.float32)
 
-nsamp = 100  # Number of samples to process 
 cmd_hdr = PolyCmdHdr()
 cmd_hdr.tx_id = 42
 cmd_hdr.coeffs = coeffs.val
-cmd_hdr.nsamp = nsamp
+cmd_hdr.nsamp = 100
 ```
 
-You can now use these schema instances in your Python model of the accelerator, or for reading/writing structured test data to and from your hardware module.
+These schema objects can be serialized directly for simulation interfaces, test vectors, and generated testbench flows.

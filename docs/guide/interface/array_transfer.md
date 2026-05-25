@@ -257,14 +257,14 @@ Both `cmd_slave` and `samp_slave` share the same `transport` (and therefore the 
 
 ## Synthesis mapping
 
-When generating Vitis HLS code, `ArrayTransferIF` maps to the utilities produced by `gen_array_utils`:
+When generating Vitis HLS code, `ArrayTransferIF` maps to the utilities produced by `ArrayUtilsStep`:
 
 | Python | C++ |
 |---|---|
 | `ArrayTransferIFMaster(element_type=Float32).write(elements)` | `float32_array_utils::write_array(stream, data, n)` |
 | `ArrayTransferIFSlave(element_type=Float32).get(count=n)` | `float32_array_utils::read_array(stream, n)` |
 
-`gen_array_utils` works for any `DataSchema` subclass, so an `ArrayTransferIF` parameterized on a composite `DataList` generates analogous struct-array utilities.
+`ArrayUtilsStep` works for any `DataSchema` subclass, so an `ArrayTransferIF` parameterized on a composite `DataList` generates analogous struct-array utilities.
 
 ---
 

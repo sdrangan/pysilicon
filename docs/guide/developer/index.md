@@ -1,7 +1,7 @@
 ---
 title: Developers
 parent: Guide
-nav_order: 2
+nav_order: 9
 has_children: true
 ---
 
@@ -9,4 +9,4 @@ has_children: true
 
 This section provides note for developers, meaning users who are editing the PySilicon package itself.
 
-- [Headless testing for the MCP server](./headlesss.md)
+- [Headless testing for the MCP server](./headless.md)

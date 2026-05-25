@@ -7,156 +7,81 @@ has_children: true
 
 # Data Arrays
 
-PySilicon supports not only structured headers and control messages, but also efficient transfer of raw data arrays between Python models and Vitis HLS implementations. This section does **not** discuss the `DataArray` schema class itself. Instead, it focuses on the generated **array utilities**, which are used for moving arrays of primitive element types such as `float32` between Python and hardware.
+`DataArray` is the unified array schema in PySilicon. It defines element type, maximum shape, runtime/static shape behavior, and C++ storage lowering.
 
-A good example appears in the polynomial evaluation example, where the input samples `samp_in` and output samples `samp_out` are arrays of `float32` values.
+## 1. Declaring `DataArray`
 
-In Python, these arrays are typically mapped directly to **NumPy arrays**, which gives two major benefits:
+A `DataArray` subclass declares:
 
-- Access to the full NumPy library for numerical operations
-- Fast vectorized execution for golden models and test generation
+- `element_type`: schema type for each element
+- `max_shape`: maximum dimensions
+- `static`: fixed-size (`True`) or runtime-length (`False`, leading dimension)
+- `cpp_storage`: C++ layout mode (`"struct"` or `"raw"`)
 
-
-## Generating Array Utilities
-
-For primitive array element types, PySilicon can generate specialized C++ helper functions for reading and writing packed array data in Vitis HLS. These helpers are generated separately from the schema headers.
-
-For example, to generate array utilities for `float32`, use:
+Example from [`examples/poly/poly.py`](../../../examples/poly/poly.py):
 
 ```python
-from pysilicon.hw.arrayutils import gen_array_utils
-
-# Element type
-Float32 = FloatField.specialize(bitwidth=32)
-
-# Word bitwidths to support for serialization / deserialization methods
-word_bw_supported = [32, 64]
-
-# Define a code generation configuration
-cfg = CodeGenConfig(root_dir=root_dir, util_dir=include_dir)
-
-# Generate the include file
-gen_array_utils(Float32, WORD_BWword_bw_supported, cfg=cfg)
+class CoeffArray(DataArray):
+    ncoeff = 4
+    element_type = Float32
+    static = True
+    max_shape = (ncoeff,)
+    cpp_storage = "raw"
 ```
 
-This generates a header file containing specialized utility functions for the requested element type and supported interface bit widths.  Specifically, similar to the case of the [code generation for the data lists](./codegen.md), two header files are generated:
+## 2. Runtime construction with `array()`
 
-- `float32_array_utils.h`:  The main header for use in Vitis synthesizable code. This file contains templated serialization and deserialization routines.
-- `float32_array_utils_tb.h`:  A companion header for non-synthesizable Vitis code such as testbenches. This file adds routines for reading/writing files and JSON dumps.
+For runtime values, use the array factory in [`pysilicon/hw/arrayutils.py`](../../../pysilicon/hw/arrayutils.py):
 
-## Using Array Utilities in Vitis HLS
+```python
+from pysilicon.hw.arrayutils import array
 
-In Vitis HLS, the generated array utilities support two main usage patterns.
+samples = array(Float32, [1.0, -2.0, 3.5])
+```
 
-### 1. Copying an Entire Array into Local Storage
+`array(elem_type, data, static=False)` specializes `DataArray` from the runtime shape and returns an initialized instance.
 
-The first pattern is to read a full array from an interface into a local buffer before processing. This is useful when the algorithm needs random access to the full array, or when the entire dataset must be available before computation can begin.
+## 3. `cpp_storage="struct"` vs `"raw"`
+
+`DataArray` supports two C++ lowering modes:
+
+- `cpp_storage="struct"` (default): generates a struct wrapper with a named member (default `data`) and schema methods.
+- `cpp_storage="raw"`: lowers to a raw C++ array (`T[N]`) and requires `static=True` with 1-D shape.
+
+Illustrative lowering shape:
 
 ```cpp
+// struct mode (default)
+struct Float32Array {
+    float data[N];
+    template<int WORD_BW> void write_array(ap_uint<WORD_BW> x[]) const;
+    template<int WORD_BW> void read_array(const ap_uint<WORD_BW> x[]);
+};
 
-void my_kernel(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream) {
-    #pragma HLS INTERFACE axis port=in_stream
-    #pragma HLS INTERFACE axis port=out_stream
-    #pragma HLS INTERFACE ap_ctrl_none port=return
-    
-    static const int nin = 128, nout= 128;
-    float input_array[nin], output_array[nout];
-
-    // Read data from the input stream
-    float32_array_utils::read_stream(in_stream, input_array, nin);
-
-    // Computation ...
-    // output_array[i] = ...
-
-    // Write  data from the input stream
-    float32_array_utils::write_stream(output_array, out_stream, nout);
-
-}
+// raw mode (used by CoeffArray)
+float coeffs[N];
 ```
 
-This pattern is appropriate when:
-- the full dataset is needed before processing starts,
-- the algorithm revisits elements multiple times, or
-- buffering the array is acceptable.
+`CoeffArray` in the poly example uses `cpp_storage="raw"` to map coefficient storage directly to a flat C++ array.
 
-You can see from the example, again, that all the boilerplate for serializing is removed.
+## 4. Generated array utilities via `ArrayUtilsStep`
 
-### 2. Processing Data as It Arrives
+Array packing helpers are generated by [`ArrayUtilsStep`](../../../pysilicon/hw/arrayutils.py) in a `BuildDag`:
 
-The second pattern is to read and write data incrementally, one interface word at a time, while processing continues in a streaming manner. This enables:
-- lower latency,
-- reduced on-chip storage,
-- and a more naturally pipelined design.
+```python
+from pysilicon.build.build import BuildConfig, BuildDag
+from pysilicon.build.streamutils import StreamUtilsStep
+from pysilicon.hw.arrayutils import ArrayUtilsStep
 
-This approach works when the algorithm can process the data continuously as it arrives, without needing the full array in advance.
-
-In the polynomial example, this is exactly how `samp_in` and `samp_out` are handled in `poly.cpp`. The kernel reads input samples from the AXI4 stream, evaluates the polynomial immediately, and writes output samples back to the stream without storing the full input or output array.
-
-Because one interface word may contain multiple array elements, the generated utilities expose a **packing factor**. In `poly.cpp`, this appears as:
-
-```cpp
-static const int pf = float32_array_utils::pf<WORD_BW>();
+cfg = BuildConfig(root_dir=project_dir)
+dag = BuildDag()
+dag.add(StreamUtilsStep(output_dir="include"))
+dag.add(ArrayUtilsStep(Float32, [32, 64]))
+dag.run(cfg)
 ```
 
-The packing factor `pf` is the number of array elements that fit in one interface word. The code then reads up to `pf` input samples at a time, processes them in parallel, and writes up to `pf` output samples back to the interface.
+`ArrayUtilsStep` is dependency-aware and resolves `StreamUtilsStep` in the same DAG. It emits `include/<elem>_array_utils.h` and `include/<elem>_array_utils_tb.h`.
 
-For example, in the polynomial example:
+## Pipelined stream operation note
 
-```cpp
-void poly(hls::stream<axis_word_t>& in_stream, hls::stream<axis_word_t>& out_stream) {
-#pragma HLS INTERFACE axis port=in_stream
-#pragma HLS INTERFACE axis port=out_stream
-#pragma HLS INTERFACE ap_ctrl_none port=return
-
-    ...
-
-    // Compute the packing factor 
-    static const int pf = float32_array_utils::pf<WORD_BW>();
-
-    // Create a "lane" representing a set of elements that can be read in one word read.
-    // The pragmas ensure they are fully accessible all in the same time -- e.g., implemented in flip-flops
-    float x_lane[pf];
-    float y_lane[pf];
-#pragma HLS ARRAY_PARTITION variable=x_lane complete dim=1
-#pragma HLS ARRAY_PARTITION variable=y_lane complete dim=1
-
-    // Loop over the data
-    int nrem = cmd_hdr.nsamp;
-    for (int i = 0; i < cmd_hdr.nsamp; i += pf) {
-
-        // Read one "lane"
-        float32_array_utils::read_axi4_stream_elem<WORD_BW>(in_stream, x_lane, nrem);
-
-        // Process the elements in the "lane"
-        // The loop is unrolled to ensure they are processed in parallel, maximizing throughput
-        for (int k = 0; k < pf; ++k) {
-#pragma HLS UNROLL
-            if (k < nrem) {
-                y_lane[k] = eval_poly_horner(cmd_hdr.coeffs.data, x_lane[k]);
-            }
-        }
-
-        // Write one word to the output
-        bool tlast = (nrem <= pf);
-        float32_array_utils::write_axi4_stream_elem<WORD_BW>(out_stream, y_lane, tlast, nrem);
-
-        nrem -= pf;
-    }
-    ...
-}
-
-```
-
-This style is especially useful for high-throughput streaming accelerators, since it naturally matches the packed interface width while minimizing buffering.
-
-## Summary
-
-The generated array utilities provide a convenient bridge between:
-- **NumPy arrays in Python**, used for modeling and test generation, and
-- **packed streaming or memory interfaces in Vitis HLS**, used in synthesized hardware.
-
-They support both:
-- full-array transfer into local buffers, and
-- word-by-word streaming transfer for low-latency pipelined processing.
-
-This allows PySilicon to handle array data efficiently on both the Python and hardware sides, while preserving a consistent packing convention across the entire flow.
+Pipelined stream operations (`get_pipelined`, `write_pipelined`) are only valid inside `@synthesizable` hook bodies. They are not legal in top-level extracted bodies such as `on_start`, `run_proc`, or testbench `main()`. See [Synthesis Extractor](../synthesis/extractor.md).

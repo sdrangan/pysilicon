@@ -1,7 +1,7 @@
 ---
 title: Data Schemas
 parent: Guide
-nav_order: 4
+nav_order: 2
 has_children: true
 ---
 
@@ -15,3 +15,6 @@ PySilicon’s **data schemas** provide a general method for describing how data 
 
 In this way, data schemas offer a consistent and reliable mapping between Python models and Vitis HLS implementations. The translation is automatic, eliminating manual boilerplate and error-prone hand-written packing/unpacking. As we’ll see, Data Schemas are also central for specifying strongly-typed transactional interfaces between modules.
 
+
+
+For synthesis-pipeline details beyond schema headers, see [Synthesis](../synthesis/).
