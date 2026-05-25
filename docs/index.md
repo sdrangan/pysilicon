@@ -28,7 +28,7 @@ If you're new to PySilicon, begin with:
 
 - [Installation](./guide/installation/) — how to install PySilicon from source.
 - [Overview](./overview/) — conceptual background, motivation, and examples.
-- [Architecture](./architecture/) — system design, simulation, synthesis, testing, and generated interfaces.
+- [Guide](./guide/) — implementation details for schemas, interfaces, components, synthesis, and build steps.
 
 
 These pages introduce the core ideas behind PySilicon and how the system fits together.

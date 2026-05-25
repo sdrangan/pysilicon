@@ -145,5 +145,6 @@ result = analyze_poly_vcd(fixture)
 
 ## Generating a VCD
 
-See [Generating a VCD from Python](generating_vcd.md) for how to capture
-a fresh VCD using the Python-callable `run_xsim_vcd` API or the CLI.
+See [RTL cosim timing verification](./05_cosim_timing.md) for how to
+capture a fresh VCD using the Python-callable `run_xsim_vcd` API or the
+CLI.
