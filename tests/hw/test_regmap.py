@@ -754,7 +754,7 @@ class TestVitisRegMapMMIFSlave:
         assert self._run_regmap_relu(a=-2, x=3, b=1) == 0
 
     def test_vitis_regmap_simp_fun_int32_wrap_no_saturation(self) -> None:
-        # int32 wrap: (2^31-1)*2 + 0 wraps to -2, then relu(-2) => 0.
+        # int32 wrap: (2**31 - 1)*2 + 0 wraps to -2, then relu(-2) => 0.
         assert self._run_regmap_relu(a=(1 << 31) - 1, x=2, b=0) == 0
 
 
