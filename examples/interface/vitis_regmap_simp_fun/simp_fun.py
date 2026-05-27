@@ -11,6 +11,7 @@ S32 = IntField.specialize(bitwidth=32, signed=True)
 
 
 def _wrap_int32(value: int) -> int:
+    """Wrap Python int to signed int32 two's-complement range [-2^31, 2^31-1]."""
     wrapped = int(value) & 0xFFFFFFFF
     if wrapped & 0x80000000:
         wrapped -= 1 << 32
@@ -19,8 +20,11 @@ def _wrap_int32(value: int) -> int:
 
 def relu_ax_plus_b_int32(a: int, x: int, b: int) -> int:
     """Compute y = relu(a*x + b) with int32 wraparound semantics."""
-    ax = _wrap_int32(_wrap_int32(a) * _wrap_int32(x))
-    ax_plus_b = _wrap_int32(ax + _wrap_int32(b))
+    a32 = _wrap_int32(a)
+    x32 = _wrap_int32(x)
+    b32 = _wrap_int32(b)
+    ax = _wrap_int32(a32 * x32)
+    ax_plus_b = _wrap_int32(ax + b32)
     return max(ax_plus_b, 0)
 
 
@@ -45,6 +49,7 @@ class SimpFunAccel(SimObj):
         )
 
     def on_start(self) -> ProcessGen[None]:
+        """Start callback: compute relu(a*x+b) and publish it to output register y."""
         y = relu_ax_plus_b_int32(
             int(self.regmap.get("a").val),
             int(self.regmap.get("x").val),

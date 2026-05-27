@@ -7,7 +7,7 @@ from pysilicon.simulation.simulation import Simulation
 from examples.interface.vitis_regmap_simp_fun.simp_fun import S32, SimpFunAccel, relu_ax_plus_b_int32
 
 
-def _run_and_read_y(*, a: int, x: int, b: int, name: str = "simp") -> int:
+def _simulate_accel_and_read_output(*, a: int, x: int, b: int, name: str = "simp") -> int:
     sim = Simulation()
     accel = SimpFunAccel(name=name, sim=sim)
 
@@ -17,7 +17,7 @@ def _run_and_read_y(*, a: int, x: int, b: int, name: str = "simp") -> int:
     direct.bind("slave", accel.s_lite)
 
     done = sim.env.event()
-    result: dict[str, int] = {}
+    result: list[int] = []
 
     def proc():
         yield from master.write_schema(S32(a), addr=accel.regmap.offset_of("a"))
@@ -25,15 +25,12 @@ def _run_and_read_y(*, a: int, x: int, b: int, name: str = "simp") -> int:
         yield from master.write_schema(S32(b), addr=accel.regmap.offset_of("b"))
         yield from accel.regmap.start(master)
         y = yield from master.read_schema(S32, addr=accel.regmap.offset_of("y"))
-        result["y"] = int(y.val)
-
-    def wrap():
-        yield from proc()
+        result.append(int(y.val))
         done.succeed()
 
-    sim.env.process(wrap())
+    sim.env.process(proc())
     sim.env.run(until=done)
-    return result["y"]
+    return result[0]
 
 
 def test_relu_ax_plus_b_int32_positive_case() -> None:
@@ -50,8 +47,8 @@ def test_relu_ax_plus_b_int32_no_saturation_wraps_int32() -> None:
 
 
 def test_simp_fun_accel_on_start_computes_relu_ax_plus_b() -> None:
-    assert _run_and_read_y(a=3, x=5, b=-7) == 8
+    assert _simulate_accel_and_read_output(a=3, x=5, b=-7) == 8
 
 
 def test_simp_fun_accel_on_start_uses_int32_wrap_no_saturation() -> None:
-    assert _run_and_read_y(a=2_147_483_647, x=1, b=1, name="simp_wrap") == 0
+    assert _simulate_accel_and_read_output(a=2_147_483_647, x=1, b=1, name="simp_wrap") == 0
