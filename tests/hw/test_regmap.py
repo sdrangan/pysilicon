@@ -39,6 +39,7 @@ class ErrCode(IntEnum):
 ErrField = EnumField.specialize(enum_type=ErrCode)
 U32      = IntField.specialize(bitwidth=32, signed=False)
 U16      = IntField.specialize(bitwidth=16, signed=False)
+S32      = IntField.specialize(bitwidth=32, signed=True)
 F32      = FloatField.specialize(bitwidth=32)
 
 
@@ -521,6 +522,58 @@ class TestVitisRegMapStart:
 
 
 class TestVitisRegMapMMIFSlave:
+    @staticmethod
+    def _int32_wrap(value: int) -> int:
+        return ((int(value) + (1 << 31)) % (1 << 32)) - (1 << 31)
+
+    def _run_simp_fun(self, a: int, x: int, b: int) -> int:
+        rm = VitisRegMap({
+            "a": RegField(S32, RegAccess.RW),
+            "x": RegField(S32, RegAccess.RW),
+            "b": RegField(S32, RegAccess.RW),
+            "y": RegField(S32, RegAccess.R),
+        })
+        sim = Simulation()
+
+        def on_start() -> ProcessGen[None]:
+            a_val = int(rm.get("a").val)
+            x_val = int(rm.get("x").val)
+            b_val = int(rm.get("b").val)
+            prod = self._int32_wrap(a_val * x_val)
+            total = self._int32_wrap(prod + b_val)
+            y_val = total if total > 0 else 0
+            rm.set("y", y_val)
+            yield sim.env.timeout(0)
+
+        slave = VitisRegMapMMIFSlave(
+            sim=sim, bitwidth=32, regmap=rm, on_start=on_start
+        )
+        master = MMIFMaster(sim=sim, bitwidth=32)
+        direct = DirectMMIF(sim=sim, clk=Clock(freq=1.0))
+        direct.bind("master", master)
+        direct.bind("slave", slave)
+
+        y_read: list[int] = []
+
+        def proc() -> ProcessGen[None]:
+            rb = rm.bind_master(master)
+            yield from rb.set("a", a)
+            yield from rb.set("x", x)
+            yield from rb.set("b", b)
+            yield from rb.start()
+            yield sim.env.timeout(1)
+            y_read.append(int((yield from rb.get("y"))))
+
+        done = sim.env.event()
+
+        def _wrap() -> ProcessGen[None]:
+            yield from proc()
+            done.succeed()
+
+        sim.env.process(_wrap())
+        sim.env.run(until=done)
+        return y_read[0]
+
     def test_invokes_on_start_on_ap_start(self) -> None:
         call_count = 0
 
@@ -693,6 +746,16 @@ class TestVitisRegMapMMIFSlave:
         sim.env.process(_wrap())
         sim.env.run(until=done)
         assert ap_start_read[0] == 0  # auto-cleared
+
+    def test_vitis_regmap_simp_fun_relu_positive(self) -> None:
+        assert self._run_simp_fun(a=2, x=3, b=4) == 10
+
+    def test_vitis_regmap_simp_fun_relu_clamps_negative(self) -> None:
+        assert self._run_simp_fun(a=-2, x=3, b=1) == 0
+
+    def test_vitis_regmap_simp_fun_int32_wrap_no_saturation(self) -> None:
+        # int32 wrap: (2^31-1)*2 => -2, then relu(-2) => 0.
+        assert self._run_simp_fun(a=(1 << 31) - 1, x=2, b=0) == 0
 
 
 # ---------------------------------------------------------------------------
