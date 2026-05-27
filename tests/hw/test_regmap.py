@@ -526,7 +526,7 @@ class TestVitisRegMapMMIFSlave:
     def _int32_wrap(value: int) -> int:
         return ((int(value) + (1 << 31)) % (1 << 32)) - (1 << 31)
 
-    def _run_simp_fun(self, a: int, x: int, b: int) -> int:
+    def _run_regmap_relu(self, a: int, x: int, b: int) -> int:
         rm = VitisRegMap({
             "a": RegField(S32, RegAccess.RW),
             "x": RegField(S32, RegAccess.RW),
@@ -539,9 +539,9 @@ class TestVitisRegMapMMIFSlave:
             a_val = int(rm.get("a").val)
             x_val = int(rm.get("x").val)
             b_val = int(rm.get("b").val)
-            prod = self._int32_wrap(a_val * x_val)
-            total = self._int32_wrap(prod + b_val)
-            y_val = total if total > 0 else 0
+            product = self._int32_wrap(a_val * x_val)
+            linear_result = self._int32_wrap(product + b_val)
+            y_val = linear_result if linear_result > 0 else 0
             rm.set("y", y_val)
             yield sim.env.timeout(0)
 
@@ -748,14 +748,14 @@ class TestVitisRegMapMMIFSlave:
         assert ap_start_read[0] == 0  # auto-cleared
 
     def test_vitis_regmap_simp_fun_relu_positive(self) -> None:
-        assert self._run_simp_fun(a=2, x=3, b=4) == 10
+        assert self._run_regmap_relu(a=2, x=3, b=4) == 10
 
     def test_vitis_regmap_simp_fun_relu_clamps_negative(self) -> None:
-        assert self._run_simp_fun(a=-2, x=3, b=1) == 0
+        assert self._run_regmap_relu(a=-2, x=3, b=1) == 0
 
     def test_vitis_regmap_simp_fun_int32_wrap_no_saturation(self) -> None:
-        # int32 wrap: (2^31-1)*2 => -2, then relu(-2) => 0.
-        assert self._run_simp_fun(a=(1 << 31) - 1, x=2, b=0) == 0
+        # int32 wrap: (2^31-1)*2 + 0 wraps to -2, then relu(-2) => 0.
+        assert self._run_regmap_relu(a=(1 << 31) - 1, x=2, b=0) == 0
 
 
 # ---------------------------------------------------------------------------
