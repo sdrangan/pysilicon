@@ -217,16 +217,17 @@ class TbStreamIOStmt(HwStmt):
 
 @dataclass
 class TbRegmapFileReadStmt(HwStmt):
-    """``dut.regmap.read_uint32_file_array(field, path, count=...)`` —
-    read a binary file directly into a regmap raw-array field.  The
-    emitter lowers to ``<elem>_array_utils::read_uint32_file_array(<field>,
-    path, count)`` where ``<field>`` is the C++ regmap local the DUT
-    binding introduced.
+    """Regmap file preload helper in testbench mode.
+
+    Supports both:
+
+    - ``dut.regmap.read_uint32_file(field, path)`` for single-word scalar fields
+    - ``dut.regmap.read_uint32_file_array(field, path, count=...)`` for raw arrays
     """
     dut_local: str
     field_name: str
     path: object
-    count: object
+    count: object | None
 
 
 @dataclass

@@ -1209,9 +1209,7 @@ def _emit_tb_stream_io(stmt: TbStreamIOStmt, ctx: TbCodegenCtx) -> str:
 def _emit_tb_regmap_file_read(
     stmt: TbRegmapFileReadStmt, ctx: TbCodegenCtx,
 ) -> str:
-    """``dut.regmap.read_uint32_file_array(field, path, count=...)`` →
-    ``<elem>_array_utils::read_uint32_file_array(<field>, path, count);``.
-    """
+    """Emit scalar or raw-array regmap preload helper calls in TB mode."""
     pad = ctx.pad()
     dut = ctx.duts.get(stmt.dut_local)
     if dut is None:
@@ -1225,6 +1223,31 @@ def _emit_tb_regmap_file_read(
         )
     fld = regmap_slave.regmap._fields[stmt.field_name]
     schema = fld.schema
+    path_cpp = _emit_str_expr(stmt.path, ctx)
+    if stmt.count is None:
+        if schema.nwords_per_inst(regmap_slave.regmap.bitwidth) != 1:
+            raise RuntimeError(
+                f"dut.regmap.read_uint32_file only supports single-word fields; "
+                f"field '{stmt.field_name}' is not."
+            )
+        word_cpp = "uint32_t" if regmap_slave.regmap.bitwidth <= 32 else "uint64_t"
+        field_cpp = cpp_type(schema)
+        return (
+            f"{pad}{{\n"
+            f"{pad}    std::ifstream _ifs(({path_cpp}).c_str(), std::ios::binary);\n"
+            f"{pad}    if (!_ifs) {{\n"
+            f"{pad}        throw std::runtime_error("
+            f"\"Failed to open regmap input file for reading.\");\n"
+            f"{pad}    }}\n"
+            f"{pad}    {word_cpp} _word = 0;\n"
+            f"{pad}    _ifs.read(reinterpret_cast<char*>(&_word), sizeof(_word));\n"
+            f"{pad}    if (!_ifs) {{\n"
+            f"{pad}        throw std::runtime_error("
+            f"\"Failed to read regmap input file.\");\n"
+            f"{pad}    }}\n"
+            f"{pad}    {stmt.field_name} = ({field_cpp})_word;\n"
+            f"{pad}}}"
+        )
     if not (isinstance(schema, type) and issubclass(schema, DataArray)
             and getattr(schema, 'cpp_storage', 'struct') == 'raw'):
         raise RuntimeError(
@@ -1232,7 +1255,6 @@ def _emit_tb_regmap_file_read(
             f"DataArray fields; field '{stmt.field_name}' is not."
         )
     ns = _array_utils_ns(schema.element_type)
-    path_cpp = _emit_str_expr(stmt.path, ctx)
     count_cpp = _emit_int_expr(stmt.count, ctx)
     return (
         f"{pad}{ns}::read_uint32_file_array("

@@ -10,10 +10,6 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pysilicon.hw.hw_component import HwComponent
 
 from pysilicon.hw.hwstmt import (
     CaseStmt,
@@ -29,7 +25,6 @@ from pysilicon.hw.hwstmt import (
     SchemaBindStmt,
     SeqStmt,
     SynthCallStmt,
-    TbCallStmt,
     TbFileIOStmt,
     TbRegmapFileReadStmt,
     TbStatusJsonStmt,
@@ -430,6 +425,26 @@ class HwStmtExtractor:
         parent: ast.stmt,
     ) -> HwStmt | None:
         """Handle ``dut.regmap.<method>(...)`` calls in TB mode."""
+        if method_attr == 'read_uint32_file':
+            if len(call.args) != 2 or call.keywords:
+                raise SynthesisError(
+                    f"dut.regmap.read_uint32_file(field, path) "
+                    f"requires exactly two positional args "
+                    f"(line {parent.lineno})"
+                )
+            field_node = call.args[0]
+            if not (isinstance(field_node, ast.Constant)
+                    and isinstance(field_node.value, str)):
+                raise SynthesisError(
+                    f"dut.regmap.read_uint32_file(field, ...): "
+                    f"'field' must be a string literal (line {parent.lineno})"
+                )
+            return TbRegmapFileReadStmt(
+                dut_local=dut_local,
+                field_name=field_node.value,
+                path=call.args[1],
+                count=None,
+            )
         if method_attr == 'read_uint32_file_array':
             if len(call.args) != 2:
                 raise SynthesisError(

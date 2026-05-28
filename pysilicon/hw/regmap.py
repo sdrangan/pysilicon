@@ -519,6 +519,8 @@ class VitisRegMapMMIFSlave(RegMapMMIFSlave):
         """Runs on_start() and clears _busy when it returns."""
         try:
             if self.on_start is not None:
-                yield from self.on_start()
+                result = self.on_start()
+                if result is not None:
+                    yield from result
         finally:
             self._busy = False
