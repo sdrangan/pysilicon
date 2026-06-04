@@ -28,7 +28,7 @@ def test_simp_fun_python_sim_matches_expected_outputs(tmp_path: Path) -> None:
 
     assert y == 11
     assert summary["passed"] is True
-    assert summary["status"] == 2
+    assert summary["ap_done"] == 1
     assert py_timing["transaction_cycles"] == 5
 
 

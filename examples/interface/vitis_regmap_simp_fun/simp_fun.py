@@ -18,11 +18,6 @@ from pysilicon.simulation.simulation import Simulation
 
 
 S32 = IntField.specialize(bitwidth=32, signed=True)
-U32 = IntField.specialize(bitwidth=32, signed=False)
-
-STATUS_IDLE = 0
-STATUS_BUSY = 1
-STATUS_DONE = 2
 
 DEFAULT_VECTOR = {"x": 5, "a": 3, "b": -4}
 DEFAULT_CASES = [
@@ -74,14 +69,14 @@ class SimpFunComponent(HwComponent):
 
     def __post_init__(self) -> None:
         super().__post_init__()
+        # VitisRegMap auto-prepends ap_start (W1S) at 0x00 and ap_done (R)
+        # at 0x04; the user only declares the application registers below.
         self.regmap = VitisRegMap({
-            "status": RegField(U32, RegAccess.R, description="0=idle, 1=busy, 2=done"),
             "x": RegField(S32, RegAccess.RW, description="Input operand"),
             "a": RegField(S32, RegAccess.RW, description="Multiply coefficient"),
             "b": RegField(S32, RegAccess.RW, description="Bias term"),
             "y": RegField(S32, RegAccess.R, description="relu(a*x + b)"),
         })
-        self.regmap.set("status", STATUS_IDLE)
         self.regmap.set("y", 0)
         self.s_lite = VitisRegMapMMIFSlave(
             name=f"{self.name}_s_lite",
@@ -97,16 +92,22 @@ class SimpFunComponent(HwComponent):
         self.logger.log(event=event, value=value)
 
     def on_start(self) -> ProcessGen[None]:
-        self.regmap.set("status", STATUS_BUSY)
-        self._log("status_busy", STATUS_BUSY)
-        y = self.compute(
-            self.regmap.get("x"),
-            self.regmap.get("a"),
-            self.regmap.get("b"),
-        )
-        self.regmap.set("y", y)
-        self.regmap.set("status", STATUS_DONE)
-        self._log("status_done", STATUS_DONE)
+        # ap_done is auto-managed by VitisRegMapMMIFSlave: cleared on ap_start,
+        # set when on_start returns. The kernel only writes its result.
+        #
+        # The codegen recognises ``<name> = self.regmap.get("<name>")`` as
+        # "this register is already a kernel parameter named <name>" and
+        # emits a comment instead of a redundant read.  Naming the compute
+        # result ``result`` (not ``y``) avoids shadowing the ``y`` kernel
+        # parameter so the subsequent ``set("y", result)`` lowers cleanly to
+        # ``y = result;`` rather than the no-op ``y = y;``.
+        self._log("kernel_busy", 1)
+        x = self.regmap.get("x")
+        a = self.regmap.get("a")
+        b = self.regmap.get("b")
+        result = self.compute(x, a, b)
+        self.regmap.set("y", result)
+        self._log("kernel_done", 1)
 
     @synthesizable
     def compute(self, x: S32, a: S32, b: S32) -> S32:
@@ -118,16 +119,16 @@ class SimpFunHost(SimObj):
     case: SimpFunCase
     clk: Clock
     latency_cycles: int = 4
+    poll_interval_cycles: int = 4
+    max_polls: int = 32
     logger: Logger | NullLogger = field(default_factory=NullLogger)
     base_addr: int = 0x0
-    max_poll_cycles: int = 32
 
     def __post_init__(self) -> None:
         super().__post_init__()
         self.master = MMIFMaster(name=f"{self.name}_m_lite", sim=self.sim, bitwidth=32)
         self.y: int | None = None
-        self.status: int | None = None
-        self.poll_cycles: int = 0
+        self.ap_done: int | None = None
         self.passed: bool = False
         self._regmap_ref: VitisRegMap | None = None
 
@@ -142,22 +143,21 @@ class SimpFunHost(SimObj):
         yield from rm.set("b", self.case.b)
         self._log("ap_start_host", 1)
         yield from rm.start()
+        # Skip the first few cycles before polling — the host knows the
+        # kernel cannot possibly be done before this many cycles, so the
+        # initial reads would be wasted bus traffic.
         yield self.timeout(self.latency_cycles * self.clk.period)
 
-        status = STATUS_IDLE
-        for poll in range(self.max_poll_cycles + 1):
-            status = yield from rm.get("status")
-            self.poll_cycles = poll
-            if status == STATUS_DONE:
-                break
-            yield self.timeout(self.clk.period)
-        else:
-            raise RuntimeError("Timed out waiting for status == STATUS_DONE.")
-
-        self._log("host_done", int(status))
+        # Polls ap_done at ``poll_interval_cycles`` clocks per read. In
+        # production you would wait on the AXI-Lite interrupt line instead;
+        # this is the pedagogical / debugging path.
+        self.ap_done = yield from rm.poll_end(
+            interval=self.poll_interval_cycles * self.clk.period,
+            max_polls=self.max_polls,
+        )
+        self._log("host_done", int(self.ap_done))
         self.y = yield from rm.get("y")
-        self.status = int(status)
-        self.passed = self.y == self.case.expected_y and self.status == STATUS_DONE
+        self.passed = self.y == self.case.expected_y and self.ap_done == 1
 
     def _regmap(self) -> VitisRegMap:
         if self._regmap_ref is None:
@@ -169,8 +169,7 @@ class SimpFunHost(SimObj):
 class SimpFunSimResult:
     case: SimpFunCase
     y: int
-    status: int
-    poll_cycles: int
+    ap_done: int
     passed: bool
 
     def to_dict(self) -> dict[str, int | bool | str]:
@@ -180,8 +179,7 @@ class SimpFunSimResult:
             "b": self.case.b,
             "expected_y": self.case.expected_y,
             "y": self.y,
-            "status": self.status,
-            "poll_cycles": self.poll_cycles,
+            "ap_done": self.ap_done,
             "passed": self.passed,
             "label": self.case.label,
         }
@@ -197,9 +195,16 @@ class SimpFunTBHls(HwTestbench):
         dut.regmap.read_uint32_file("b", self.data_dir + "/b.bin")
         dut.run()
 
+        # NOTE: ap_done is auto-managed by VitisRegMapMMIFSlave on the Python
+        # side, but on the Vitis C++ side it is part of the AXI-Lite slave's
+        # standard control register and is NOT a C++ function argument the
+        # testbench can dereference. The generated TB cannot read it as a
+        # local variable, so we omit it here. Functional agreement on `y`
+        # plus the kernel returning normally (which is what makes the host
+        # poll loop exit) together establish completion.
         dut.regmap.write_status_json(
             self.data_dir + "/regmap_status.json",
-            fields=["status", "y"],
+            fields=["y"],
         )
 
 
@@ -236,13 +241,12 @@ def simulate_case(
     )
     connect(sim, host, accel, clk)
     sim.run_sim()
-    if host.y is None or host.status is None:
-        raise RuntimeError("Simulation completed without producing y/status.")
+    if host.y is None or host.ap_done is None:
+        raise RuntimeError("Simulation completed without producing y/ap_done.")
     return SimpFunSimResult(
         case=case,
         y=int(host.y),
-        status=int(host.status),
-        poll_cycles=int(host.poll_cycles),
+        ap_done=int(host.ap_done),
         passed=bool(host.passed),
     )
 
