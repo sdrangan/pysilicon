@@ -100,6 +100,7 @@ SCHEMA_CLASSES = [
     IncrErrorField,
     IncrCmd,
     IncrResp,
+    IncrArray,
 ]
 
 
