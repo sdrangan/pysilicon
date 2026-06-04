@@ -197,6 +197,10 @@ class MMMemory(SimObj):
 # Queue proxy
 # ---------------------------------------------------------------------------
 
+#: Default poll interval (simulation seconds) for the blocking write/get loops.
+DEFAULT_POLL_INTERVAL: float = 1.0
+
+
 def _split(idx: int, nslots: int, capacity: int) -> list[tuple[int, int]]:
     """Split a run of *nslots* slots starting at *idx* across the ring wrap.
 
@@ -342,3 +346,48 @@ class AXIMMQueue:
             np.array([new_head], dtype=self._dtype), self.layout.head_addr
         )
         return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+
+    # ------------------------------------------------------------------
+    # Blocking public API (decision 8) — poll the try_* primitives.
+    # ------------------------------------------------------------------
+
+    def write(
+        self, words: Words, poll_interval: float = DEFAULT_POLL_INTERVAL
+    ) -> ProcessGen[None]:
+        """Enqueue *words* as one atomic batch, blocking until it fits.
+
+        The batch is enqueued all-or-nothing, so it must fit in the usable depth
+        (``capacity - 1`` slots); a producer that wants to stream more than that
+        chunks the data into multiple ``write`` calls.  Polls :meth:`try_write`,
+        sleeping *poll_interval* simulation seconds between attempts; the loop is
+        cancelled by simulation end like any other SimObj process.
+        """
+        nslots = len(words) // self.layout.elem_words
+        if nslots > self.layout.capacity - 1:
+            raise ValueError(
+                f"write: batch of {nslots} slots can never fit in usable depth "
+                f"{self.layout.capacity - 1}; chunk the data into smaller writes"
+            )
+        while not (yield from self.try_write(words)):
+            yield self.master.timeout(poll_interval)
+
+    def get(
+        self, nslots: int, poll_interval: float = DEFAULT_POLL_INTERVAL
+    ) -> ProcessGen[Words]:
+        """Dequeue exactly *nslots* slots, blocking until they are available.
+
+        Polls :meth:`try_get`, sleeping *poll_interval* simulation seconds when
+        the queue is empty; the loop is cancelled by simulation end like any
+        other SimObj process.
+        """
+        ew = self.layout.elem_words
+        out: list[Words] = []
+        collected = 0
+        while collected < nslots:
+            chunk = yield from self.try_get(nslots - collected)
+            if len(chunk) == 0:
+                yield self.master.timeout(poll_interval)
+            else:
+                out.append(chunk)
+                collected += len(chunk) // ew
+        return np.concatenate(out) if len(out) > 1 else out[0]

@@ -19,7 +19,12 @@ from pysilicon.hw.aximm_queue import (
     _split,
 )
 from pysilicon.hw.clock import Clock
-from pysilicon.hw.memif import DirectMMIF, MMIFMaster
+from pysilicon.hw.memif import (
+    AXIMMCrossBarIF,
+    DirectMMIF,
+    MMIFMaster,
+    assign_address_ranges,
+)
 from pysilicon.simulation.simulation import Simulation
 
 
@@ -324,3 +329,117 @@ class TestAXIMMQueueCore:
         sim.env.process(proc())
         sim.env.run()
         npt.assert_array_equal(result["got"], [100, 101, 102, 103])
+
+
+# ---------------------------------------------------------------------------
+# Blocking write/get + concurrent SPSC over a crossbar
+# ---------------------------------------------------------------------------
+
+class TestBlocking:
+    def test_write_too_large_raises(self):
+        sim, q = _make_queue_direct(capacity=8)   # usable depth 7
+
+        def proc():
+            yield from q.reset()
+            yield from q.write(np.arange(8, dtype=np.uint32))   # 8 > 7
+
+        sim.env.process(proc())
+        with pytest.raises(ValueError, match="never fit"):
+            sim.env.run()
+
+    def test_blocking_write_get_single_process(self):
+        sim, q = _make_queue_direct(capacity=4)   # usable depth 3
+        result = {}
+
+        def proc():
+            yield from q.reset()
+            yield from q.write(np.array([1, 2, 3], dtype=np.uint32))
+            got = yield from q.get(3)
+            result["got"] = np.array(got)
+
+        sim.env.process(proc())
+        sim.env.run()
+        npt.assert_array_equal(result["got"], [1, 2, 3])
+
+
+class TestConcurrentSPSC:
+    def test_producer_consumer_crossbar(self):
+        """Two masters, one shared region: producer blocks on full, consumer
+        drains; data must arrive in order with no loss or duplication."""
+        sim = Simulation()
+        clk = Clock(freq=1.0)
+        N = 100
+        layout = AXIMMQueueLayout(base_addr=0x1000, capacity=8, mem_bw=32)
+
+        mem = MMMemory(sim=sim, bitwidth=32)
+        xbar = AXIMMCrossBarIF(
+            sim=sim, clk=clk,
+            nports_master=2, nports_slave=1, bitwidth=32,
+            latency_init=1.0, latency_read_return=1.0,
+        )
+        prod_master = MMIFMaster(sim=sim, bitwidth=32)
+        cons_master = MMIFMaster(sim=sim, bitwidth=32)
+        xbar.bind("master_0", prod_master)
+        xbar.bind("master_1", cons_master)
+        xbar.bind("slave_0", mem.slave_ep)
+        assign_address_ranges([mem.slave_ep], [(layout.base_addr, layout.total_bytes)])
+
+        pq = AXIMMQueue(master=prod_master, layout=layout)
+        cq = AXIMMQueue(master=cons_master, layout=layout)
+
+        data = np.arange(N, dtype=np.uint32)
+        result = {}
+
+        def producer():
+            yield from pq.reset()
+            for i in range(0, N, 4):
+                yield from pq.write(data[i:i + 4], poll_interval=1.0)
+
+        def consumer():
+            got = yield from cq.get(N, poll_interval=1.0)
+            result["got"] = np.array(got)
+
+        sim.env.process(producer())
+        sim.env.process(consumer())
+        sim.env.run()
+
+        npt.assert_array_equal(result["got"], data)
+
+    def test_consumer_starts_before_producer(self):
+        """Consumer that begins polling on an empty queue still receives all
+        data once the producer runs."""
+        sim = Simulation()
+        clk = Clock(freq=1.0)
+        N = 30
+        layout = AXIMMQueueLayout(base_addr=0x0, capacity=6, mem_bw=32)
+
+        mem = MMMemory(sim=sim, bitwidth=32)
+        xbar = AXIMMCrossBarIF(
+            sim=sim, clk=clk, nports_master=2, nports_slave=1, bitwidth=32,
+        )
+        prod_master = MMIFMaster(sim=sim, bitwidth=32)
+        cons_master = MMIFMaster(sim=sim, bitwidth=32)
+        xbar.bind("master_0", prod_master)
+        xbar.bind("master_1", cons_master)
+        xbar.bind("slave_0", mem.slave_ep)
+        assign_address_ranges([mem.slave_ep], [(layout.base_addr, layout.total_bytes)])
+
+        pq = AXIMMQueue(master=prod_master, layout=layout)
+        cq = AXIMMQueue(master=cons_master, layout=layout)
+        data = np.arange(N, dtype=np.uint32) + 1000
+        result = {}
+
+        def producer():
+            yield from pq.reset()
+            yield pq.master.timeout(5.0)   # let the consumer poll an empty queue first
+            for i in range(0, N, 5):
+                yield from pq.write(data[i:i + 5], poll_interval=0.5)
+
+        def consumer():
+            got = yield from cq.get(N, poll_interval=0.5)
+            result["got"] = np.array(got)
+
+        sim.env.process(producer())
+        sim.env.process(consumer())
+        sim.env.run()
+        npt.assert_array_equal(result["got"], data)
