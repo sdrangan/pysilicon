@@ -195,16 +195,9 @@ class SimpFunTBHls(HwTestbench):
         dut.regmap.read_uint32_file("b", self.data_dir + "/b.bin")
         dut.run()
 
-        # NOTE: ap_done is auto-managed by VitisRegMapMMIFSlave on the Python
-        # side, but on the Vitis C++ side it is part of the AXI-Lite slave's
-        # standard control register and is NOT a C++ function argument the
-        # testbench can dereference. The generated TB cannot read it as a
-        # local variable, so we omit it here. Functional agreement on `y`
-        # plus the kernel returning normally (which is what makes the host
-        # poll loop exit) together establish completion.
         dut.regmap.write_status_json(
             self.data_dir + "/regmap_status.json",
-            fields=["y"],
+            fields=["ap_done", "y"],
         )
 
 

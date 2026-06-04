@@ -455,3 +455,135 @@ def test_phase4_count_kwarg_required_for_array_ops():
     tb = _MissingCountTB(name='tb', sim=Simulation())
     with pytest.raises(SynthesisError, match="requires count"):
         extract_testbench(tb)
+
+
+# ---------------------------------------------------------------------------
+# write_status_json silently drops is_vitis_auto fields
+# ---------------------------------------------------------------------------
+#
+# Vitis HLS auto-generates ap_start/ap_done inside the s_axilite control
+# register — they are not C++ kernel parameters and the generated TB
+# cannot read them as locals. Listing them in fields=[...] should be a
+# no-op (a user writing the symmetric shape on both flows is idiomatic;
+# requiring them to manually exclude is a foot-gun).
+
+def _make_regmap_auto_dut_class():
+    """Build a tiny regmap-only DUT class with one user field, used by the
+    is_vitis_auto-filter tests. Defined as a factory because dataclass
+    needs a module-level home to resolve ClassVar annotations under
+    ``from __future__ import annotations``; we put it on the module
+    namespace below.
+    """
+    return _RegmapAutoDut
+
+
+from dataclasses import dataclass as _dc
+from typing import ClassVar as _CV
+
+from pysilicon.hw.dataschema import IntField as _IntField
+from pysilicon.hw.hw_component import HwComponent as _HwComp
+from pysilicon.hw.regmap import (
+    RegAccess as _RA,
+    RegField as _RF,
+    VitisRegMap as _VRM,
+    VitisRegMapMMIFSlave as _VRMS,
+)
+from pysilicon.simulation.simobj import ProcessGen as _PG
+
+_S32_TB = _IntField.specialize(bitwidth=32, signed=True)
+
+
+@_dc
+class _RegmapAutoDut(_HwComp):
+    cpp_kernel_name: _CV[str | None] = "rmauto"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.regmap = _VRM({
+            "y": _RF(_S32_TB, _RA.R, description="user field"),
+        })
+        self.s_lite = _VRMS(
+            name=f"{self.name}_s_lite", sim=self.sim, bitwidth=32,
+            regmap=self.regmap, on_start=self.on_start,
+        )
+        self.add_endpoint(self.s_lite)
+
+    def on_start(self) -> _PG[None]:
+        self.regmap.set("y", 0)
+
+
+@pytest.mark.phase4
+def test_write_status_json_drops_is_vitis_auto_fields():
+    """``fields=["ap_done", "ap_start", "y"]`` lowers to a TB that only
+    references the user field ``y``. The auto-managed ap_* bits are not
+    C++ locals on the Vitis side, so listing them in the symmetric
+    Python/C++ shape is fine — the parse pass silently filters them.
+    """
+    from pysilicon.build.hwgen import tb_files_to_str
+
+    @dataclass
+    class _AutoFilterTB(HwTestbench):
+        cpp_kernel_name: ClassVar[str | None] = "rmauto"
+
+        def main(self) -> None:
+            dut = _RegmapAutoDut()
+            dut.run()
+            dut.regmap.write_status_json(
+                self.data_dir + "/regmap_status.json",
+                fields=["ap_done", "ap_start", "y"],
+            )
+
+    files = tb_files_to_str(_AutoFilterTB, output_dir="gen")
+    body = files["rmauto_tb.cpp"]
+
+    # The user field IS emitted.
+    assert r'\"y\": " << (int)y' in body
+    # The auto-managed bits are NOT emitted as locals — they would not
+    # compile against the Vitis-generated kernel signature.
+    assert "ap_done" not in body
+    assert "ap_start" not in body
+
+
+@pytest.mark.phase4
+def test_write_status_json_filter_emits_debug_log():
+    """Surfacing the dropped fields via a debug log keeps the silent
+    filter discoverable for anyone reading the trace.
+    """
+    import logging
+
+    from pysilicon.build.hwgen import tb_files_to_str
+
+    @dataclass
+    class _LogFilterTB(HwTestbench):
+        cpp_kernel_name: ClassVar[str | None] = "rmauto"
+
+        def main(self) -> None:
+            dut = _RegmapAutoDut()
+            dut.run()
+            dut.regmap.write_status_json(
+                self.data_dir + "/regmap_status.json",
+                fields=["ap_done", "y"],
+            )
+
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger = logging.getLogger("pysilicon.build.hwcodegen")
+    handler = _Capture(level=logging.DEBUG)
+    prev_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    try:
+        tb_files_to_str(_LogFilterTB, output_dir="gen")
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev_level)
+
+    matches = [r for r in records if "ap_done" in r.getMessage()]
+    assert matches, (
+        "expected at least one debug log mentioning the dropped ap_done "
+        f"field; got: {[r.getMessage() for r in records]}"
+    )
