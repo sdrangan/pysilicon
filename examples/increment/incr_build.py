@@ -24,12 +24,12 @@ from pysilicon.toolchain import toolchain
 
 try:
     from examples.increment.incr import (
-        IncrAccel, IncrCmd, IncrResp, SCHEMA_CLASSES, Uint32Field,
+        IncrAccel, IncrCmd, IncrResp, IncrTBHls, SCHEMA_CLASSES, Uint32Field,
         WORD_BW_SUPPORTED, build_inputs, run_sim,
     )
 except ModuleNotFoundError:  # direct execution
     from incr import (  # type: ignore[no-redef]
-        IncrAccel, IncrCmd, IncrResp, SCHEMA_CLASSES, Uint32Field,
+        IncrAccel, IncrCmd, IncrResp, IncrTBHls, SCHEMA_CLASSES, Uint32Field,
         WORD_BW_SUPPORTED, build_inputs, run_sim,
     )
 
@@ -119,7 +119,7 @@ class HlsGenIncludeStep(BuildStep):
 class CSimStep(BuildStep):
     description = "Invoke Vitis HLS C-simulation of the generated kernel."
     consumes    = ["incr_cpp", "incr_hpp", "incr_transform_impl",
-                   "incr_respond_impl", "include_dir", "data_dir"]
+                   "incr_respond_impl", "incr_tb", "include_dir", "data_dir"]
     produces    = {"csim_data_dir": "data_dir"}
     params      = {"live_output": False, "clk_freq": 1e9}
 
@@ -158,6 +158,16 @@ def build_incr_dag() -> BuildDag:
         source_artifact="incr_source",
         output_dir="gen",
         impl_dir=".",
+    ))
+    # Testbench codegen (Phase 5): lower IncrTBHls.main() to gen/incr_tb.cpp,
+    # producing the ``incr_tb`` artifact CSimStep consumes (replaces the
+    # hand-written incr_tb.cpp).
+    dag.add(HlsCodegenStep(
+        name="gen_tb",
+        comp_class=IncrTBHls,
+        source_artifact="incr_source",
+        output_dir="gen",
+        is_testbench=True,
     ))
 
     # C-sim functional verification vs the Python model

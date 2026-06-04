@@ -18,6 +18,9 @@ from pysilicon.hw.hwstmt import (
     KernelCallStmt,
     MMArrayReadStmt,
     MMArrayWriteStmt,
+    MemAllocArrayStmt,
+    MemBindStmt,
+    MemReadArrayStmt,
     Ref,
     ReturnStmt,
     SchemaBindStmt,
@@ -1179,6 +1182,7 @@ class TbCodegenCtx:
     indent: int = 1
     duts: dict[str, object] = field(default_factory=dict)
     schemas: dict[str, type] = field(default_factory=dict)
+    mems: dict[str, tuple] = field(default_factory=dict)  # local -> (word_size, nwords_tot)
 
     def pad(self) -> str:
         return "    " * self.indent
@@ -1189,6 +1193,7 @@ class TbCodegenCtx:
             indent=self.indent + 1,
             duts=self.duts,
             schemas=self.schemas,
+            mems=self.mems,
         )
 
 
@@ -1198,6 +1203,12 @@ def tb_to_cpp(stmt: HwStmt, ctx: TbCodegenCtx) -> str:
         return "\n".join(tb_to_cpp(c, ctx) for c in stmt.stmts)
     if isinstance(stmt, DutBindStmt):
         return _emit_dut_bind(stmt, ctx)
+    if isinstance(stmt, MemBindStmt):
+        return _emit_mem_bind(stmt, ctx)
+    if isinstance(stmt, MemAllocArrayStmt):
+        return _emit_mem_alloc_array(stmt, ctx)
+    if isinstance(stmt, MemReadArrayStmt):
+        return _emit_mem_read_array(stmt, ctx)
     if isinstance(stmt, KernelCallStmt):
         return _emit_kernel_call(stmt, ctx)
     if isinstance(stmt, SchemaBindStmt):
@@ -1247,6 +1258,59 @@ def _emit_dut_bind(stmt: DutBindStmt, ctx: TbCodegenCtx) -> str:
     return "\n".join(lines)
 
 
+def _emit_mem_bind(stmt: MemBindStmt, ctx: TbCodegenCtx) -> str:
+    """Emit the flat backing array + MemMgr for a ``MemComponent`` local."""
+    ctx.mems[stmt.local_name] = (stmt.word_size, stmt.nwords_tot)
+    pad = ctx.pad()
+    bw = stmt.word_size
+    nm = stmt.local_name
+    return (
+        f"{pad}static ap_uint<{bw}> {nm}[{stmt.nwords_tot}] = {{}};\n"
+        f"{pad}pysilicon::memmgr::MemMgr<{bw}> {nm}_mgr({nm}, {stmt.nwords_tot});"
+    )
+
+
+def _emit_mem_alloc_array(stmt: MemAllocArrayStmt, ctx: TbCodegenCtx) -> str:
+    """``cmd.addr = mem.alloc_array(buf, ElemT, count=n)`` →
+    ``MemMgr::alloc`` (word index) → byte address → ``write_array`` populate."""
+    pad = ctx.pad()
+    bw, _nwords = ctx.mems[stmt.mem_local]
+    ns = _array_utils_ns(stmt.elem_type)
+    count = _emit_int_expr(stmt.count, ctx)
+    widx = f"_{stmt.target_local}_{stmt.target_field}_widx"
+    mem = stmt.mem_local
+    return (
+        f"{pad}const int {widx} = {mem}_mgr.alloc({ns}::get_nwords<{bw}>({count}));\n"
+        f"{pad}{stmt.target_local}.{stmt.target_field} = {widx} * ({bw} / 8);\n"
+        f"{pad}{ns}::write_array<{bw}>({stmt.src_local}, {mem} + {widx}, {count});"
+    )
+
+
+def _emit_mem_read_array(stmt: MemReadArrayStmt, ctx: TbCodegenCtx) -> str:
+    """``out = mem.read_array(addr, ElemT, count=n)`` →
+    a static output buffer + a ``read_array`` burst from the byte address."""
+    from pysilicon.hw.dataschema import DataArray
+    pad = ctx.pad()
+    bw, nwords = ctx.mems[stmt.mem_local]
+    ns = _array_utils_ns(stmt.elem_type)
+    elem_cpp = cpp_type(stmt.elem_type)
+    count = _emit_int_expr(stmt.count, ctx)
+    addr = _emit_int_expr(stmt.addr, ctx)
+    out = stmt.target_local
+    mem = stmt.mem_local
+    # Register the output buffer as a raw-array schema local so a following
+    # write_uint32_file_array(out, ...) resolves it.
+    ctx.schemas[out] = DataArray.specialize(
+        element_type=stmt.elem_type, max_shape=(nwords,), static=True,
+    )
+    return (
+        f"{pad}static {elem_cpp} {out}[{nwords}] = {{}};\n"
+        f"{pad}{ns}::read_array<{bw}>("
+        f"{mem} + pysilicon::memmgr::byte_addr_to_word_index<{bw}>({addr}), "
+        f"{out}, {count});"
+    )
+
+
 def _emit_kernel_call(stmt: KernelCallStmt, ctx: TbCodegenCtx) -> str:
     """Emit ``<kernel_name>(args...);`` matching the DUT's kernel signature.
 
@@ -1269,6 +1333,10 @@ def _emit_kernel_call(stmt: KernelCallStmt, ctx: TbCodegenCtx) -> str:
             if fld.is_vitis_auto:
                 continue
             args.append(fname)
+    # m_axi pointer(s) last — canonical signature order is streams, regmap,
+    # m_axi (matches kernel_signature).  The TB passes the MemBindStmt array.
+    if stmt.mem_local is not None:
+        args.append(stmt.mem_local)
     return f"{ctx.pad()}{kn}({', '.join(args)});"
 
 
@@ -1554,13 +1622,17 @@ def _collect_tb_array_elem_types(tree: HwStmt, ctx: TbCodegenCtx) -> list[type]:
             if id(et) not in seen:
                 seen[id(et)] = et
 
-    # SchemaBindStmt locals (TB main() body)
+    # SchemaBindStmt locals (TB main() body) + m_axi alloc/read element types.
     def visit(node):
         if isinstance(node, SeqStmt):
             for c in node.stmts:
                 visit(c)
         elif isinstance(node, SchemaBindStmt):
             add_array_cls(node.schema_class)
+        elif isinstance(node, (MemAllocArrayStmt, MemReadArrayStmt)):
+            et = node.elem_type
+            if id(et) not in seen:
+                seen[id(et)] = et
 
     visit(tree)
 
@@ -1629,6 +1701,11 @@ def _testbench_cpp(tb_class) -> str:
         f'#include "{kn}.hpp"',
         '#include "include/streamutils_tb.h"',
     ]
+    # m_axi support headers: MemMgr (alloc) + byte_addr_to_word_index, when the
+    # TB declares a MemComponent backing array.
+    if _tb_has_mem(tree):
+        include_lines.append('#include "include/memmgr_tb.hpp"')
+        include_lines.append('#include "include/memmgr.hpp"')
     for et in elem_types:
         stem = _array_utils_stem(et)
         include_lines.append(f'#include "include/{stem}_array_utils_tb.h"')
@@ -1652,6 +1729,22 @@ def _testbench_cpp(tb_class) -> str:
     lines.append('    return 0;')
     lines.append('}')
     return "\n".join(lines) + "\n"
+
+
+def _tb_has_mem(tree: HwStmt) -> bool:
+    """True if the TB tree declares any ``MemComponent`` backing array."""
+    found = False
+
+    def visit(node):
+        nonlocal found
+        if isinstance(node, SeqStmt):
+            for c in node.stmts:
+                visit(c)
+        elif isinstance(node, MemBindStmt):
+            found = True
+
+    visit(tree)
+    return found
 
 
 def _array_utils_stem(elem_type) -> str:

@@ -184,10 +184,14 @@ codegen. Establishes the golden reference C-sim will check against.
 - Schemas: `IncrCmd{addr: MemAddr, n: uint32}`, `IncrResp{status}`.
 - `IncrAccel(HwComponent)`: a stream slave `s_in` for the command, a stream
   master `m_out` for the response, an `MMIFMaster` `m_mem`, and a `max_n`
-  `HwParam`. Synthesizable `on_start`: `cmd = s_in.get(IncrCmd)`; `buf =
-  m_mem.read_array(Uint32Field, cmd.n, cmd.addr)`; `buf += 1` (the transform
-  hook); `m_mem.write_array(buf, Uint32Field, cmd.addr)`;
-  `m_out.write(IncrResp(...))`.
+  `HwParam`. The synthesizable kernel body lives in **`run_proc`** — the
+  extractor (`hwcodegen.extract_kernel`) roots at `on_start` only for a
+  regmap-controlled kernel; this toy is stream-controlled (no regmap), so the
+  root is `run_proc` (as implemented in Phase 1). Body: `cmd = s_in.get(IncrCmd)`;
+  `buf = m_mem.read_array(Uint32Field, cmd.n, cmd.addr)`; `transform(buf, cmd.n)`
+  (the in-place +1 hook — C++ can't return an array by value);
+  `m_mem.write_array(buf, Uint32Field, cmd.addr, cmd.n)`; `respond(m_out)` (the
+  response-write hook).
 - `IncrTBHls(HwTestbench)`: the sequential `main()` from the mapping above
   (MemComponent, read input file, `alloc_array`, push cmd, `run(mem=mem)`, pop
   resp, `read_array`, write output file).

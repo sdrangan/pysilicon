@@ -8,7 +8,8 @@ set_top incr
 # the root-level TB and transform-impl can `#include "incr.hpp"`.
 add_files gen/incr.cpp -cflags "-I. -Igen"
 add_files incr_transform_impl.cpp -cflags "-I. -Igen"
-add_files -tb incr_tb.cpp -cflags "-I. -Igen"
+# Testbench is generated from IncrTBHls (HlsCodegenStep, is_testbench) into gen/.
+add_files -tb gen/incr_tb.cpp -cflags "-I. -Igen"
 
 set script_dir [file dirname [file normalize [info script]]]
 set streamutils_cpp [file join $script_dir "streamutils.cpp"]

@@ -48,7 +48,38 @@ defines).
 
 The build DAG (`incr_build.py`) and all non-Vitis branches are green:
 `build_inputs`, `py_sim` (golden = in+1), `gen_include` (schemas + memmgr +
-array-utils), and `gen_kernel` (the m_axi kernel).  The `csim` / `validate_csim`
-steps are **Vitis-gated** (`pytest -m vitis`) — C-sim itself requires a Vitis
-install to execute and was not run in the codegen environment.
+array-utils), `gen_kernel` (the m_axi kernel), and `gen_tb` (the testbench).
+The generated kernel passes Vitis C-sim against the Python model (verified on a
+Vitis machine; the `-Igen` include-path fix in commit 272ad0b made it build).
+
+## Phase 5 — generated `gen/incr_tb.cpp` vs the hand-written `incr_tb.cpp`
+
+`IncrTBHls.main()` now lowers to `gen/incr_tb.cpp` via the four new TB statement
+types (decision 9), and the hand-written `incr_tb.cpp` is deleted (replaced):
+
+- `mem = MemComponent(..., nwords_tot=MAX_N)` → `MemBindStmt` →
+  `static ap_uint<32> mem[1024] = {}; pysilicon::memmgr::MemMgr<32> mem_mgr(mem, 1024);`
+- `cmd.addr = mem.alloc_array(buf, Uint32Field, count=cmd.n)` → `MemAllocArrayStmt` →
+  `mem_mgr.alloc(uint32_array_utils::get_nwords<32>(cmd.n))` (word index) →
+  `cmd.addr = widx * (32/8)` → `uint32_array_utils::write_array<32>(buf, mem+widx, cmd.n)`.
+- `out = mem.read_array(cmd.addr, Uint32Field, count=cmd.n)` → `MemReadArrayStmt` →
+  `static ap_uint<32> out[1024] = {};` +
+  `uint32_array_utils::read_array<32>(mem + pysilicon::memmgr::byte_addr_to_word_index<32>(cmd.addr), out, cmd.n)`.
+- `dut.run(mem=mem)` → `KernelCallStmt(mem_local="mem")` → `incr(s_in, m_out, mem)`
+  (mem appended in canonical signature order: streams, regmap, m_axi).
+
+**Functionally equivalent to the hand-written TB; cosmetic/structural diffs:**
+
+- Reads the command from `cmd.bin` (schema struct read) instead of parsing
+  `params.json` by hand — no JSON-parse block in the generated file.
+- Readback converts the byte address with `byte_addr_to_word_index<32>` instead
+  of reusing the alloc word-index local.
+- Drops the `sync_status.json` write (it was never consumed by
+  `FunctionalVerifyStep`).
+- Local names follow the framework convention (`s_in`/`m_out`, `mem_mgr`,
+  `buf`/`out`) rather than the hand-written `in_stream`/`out_stream`/`mgr`.
+
+`run.tcl` adds the generated TB with `-cflags "-I. -Igen"` so the gen/ header is
+on the include path. **C-sim with the generated TB is verified separately on a
+Vitis machine** (not run in the codegen environment).
 

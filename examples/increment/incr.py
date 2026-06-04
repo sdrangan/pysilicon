@@ -261,13 +261,12 @@ class IncrTBHls(HwTestbench):
 
         cmd = IncrCmd()
         cmd.read_uint32_file(self.data_dir + "/cmd.bin")
-        n = cmd.n
 
         buf = IncrArray()
-        buf.read_uint32_file_array(self.data_dir + "/in.bin", count=n)
+        buf.read_uint32_file_array(self.data_dir + "/in.bin", count=cmd.n)
 
         # Address comes from alloc, not from the file (decision 8).
-        cmd.addr = mem.alloc_array(buf, Uint32Field, count=n)
+        cmd.addr = mem.alloc_array(buf, Uint32Field, count=cmd.n)
 
         dut.s_in.push(cmd)
         dut.run(mem=mem)
@@ -275,8 +274,11 @@ class IncrTBHls(HwTestbench):
         resp = IncrResp()
         dut.m_out.pop(resp)
 
-        out = mem.read_array(cmd.addr, Uint32Field, count=n)
-        out.write_uint32_file_array(self.data_dir + "/out.bin", count=n)
+        out = mem.read_array(cmd.addr, Uint32Field, count=cmd.n)
+
+        # Outputs for FunctionalVerifyStep (actual side, in the data dir).
+        resp.write_uint32_file(self.data_dir + "/resp_data.bin")
+        out.write_uint32_file_array(self.data_dir + "/out_data.bin", count=cmd.n)
 
 
 # ---------------------------------------------------------------------------

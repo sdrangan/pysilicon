@@ -23,10 +23,9 @@ INCR_DIR = Path(__file__).resolve().parents[2] / "examples" / "increment"
 
 
 def _copy_vitis_resources(dst: Path) -> None:
-    """Seed the non-generated Vitis sources (run.tcl + hand-written TB + hook
-    impls); the build DAG generates the rest into gen/ and include/."""
-    for name in ("run.tcl", "incr_tb.cpp",
-                 "incr_transform_impl.cpp", "incr_respond_impl.tpp"):
+    """Seed the non-generated Vitis sources (run.tcl + hook impls); the build
+    DAG generates the kernel AND the testbench into gen/ and include/."""
+    for name in ("run.tcl", "incr_transform_impl.cpp", "incr_respond_impl.tpp"):
         shutil.copy(INCR_DIR / name, dst / name)
 
 
