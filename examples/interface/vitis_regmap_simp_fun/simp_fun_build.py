@@ -12,7 +12,6 @@ import numpy as np
 from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
 from pysilicon.build.cosim_steps import ExtractCosimTimingStep, ValidateTimingStep
 from pysilicon.build.hwcodegen_steps import HlsCodegenStep
-from pysilicon.build.streamutils import StreamUtilsStep
 from pysilicon.build.verify_steps import FunctionalVerifyStep
 from pysilicon.toolchain import toolchain
 
@@ -144,31 +143,10 @@ class ExtractPyTimingStep(BuildStep):
 
 
 @dataclass(kw_only=True)
-class HlsGenIncludeStep(BuildStep):
-    description = "Generate the streamutils support headers needed for the Vitis flow."
-    consumes    = ["simp_fun_source"]
-    params      = {}
-    include_dir: str = "include"
-
-    @property
-    def produces(self) -> dict:  # type: ignore[override]
-        return {"include_dir": Path(self.include_dir)}
-
-    def run(self, config: BuildConfig, **_) -> dict:
-        inner_dag = BuildDag()
-        inner_dag.add(StreamUtilsStep(output_dir=self.include_dir))
-        inner_results = inner_dag.run(config)
-        failed = [n for n, r in inner_results.items() if not r.success]
-        if failed:
-            raise RuntimeError(f"Code generation failed: {failed}")
-        return {"include_dir": config.root_dir / self.include_dir}
-
-
-@dataclass(kw_only=True)
 class CSimStep(BuildStep):
     description = "Invoke Vitis HLS C-simulation."
     consumes = ["simp_fun_cpp", "simp_fun_compute_impl", "simp_fun_tb", "run_tcl",
-                "include_dir", "data_dir"]
+                "data_dir"]
     produces = {"csim_data_dir": "data_dir"}
     params = {"live_output": False, "clk_freq": 100e6}
 
@@ -198,7 +176,7 @@ class CSimStep(BuildStep):
 class CSynthStep(BuildStep):
     description = "Run Vitis HLS C-synthesis and RTL co-simulation."
     consumes = ["simp_fun_cpp", "simp_fun_compute_impl", "simp_fun_tb", "run_tcl",
-                "include_dir", "csim_data_dir"]
+                "csim_data_dir"]
     produces = {"report_dir": Path("pysilicon_simp_fun_proj/solution1")}
     params = {"live_output": False, "clk_freq": 100e6}
 
@@ -279,7 +257,6 @@ def build_simp_fun_dag() -> BuildDag:
     dag.add(BuildInputsStep(name="build_inputs"))
     dag.add(PySimStep(name="py_sim"))
     dag.add(ExtractPyTimingStep(name="extract_py_timing"))
-    dag.add(HlsGenIncludeStep(name="gen_include"))
 
     dag.add(HlsCodegenStep(
         name="gen_kernel",

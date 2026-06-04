@@ -852,7 +852,8 @@ def header_to_cpp(
     tree = extract_kernel(default_comp)
     schemas = _collect_schemas(tree, default_comp)
     lines = ['#pragma once', '']
-    lines.append('#include "include/streamutils_hls.h"')
+    if _discover_stream_endpoints(default_comp):
+        lines.append('#include "include/streamutils_hls.h"')
     for s in schemas:
         lines.append(f'#include "include/{_snake_case(s.cpp_class_name())}.h"')  # type: ignore[attr-defined]
     for path in _collect_utility_includes(schemas):

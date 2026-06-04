@@ -1504,3 +1504,55 @@ def test_header_utility_include_deduped():
     paths = _collect_utility_includes([Float32A, Float32A])
     assert paths == ["include/float32_array_utils.h"]
 
+
+# ---------------------------------------------------------------------------
+# Conditional streamutils_hls.h include (regmap-only vs stream-using)
+# ---------------------------------------------------------------------------
+
+def test_header_omits_streamutils_for_regmap_only_component():
+    """A regmap-only component (no StreamIF endpoints) must not include
+    streamutils_hls.h. The user shouldn't have to register a step to produce
+    a header their kernel doesn't use.
+    """
+    from pysilicon.build.hwgen import header_to_cpp
+
+    S32 = _IntField.specialize(bitwidth=32, signed=True)
+
+    @_dataclass
+    class _RegMapOnly(HwComponent):
+        cpp_kernel_name: ClassVar[str | None] = "rmonly"
+
+        def __post_init__(self) -> None:
+            super().__post_init__()
+            self.regmap = _VitisRegMap({
+                "x": _RegField(S32, _RegAccess.RW),
+                "y": _RegField(S32, _RegAccess.R),
+            })
+            self.s_lite = _VitisRegMapMMIFSlave(
+                name=f'{self.name}_s_lite', sim=self.sim, bitwidth=32,
+                regmap=self.regmap, on_start=self.on_start,
+            )
+            self.add_endpoint(self.s_lite)
+
+        def on_start(self) -> _ProcessGen[None]:
+            x = self.regmap.get("x")
+            self.regmap.set("y", x)
+
+    comp = _RegMapOnly(name="rmonly", sim=Simulation())
+    hpp = header_to_cpp(type(comp))
+    assert 'streamutils_hls.h' not in hpp, (
+        "regmap-only kernels must not emit the streamutils include:\n" + hpp
+    )
+
+
+def test_header_includes_streamutils_for_stream_using_component():
+    """A component with StreamIF endpoints (poly's shape) still gets the
+    streamutils_hls.h include — guards against regressing the fix.
+    """
+    from pysilicon.build.hwgen import header_to_cpp
+    from tests.hw.test_resolve import DemoComponent
+
+    comp = DemoComponent(name="demo", sim=Simulation())
+    hpp = header_to_cpp(type(comp))
+    assert '#include "include/streamutils_hls.h"' in hpp
+
