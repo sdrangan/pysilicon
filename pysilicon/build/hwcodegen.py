@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import ast
 import inspect
+import logging
 import textwrap
+
+_log = logging.getLogger(__name__)
 
 from pysilicon.hw.hwstmt import (
     CaseStmt,
@@ -490,12 +493,65 @@ class HwStmtExtractor:
                         f"(line {parent.lineno})"
                     )
                 names.append(elt.value)
+            names = self._filter_vitis_auto_fields(dut_local, names)
             return TbStatusJsonStmt(
                 dut_local=dut_local,
                 path=call.args[0],
                 field_names=names,
             )
         return None
+
+    def _filter_vitis_auto_fields(
+        self,
+        dut_local: str,
+        field_names: list[str],
+    ) -> list[str]:
+        """Drop ``is_vitis_auto`` fields from a ``write_status_json`` list.
+
+        Vitis HLS auto-generates ``ap_start``/``ap_done`` inside the
+        ``s_axilite`` control register — they are not C++ kernel
+        parameters, so the generated TB cannot read them as locals.
+        The Python side records them naturally; matching the symmetric
+        Python shape just means listing them here too. This filter lets
+        users write the idiomatic symmetric list and lowers it to the
+        subset the C++ TB can actually emit.
+        """
+        regmap = self._dut_regmap_or_none(dut_local)
+        if regmap is None:
+            return field_names
+        kept: list[str] = []
+        skipped: list[str] = []
+        for n in field_names:
+            fld = regmap._fields.get(n)
+            if fld is not None and getattr(fld, 'is_vitis_auto', False):
+                skipped.append(n)
+            else:
+                kept.append(n)
+        if skipped:
+            _log.debug(
+                "write_status_json on '%s': dropped is_vitis_auto fields %s "
+                "(no C++ local in the generated TB)",
+                dut_local, skipped,
+            )
+        return kept
+
+    def _dut_regmap_or_none(self, dut_local: str):
+        """Return the ``VitisRegMap`` of the DUT bound to ``dut_local``, or
+        ``None`` if the DUT has no regmap.
+
+        The DUT class is held in ``self._duts`` as the class itself; this
+        helper instantiates it lazily with ``name``/``sim`` placeholders
+        so we can inspect the regmap's field declarations at parse time.
+        """
+        cls = self._duts.get(dut_local)
+        if cls is None or not isinstance(cls, type):
+            return None
+        from pysilicon.simulation.simulation import Simulation
+        try:
+            comp = cls(name="_codegen", sim=Simulation())
+        except Exception:
+            return None
+        return getattr(comp, 'regmap', None)
 
     def _extract_count_kwarg(
         self,

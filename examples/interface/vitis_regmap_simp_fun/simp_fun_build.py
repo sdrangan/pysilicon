@@ -96,11 +96,8 @@ class PySimStep(BuildStep):
         sim_dir = config.root_dir / "results" / "sim"
         sim_dir.mkdir(parents=True, exist_ok=True)
         S32(result.y).write_uint32_file(sim_dir / "y.bin")
-        # See note in simp_fun.py SimpFunTBHls.main on why ap_done is omitted
-        # from the regmap_status.json shape: the C++ TB cannot reach it as a
-        # local variable. The two-flow comparison is on `y` only.
         (sim_dir / "regmap_status.json").write_text(
-            json.dumps({"y": int(result.y)}, indent=2),
+            json.dumps({"ap_done": int(result.ap_done), "y": int(result.y)}, indent=2),
             encoding="utf-8",
         )
         summary_path = write_sim_summary(config.root_dir / "results" / "sim_summary.json", result)
