@@ -1,6 +1,6 @@
 ---
 title: C and RTL Simulation
-parent: Register Map
+parent: Register Map (simple function)
 nav_order: 4
 has_children: false
 ---
@@ -20,7 +20,7 @@ The payoff at the end is a single JSON verdict that confirms — quantitatively 
 ## Running the full flow
 
 ```bash
-cd examples/regmap_simp_fun
+cd examples/regmap
 python simp_fun_build.py --through generate_timing_diagram
 ```
 
@@ -47,7 +47,7 @@ Each step is described below in the order it runs.
 `FunctionalVerifyStep` then compares those C-sim outputs to the Python golden produced by `py_sim`:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 dag.add(FunctionalVerifyStep(
     name="validate_csim",
     golden_dir_artifact="sim_dir",        # from py_sim
@@ -75,7 +75,7 @@ A passing `validate_csim` is the functional half of the cycle-approximate-Python
 `InspectSynthStep` parses the C-synth XML for two things worth gating on:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py — InspectSynthStep.run
+# examples/regmap/simp_fun_build.py — InspectSynthStep.run
 parser = CsynthParser(sol_path=str(report_dir))
 parser.get_loop_pipeline_info()
 parser.get_resources()
@@ -97,7 +97,7 @@ The hard assertion is that every reported loop has pipeline II ≤ 1 — i.e., t
 The cosim run's report is consumed by `ExtractCosimTimingStep`:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 dag.add(ExtractCosimTimingStep(
     name="extract_cosim_timing",
     top="simp_fun",
@@ -114,7 +114,7 @@ This step reads Vitis's cosim report (typically `<solution>/sim/report/simp_fun_
 `ValidateTimingStep` is where the loop closes:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 dag.add(ValidateTimingStep(
     name="validate_timing",
     py_timing_artifact="py_timing",
@@ -153,7 +153,7 @@ The `pass` bit is what CI gates on; the four numeric fields are what a future mo
 `GenerateTimingDiagramStep` consumes all three timing artifacts (`py_timing`, `cosim_timing`, `timing_verdict`) and renders a side-by-side SVG plus a JSON companion describing the event annotations:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 @dataclass(kw_only=True)
 class GenerateTimingDiagramStep(BuildStep):
     description = "Generate the committed timing-diagram artifacts from timing JSON."

@@ -49,7 +49,7 @@ def write_timing_diagram(
     ax.text(py_cycles, td.ytop["py_busy"] + 0.1, f"py done @ {py_cycles}", color="tab:blue")
     ax.text(cosim_cycles, td.ytop["cosim_busy"] + 0.1,
             f"cosim done @ {cosim_cycles}", color="tab:orange")
-    ax.set_title("regmap_simp_fun timing comparison")
+    ax.set_title("regmap timing comparison")
 
     fig = ax.get_figure()
     fig.tight_layout()
