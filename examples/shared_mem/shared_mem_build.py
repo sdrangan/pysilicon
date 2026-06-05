@@ -149,3 +149,54 @@ CSIM_CASES = [
     HistCase(ndata=200, nbins=12),
     HistCase(ndata=0, nbins=6),    # INVALID_NDATA
 ]
+
+
+# ---------------------------------------------------------------------------
+# Committed-figure workflow (the docs timing/burst diagrams)
+# ---------------------------------------------------------------------------
+
+EXAMPLE_DIR = Path(__file__).resolve().parent
+
+
+def build_figures_dag():
+    """DAG that renders the two docs figures and syncs them into docs/images."""
+    from pysilicon.build.build import BuildDag
+    try:
+        from examples.shared_mem.shared_mem_figures import (
+            GenerateBurstDiagramStep, GenerateTimingDiagramStep, SyncDocsFiguresStep,
+        )
+    except ModuleNotFoundError:  # direct execution from the example dir
+        from shared_mem_figures import (  # type: ignore[no-redef]
+            GenerateBurstDiagramStep, GenerateTimingDiagramStep, SyncDocsFiguresStep,
+        )
+    dag = BuildDag()
+    dag.add(GenerateBurstDiagramStep(name="generate_burst_diagram"))
+    dag.add(GenerateTimingDiagramStep(name="generate_timing_diagram"))
+    dag.add(SyncDocsFiguresStep(name="sync_docs_figures"))
+    return dag
+
+
+def main() -> None:
+    import argparse
+
+    from pysilicon.build.build import BuildConfig
+
+    parser = argparse.ArgumentParser(
+        description="shared_mem figure workflow: render + sync the docs diagrams.")
+    parser.add_argument("--through", metavar="STEP", default="sync_docs_figures",
+                        help="Run the figure DAG up to and including this step.")
+    parser.add_argument("--list-steps", action="store_true",
+                        help="Print the figure step names and exit.")
+    parser.add_argument("--force", action="store_true", help="Force all steps to rebuild.")
+    args = parser.parse_args()
+
+    dag = build_figures_dag()
+    if args.list_steps:
+        for name in dag.step_names():
+            print(name)
+        return
+    dag.run(BuildConfig(root_dir=EXAMPLE_DIR), through=args.through, force=args.force)
+
+
+if __name__ == "__main__":
+    main()
