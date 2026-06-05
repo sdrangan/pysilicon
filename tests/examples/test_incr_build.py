@@ -6,6 +6,7 @@ against the Python model (the milestone — decision 11).
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -90,3 +91,37 @@ def test_incr_vitis_csim_matches_python(tmp_path):
         f"C-sim failed: {csim.message if csim else 'csim step did not run'}"
     )
     assert results["validate_csim"].success, results["validate_csim"].message
+
+
+@pytest.mark.vitis
+def test_incr_vitis_cosim_bursts_match_expectation(tmp_path):
+    """C-synth + RTL co-sim + AXI-MM burst validation (Phase 6).
+
+    Unlike C-sim (which runs against a plain C array and never touches the
+    m_axi bus), co-sim drives the synthesized RTL master.  The burst-extraction
+    step asserts the generated kernel issues exactly the expected AXI-MM reads
+    and writes (one read region + one write region of n words, split by the
+    kernel's max burst length).
+    """
+    if not toolchain.find_vitis_path():
+        pytest.skip("Vitis installation not found; skipping increment co-sim.")
+
+    _copy_vitis_resources(tmp_path)
+    cfg = BuildConfig(root_dir=tmp_path, params={"n": 37, "trace_level": "port"})
+    try:
+        results = build_incr_dag().run(cfg, through="extract_bursts")
+    except subprocess.CalledProcessError as exc:
+        pytest.fail(f"Vitis co-sim failed: {exc}\n{exc.stdout}\n{exc.stderr}")
+
+    # Toolchain gate has cleared, so every Vitis step is a hard assertion — do
+    # not soft-skip a real co-sim or burst-validation failure.
+    for step in ("cosim", "generate_vcd", "extract_bursts"):
+        r = results.get(step)
+        assert r is not None and r.success, (
+            f"{step} failed: {r.message if r else f'{step} did not run'}"
+        )
+
+    report = json.loads(results["extract_bursts"].path("burst_report").read_text())
+    assert report["validated"] is True, report["checks"]
+    assert report["expected"]["read_burst_count"] == report["actual"]["read_burst_count"]
+    assert report["expected"]["write_burst_count"] == report["actual"]["write_burst_count"]

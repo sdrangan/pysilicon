@@ -34,6 +34,17 @@ if {[info exists ::env(PYSILICON_INCR_COSIM)]} {
     set do_cosim [expr {$::env(PYSILICON_INCR_COSIM) in {1 true TRUE yes YES}}]
 }
 
+# Co-sim trace level (none|port|all) — drives RTL waveform logging so the
+# AXI-MM bursts can be extracted from a VCD (Phase 6).
+set trace_level "none"
+if {[info exists ::env(PYSILICON_INCR_TRACE_LEVEL)]} {
+    set trace_level $::env(PYSILICON_INCR_TRACE_LEVEL)
+}
+if {$trace_level ni {none port all}} {
+    puts "PYSILICON_ERROR: Unsupported trace level '$trace_level'. Expected one of: none, port, all."
+    exit 1
+}
+
 if {[catch {csim_design -argv "$data_dir"} res]} {
     puts "PYSILICON_ERROR: incr C-Simulation failed."
     puts $res
@@ -46,7 +57,7 @@ if {$do_cosim} {
         puts $res
         exit 1
     }
-    if {[catch {cosim_design -argv "$data_dir"} res]} {
+    if {[catch {cosim_design -argv "$data_dir" -trace_level $trace_level} res]} {
         puts "PYSILICON_ERROR: incr RTL Co-Simulation failed."
         puts $res
         exit 1
