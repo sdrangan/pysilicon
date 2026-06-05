@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from enum import Enum
+
+from pysilicon.hw.clock import Clock
+from pysilicon.simulation.simobj import ProcessGen, SimObj
 
 
 class AddrUnit(Enum):
@@ -393,12 +396,28 @@ class _DirectBackedMMIFMaster:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class MemComponent:
+class MemComponent(SimObj):
     """
-    A Component that wraps a Memory and exposes MM interface endpoints.
+    A latency-modeling :class:`~pysilicon.simulation.simobj.SimObj` that wraps a
+    :class:`Memory` and exposes MM interface endpoints.
 
     ``m_mm`` is a directly-backed master (zero-latency, for the owner's use).
-    ``s_mm`` is an MMIFSlave for external AXI-MM connections.
+    ``s_mm`` is an :class:`~pysilicon.hw.memif.MMIFSlave` for external AXI-MM
+    connections.
+
+    Latency model
+    -------------
+    The memory models *access* latency; the interconnect models *bus* latency,
+    and the two **compose** (they are not double-counted).  Each access on the
+    ``s_mm`` slave path consumes
+    ``(latency_init + nwords * latency_per_word) / clk.freq`` simulation seconds
+    before touching the backing store.  The interconnect adds its own
+    bus/wire/arbitration latency around the callback, so a read's total time is
+    ``bus_request + memory_access + bus_return``.
+
+    The ``m_mm`` direct master stays **zero-latency** — it models the owner
+    reading its *own* inline block (a local C array in HLS), so no bus/access
+    delay applies.  The latency model is only on the ``s_mm`` path.
 
     When ``inline=True`` (default) the full ``nwords_tot`` capacity is
     pre-allocated as one block; ``m_mm.as_words()`` / ``as_array()`` /
@@ -409,19 +428,25 @@ class MemComponent:
     carve out regions, then access them via their own wired ``MMIFMaster``.
     """
 
-    name: str
-    sim: Any
-    word_size: int = 32       # bits per word
-    addr_size: int = 32       # address bits
+    word_size: int = 32        # bits per word
+    addr_size: int = 32        # address bits
     nwords_tot: int = 2 ** 20  # capacity in words
     inline: bool = True        # True = local BRAM; False = external DDR
+    clk: Clock = field(default_factory=lambda: Clock(freq=1.0))
+    latency_init: float = 0.0       # fixed cycles per access
+    latency_per_word: float = 0.0   # cycles per word
+    addr_unit: AddrUnit = AddrUnit.byte
 
     def __post_init__(self) -> None:
+        # SimObj.__post_init__ assigns the default name and registers this
+        # object with the Simulation (sim.add_obj) before we build endpoints.
+        super().__post_init__()
+
         self._mem = Memory(
             word_size=self.word_size,
             addr_size=self.addr_size,
             nwords_tot=self.nwords_tot,
-            addr_unit=AddrUnit.byte,
+            addr_unit=self.addr_unit,
         )
 
         self._base_addr: int | None
@@ -447,14 +472,20 @@ class MemComponent:
             rx_read_proc=self._on_read,
         )
 
-    def _on_write(self, words: Any, local_addr: int) -> Any:
-        self._mem.write(local_addr, words)
-        if False:
-            yield
+    def _access_delay(self, nwords: int) -> float:
+        """Modeled RAM access time (seconds) for an *nwords*-word transfer."""
+        return (self.latency_init + nwords * self.latency_per_word) / self.clk.freq
 
-    def _on_read(self, nwords: int, local_addr: int) -> Any:
+    def _on_write(self, words: Any, local_addr: int) -> ProcessGen[None]:
+        # Decision 5: model the access latency *before* the data op; the
+        # interconnect already wraps this callback and waits for it, so the
+        # caller observes bus + access time.
+        yield self.timeout(self._access_delay(len(words)))
+        self._mem.write(local_addr, words)
+
+    def _on_read(self, nwords: int, local_addr: int) -> ProcessGen[np.ndarray]:
+        yield self.timeout(self._access_delay(nwords))
         return self._mem.read(local_addr, nwords)
-        yield  # noqa: unreachable — makes this a generator function
 
     def alloc(self, nwords: int) -> int:
         """Allocate a region in the backing Memory (system-level use)."""
@@ -463,4 +494,37 @@ class MemComponent:
     def free(self, addr: int) -> None:
         """Free a previously allocated region."""
         self._mem.free(addr)
+
+    # ------------------------------------------------------------------
+    # Testbench-side direct access (zero sim time)
+    # ------------------------------------------------------------------
+    #
+    # These mirror the hand-written histogram testbench's flat-array access
+    # (``mgr.alloc`` + ``write_array(buf, mem+widx, n)`` / ``read_array(...)``):
+    # a sequential ``HwTestbench.main()`` populates and inspects memory by
+    # direct indexing, not over an ``m_axi`` master.  They are recognised by
+    # the testbench codegen (see ``plans/aximm_codegen.md`` decision 9) and
+    # lower to ``MemMgr::alloc`` + ``<elem>_array_utils::{write,read}_array``.
+
+    def alloc_array(self, data: Any, elem_type: type, count: int | None = None) -> int:
+        """Allocate a region sized for *count* elements and populate it.
+
+        Returns the **byte** start address (``addr_unit`` semantics), matching
+        the order-preserving ``Memory.alloc`` first-fit allocation (decision 8).
+        """
+        from pysilicon.hw.arrayutils import get_nwords, write_array
+        n = len(data) if count is None else int(count)
+        nwords = get_nwords(elem_type, word_bw=self.word_size, shape=n)
+        addr = self._mem.alloc(nwords)
+        packed = write_array(np.asarray(data)[:n], elem_type=elem_type,
+                             word_bw=self.word_size)
+        self._mem.write(addr, packed)
+        return addr
+
+    def read_array(self, addr: int, elem_type: type, count: int) -> Any:
+        """Read *count* elements from *addr* (byte address) and deserialize."""
+        from pysilicon.hw.arrayutils import get_nwords, read_array
+        nwords = get_nwords(elem_type, word_bw=self.word_size, shape=int(count))
+        words = self._mem.read(addr, nwords)
+        return read_array(words, elem_type, word_bw=self.word_size, shape=int(count))
     

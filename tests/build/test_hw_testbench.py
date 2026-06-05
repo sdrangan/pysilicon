@@ -271,8 +271,9 @@ def test_phase3_rejects_positional_dut_args():
 
 @pytest.mark.phase3
 def test_phase3_dut_run_with_args_is_rejected():
-    """``dut.run(...)`` with any args is rejected — the run-method
-    surface is fixed (no inputs, no outputs) in v1."""
+    """``dut.run(...)`` with positional args is rejected.  (The only accepted
+    keyword is ``mem=<MemComponent local>`` for m_axi kernels — see the AXI-MM
+    codegen plan decision 9.)"""
     from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
 
     @dataclass
@@ -284,7 +285,7 @@ def test_phase3_dut_run_with_args_is_rejected():
             dut.run(42)
 
     tb = _BadRunArgsTB(name='tb', sim=Simulation())
-    with pytest.raises(SynthesisError, match="dut.run\\(\\) takes no arguments"):
+    with pytest.raises(SynthesisError, match="dut.run\\(\\) takes no positional arguments"):
         extract_testbench(tb)
 
 

@@ -19,6 +19,9 @@ from pysilicon.hw.hwstmt import (
     HwStmt,
     HwVar,
     KernelCallStmt,
+    MemAllocArrayStmt,
+    MemBindStmt,
+    MemReadArrayStmt,
     ReturnStmt,
     SchemaBindStmt,
     SeqStmt,
@@ -98,6 +101,7 @@ def _walk(stmt, scope, comp, module, globs):
     if isinstance(stmt, (
         DutBindStmt, KernelCallStmt, SchemaBindStmt,
         TbFileIOStmt, TbStreamIOStmt, TbRegmapFileReadStmt, TbStatusJsonStmt,
+        MemBindStmt, MemAllocArrayStmt, MemReadArrayStmt,
     )):
         # TB-mode IR nodes carry plain Python data (classes, ast subtrees
         # for path/count exprs, literal field names) — no name resolution

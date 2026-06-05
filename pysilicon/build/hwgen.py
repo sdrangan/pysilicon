@@ -16,6 +16,11 @@ from pysilicon.hw.hwstmt import (
     HwStmt,
     HwVar,
     KernelCallStmt,
+    MMArrayReadStmt,
+    MMArrayWriteStmt,
+    MemAllocArrayStmt,
+    MemBindStmt,
+    MemReadArrayStmt,
     Ref,
     ReturnStmt,
     SchemaBindStmt,
@@ -74,6 +79,10 @@ def to_cpp(stmt: HwStmt, ctx: CodegenCtx) -> str:
         return _emit_stream_write(stmt, ctx)
     if isinstance(stmt, StreamDrainStmt):
         return _emit_stream_drain(stmt, ctx)
+    if isinstance(stmt, MMArrayReadStmt):
+        return _emit_mm_array_read(stmt, ctx)
+    if isinstance(stmt, MMArrayWriteStmt):
+        return _emit_mm_array_write(stmt, ctx)
     if isinstance(stmt, RegMapGetStmt):
         return _emit_regmap_get(stmt, ctx)
     if isinstance(stmt, RegMapSetStmt):
@@ -164,6 +173,96 @@ def _emit_stream_drain(stmt: StreamDrainStmt, ctx: CodegenCtx) -> str:
     tmpl = _stream_template_arg(ep)
     pad = ctx.pad()
     return f"{pad}streamutils::flush_axi4_stream_to_tlast<{tmpl}>({stream_name});"
+
+
+def _mm_buffer_max(comp) -> int:
+    """Compile-time max element count for an m_axi buffered read (decision 5).
+
+    The static local buffer the kernel reads into needs a fixed size; it comes
+    from a ``max_n`` ``HwParam`` bound on the component.  Fail loudly when no
+    such bound exists rather than emit an unsized array.
+    """
+    val = getattr(comp, 'max_n', None)
+    if val is None:
+        from pysilicon.build.hwcodegen import SynthesisError
+        raise SynthesisError(
+            f"{type(comp).__name__}: an m_axi buffered read needs a compile-time "
+            f"max buffer size, but no 'max_n' HwParam is declared "
+            f"(see plans/aximm_codegen.md decision 5)."
+        )
+    return int(val)
+
+
+def _emit_mm_array_read(stmt: MMArrayReadStmt, ctx: CodegenCtx) -> str:
+    """``buf = port.read_array(ElemT, count, addr)`` →
+    a static local buffer + an ``<elem>_array_utils::read_array`` burst
+    (mirrors examples/histogram/hist.cpp)."""
+    port_name = _endpoint_name(stmt.port, ctx)
+    bw = int(stmt.port.bitwidth)
+    ns = _array_utils_ns(stmt.elem_type)
+    elem_cpp = cpp_type(stmt.elem_type)
+    buf = stmt.target_var.name
+    bufmax = _mm_buffer_max(ctx.comp)
+    count = _emit_expr(stmt.count_expr, ctx)
+    addr = _emit_expr(stmt.addr_expr, ctx)
+    pad = ctx.pad()
+    return (
+        f"{pad}static {elem_cpp} {buf}[{bufmax}];\n"
+        f"{pad}{ns}::read_array<{bw}>("
+        f"{port_name} + memmgr::byte_addr_to_word_index<{bw}>({addr}), "
+        f"{buf}, {count});"
+    )
+
+
+def _emit_mm_array_write(stmt: MMArrayWriteStmt, ctx: CodegenCtx) -> str:
+    """``port.write_array(buf, ElemT, addr, count)`` →
+    the dual ``<elem>_array_utils::write_array`` burst."""
+    port_name = _endpoint_name(stmt.port, ctx)
+    bw = int(stmt.port.bitwidth)
+    ns = _array_utils_ns(stmt.elem_type)
+    src = _emit_expr(stmt.source_expr, ctx)
+    count = _emit_expr(stmt.count_expr, ctx)
+    addr = _emit_expr(stmt.addr_expr, ctx)
+    pad = ctx.pad()
+    return (
+        f"{pad}{ns}::write_array<{bw}>("
+        f"{src}, {port_name} + memmgr::byte_addr_to_word_index<{bw}>({addr}), "
+        f"{count});"
+    )
+
+
+def _discover_mm_masters(comp) -> list[tuple[str, object]]:
+    """Return ``[(attr_name, endpoint)]`` for each ``MMIFMaster`` on ``comp``."""
+    from pysilicon.hw.memif import MMIFMaster
+    return [
+        (name, val) for name, val in vars(comp).items()
+        if isinstance(val, MMIFMaster)
+    ]
+
+
+def _collect_mm_elem_types(tree: HwStmt) -> list[type]:
+    """Ordered, deduplicated element types used by m_axi reads/writes in ``tree``."""
+    out: list[type] = []
+    seen: set[int] = set()
+
+    def walk(node: HwStmt) -> None:
+        if isinstance(node, (MMArrayReadStmt, MMArrayWriteStmt)):
+            et = node.elem_type
+            if et is not None and id(et) not in seen:
+                seen.add(id(et))
+                out.append(et)
+        if isinstance(node, SeqStmt):
+            for s in node.stmts:
+                walk(s)
+        elif isinstance(node, WhileStmt):
+            walk(node.body)
+        elif isinstance(node, CaseStmt):
+            walk(node.if_true)
+            if node.if_false is not None:
+                walk(node.if_false)
+
+    walk(tree)
+    return out
 
 
 def _endpoint_name(endpoint, ctx: CodegenCtx) -> str:
@@ -438,9 +537,30 @@ def kernel_signature(comp, variant_suffix: str = "") -> str:
             pragma_lines.append(
                 f"#pragma HLS INTERFACE s_axilite port={fname:<12} bundle=control"
             )
-    pragma_lines.append(
-        "#pragma HLS INTERFACE s_axilite port=return       bundle=control"
-    )
+    # m_axi master ports — appended after streams + regmap fields, in canonical
+    # signature order (streams, regmap, m_axi).  Each maps to an ap_uint<bw>
+    # pointer + an m_axi pragma (mirrors examples/histogram/hist.cpp:9).
+    mm_masters = _discover_mm_masters(comp)
+    for attr, ep in mm_masters:
+        bw = int(ep.bitwidth)
+        arg_lines.append(f"    ap_uint<{bw}>* {attr}")
+        pragma_lines.append(
+            f"#pragma HLS INTERFACE m_axi port={attr} offset=slave "
+            f"bundle=gmem depth={_mm_buffer_max(comp)}"
+        )
+    # Control protocol on the return port: s_axilite when a regmap drives
+    # control (poly), else ap_ctrl_hs for stream-controlled kernels (histogram /
+    # this toy — decision 2/3).
+    if regmap_slave is not None:
+        pragma_lines.append(
+            "#pragma HLS INTERFACE s_axilite port=return       bundle=control"
+        )
+    elif mm_masters:
+        pragma_lines.append("#pragma HLS INTERFACE ap_ctrl_hs port=return")
+    else:
+        pragma_lines.append(
+            "#pragma HLS INTERFACE s_axilite port=return       bundle=control"
+        )
     arg_block = ",\n".join(arg_lines)
     pragma_block = "\n".join(pragma_lines)
     return f"void {name}(\n{arg_block}\n) {{\n{pragma_block}"
@@ -858,6 +978,17 @@ def header_to_cpp(
         lines.append(f'#include "include/{_snake_case(s.cpp_class_name())}.h"')  # type: ignore[attr-defined]
     for path in _collect_utility_includes(schemas):
         lines.append(f'#include "{path}"')
+    # m_axi support: the memory manager (byte→word addressing) + the
+    # array-utils header for each element type read/written over m_axi
+    # (deduped against the utility includes already emitted above).
+    if _discover_mm_masters(default_comp):
+        from pysilicon.hw.arrayutils import _array_utils_include_path
+        for inc in ['#include "include/memmgr.hpp"'] + [
+            f'#include "{_array_utils_include_path(et)}"'
+            for et in _collect_mm_elem_types(tree)
+        ]:
+            if inc not in lines:
+                lines.append(inc)
 
     for suffix, variant_comp in variants:
         lines.append('')
@@ -924,6 +1055,12 @@ def kernel_to_cpp(comp_class) -> str:
     """
     header_name = f"{cpp_kernel_name(comp_class)}.hpp"
     parts: list[str] = [f'#include "{header_name}"', ""]
+    # byte_addr_to_word_index lives in pysilicon::memmgr; alias it like
+    # examples/histogram/hist.cpp when the kernel has m_axi masters.
+    default_comp = next(iter(_iter_variants(comp_class)))[1]
+    if _discover_mm_masters(default_comp):
+        parts.append("namespace memmgr = pysilicon::memmgr;")
+        parts.append("")
     for variant_suffix, variant_comp in _iter_variants(comp_class):
         sig_with_pragmas = kernel_signature(
             variant_comp, variant_suffix=variant_suffix,
@@ -1045,6 +1182,7 @@ class TbCodegenCtx:
     indent: int = 1
     duts: dict[str, object] = field(default_factory=dict)
     schemas: dict[str, type] = field(default_factory=dict)
+    mems: dict[str, tuple] = field(default_factory=dict)  # local -> (word_size, nwords_tot)
 
     def pad(self) -> str:
         return "    " * self.indent
@@ -1055,6 +1193,7 @@ class TbCodegenCtx:
             indent=self.indent + 1,
             duts=self.duts,
             schemas=self.schemas,
+            mems=self.mems,
         )
 
 
@@ -1064,6 +1203,12 @@ def tb_to_cpp(stmt: HwStmt, ctx: TbCodegenCtx) -> str:
         return "\n".join(tb_to_cpp(c, ctx) for c in stmt.stmts)
     if isinstance(stmt, DutBindStmt):
         return _emit_dut_bind(stmt, ctx)
+    if isinstance(stmt, MemBindStmt):
+        return _emit_mem_bind(stmt, ctx)
+    if isinstance(stmt, MemAllocArrayStmt):
+        return _emit_mem_alloc_array(stmt, ctx)
+    if isinstance(stmt, MemReadArrayStmt):
+        return _emit_mem_read_array(stmt, ctx)
     if isinstance(stmt, KernelCallStmt):
         return _emit_kernel_call(stmt, ctx)
     if isinstance(stmt, SchemaBindStmt):
@@ -1113,6 +1258,59 @@ def _emit_dut_bind(stmt: DutBindStmt, ctx: TbCodegenCtx) -> str:
     return "\n".join(lines)
 
 
+def _emit_mem_bind(stmt: MemBindStmt, ctx: TbCodegenCtx) -> str:
+    """Emit the flat backing array + MemMgr for a ``MemComponent`` local."""
+    ctx.mems[stmt.local_name] = (stmt.word_size, stmt.nwords_tot)
+    pad = ctx.pad()
+    bw = stmt.word_size
+    nm = stmt.local_name
+    return (
+        f"{pad}static ap_uint<{bw}> {nm}[{stmt.nwords_tot}] = {{}};\n"
+        f"{pad}pysilicon::memmgr::MemMgr<{bw}> {nm}_mgr({nm}, {stmt.nwords_tot});"
+    )
+
+
+def _emit_mem_alloc_array(stmt: MemAllocArrayStmt, ctx: TbCodegenCtx) -> str:
+    """``cmd.addr = mem.alloc_array(buf, ElemT, count=n)`` →
+    ``MemMgr::alloc`` (word index) → byte address → ``write_array`` populate."""
+    pad = ctx.pad()
+    bw, _nwords = ctx.mems[stmt.mem_local]
+    ns = _array_utils_ns(stmt.elem_type)
+    count = _emit_int_expr(stmt.count, ctx)
+    widx = f"_{stmt.target_local}_{stmt.target_field}_widx"
+    mem = stmt.mem_local
+    return (
+        f"{pad}const int {widx} = {mem}_mgr.alloc({ns}::get_nwords<{bw}>({count}));\n"
+        f"{pad}{stmt.target_local}.{stmt.target_field} = {widx} * ({bw} / 8);\n"
+        f"{pad}{ns}::write_array<{bw}>({stmt.src_local}, {mem} + {widx}, {count});"
+    )
+
+
+def _emit_mem_read_array(stmt: MemReadArrayStmt, ctx: TbCodegenCtx) -> str:
+    """``out = mem.read_array(addr, ElemT, count=n)`` →
+    a static output buffer + a ``read_array`` burst from the byte address."""
+    from pysilicon.hw.dataschema import DataArray
+    pad = ctx.pad()
+    bw, nwords = ctx.mems[stmt.mem_local]
+    ns = _array_utils_ns(stmt.elem_type)
+    elem_cpp = cpp_type(stmt.elem_type)
+    count = _emit_int_expr(stmt.count, ctx)
+    addr = _emit_int_expr(stmt.addr, ctx)
+    out = stmt.target_local
+    mem = stmt.mem_local
+    # Register the output buffer as a raw-array schema local so a following
+    # write_uint32_file_array(out, ...) resolves it.
+    ctx.schemas[out] = DataArray.specialize(
+        element_type=stmt.elem_type, max_shape=(nwords,), static=True,
+    )
+    return (
+        f"{pad}static {elem_cpp} {out}[{nwords}] = {{}};\n"
+        f"{pad}{ns}::read_array<{bw}>("
+        f"{mem} + pysilicon::memmgr::byte_addr_to_word_index<{bw}>({addr}), "
+        f"{out}, {count});"
+    )
+
+
 def _emit_kernel_call(stmt: KernelCallStmt, ctx: TbCodegenCtx) -> str:
     """Emit ``<kernel_name>(args...);`` matching the DUT's kernel signature.
 
@@ -1135,6 +1333,10 @@ def _emit_kernel_call(stmt: KernelCallStmt, ctx: TbCodegenCtx) -> str:
             if fld.is_vitis_auto:
                 continue
             args.append(fname)
+    # m_axi pointer(s) last — canonical signature order is streams, regmap,
+    # m_axi (matches kernel_signature).  The TB passes the MemBindStmt array.
+    if stmt.mem_local is not None:
+        args.append(stmt.mem_local)
     return f"{ctx.pad()}{kn}({', '.join(args)});"
 
 
@@ -1420,13 +1622,17 @@ def _collect_tb_array_elem_types(tree: HwStmt, ctx: TbCodegenCtx) -> list[type]:
             if id(et) not in seen:
                 seen[id(et)] = et
 
-    # SchemaBindStmt locals (TB main() body)
+    # SchemaBindStmt locals (TB main() body) + m_axi alloc/read element types.
     def visit(node):
         if isinstance(node, SeqStmt):
             for c in node.stmts:
                 visit(c)
         elif isinstance(node, SchemaBindStmt):
             add_array_cls(node.schema_class)
+        elif isinstance(node, (MemAllocArrayStmt, MemReadArrayStmt)):
+            et = node.elem_type
+            if id(et) not in seen:
+                seen[id(et)] = et
 
     visit(tree)
 
@@ -1495,6 +1701,11 @@ def _testbench_cpp(tb_class) -> str:
         f'#include "{kn}.hpp"',
         '#include "include/streamutils_tb.h"',
     ]
+    # m_axi support headers: MemMgr (alloc) + byte_addr_to_word_index, when the
+    # TB declares a MemComponent backing array.
+    if _tb_has_mem(tree):
+        include_lines.append('#include "include/memmgr_tb.hpp"')
+        include_lines.append('#include "include/memmgr.hpp"')
     for et in elem_types:
         stem = _array_utils_stem(et)
         include_lines.append(f'#include "include/{stem}_array_utils_tb.h"')
@@ -1518,6 +1729,22 @@ def _testbench_cpp(tb_class) -> str:
     lines.append('    return 0;')
     lines.append('}')
     return "\n".join(lines) + "\n"
+
+
+def _tb_has_mem(tree: HwStmt) -> bool:
+    """True if the TB tree declares any ``MemComponent`` backing array."""
+    found = False
+
+    def visit(node):
+        nonlocal found
+        if isinstance(node, SeqStmt):
+            for c in node.stmts:
+                visit(c)
+        elif isinstance(node, MemBindStmt):
+            found = True
+
+    visit(tree)
+    return found
 
 
 def _array_utils_stem(elem_type) -> str:

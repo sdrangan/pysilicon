@@ -768,6 +768,47 @@ def test_datalist_unpack_emits_expected_member_slices():
     assert "return data;" in content
 
 
+def test_dataarray_oversized_whole_object_pack_is_suppressed(tmp_path: Path):
+    """A DataArray whose packed width exceeds the HLS ap_uint limit must not emit
+    whole-object pack_to_uint/unpack_from_uint — that would be a non-synthesizable
+    ap_uint<N> (N > 8191).  Element-wise / burst access is still emitted."""
+    from pysilicon.hw.dataschema import HLS_AP_UINT_MAX_BITWIDTH
+
+    # 512 x 16 = 8192 bits, one bit over the 8191-bit ap_uint limit.
+    Big = DataArray.specialize(element_type=U16, max_shape=(512,), member_name="buf")
+    assert Big.get_bitwidth() > HLS_AP_UINT_MAX_BITWIDTH
+    assert Big.can_pack_whole() is False
+
+    content = (
+        Big.as_buildable(word_bw_supported=[32])
+        .run(BuildConfig(root_dir=tmp_path))
+        .artifacts["include"]
+        .read_text(encoding="utf-8")
+    )
+    assert "pack_to_uint" not in content
+    assert "unpack_from_uint" not in content
+    assert "ap_uint<bitwidth>" not in content
+    # The buffer is still usable element-wise / by burst (array_utils path).
+    assert "read_array" in content and "write_array" in content
+
+
+def test_dataarray_oversized_pack_emitters_fail_fast():
+    """The emitters themselves are a backstop: invoked directly on an oversized
+    array they raise a descriptive ValueError naming the width and the limit."""
+    Big = DataArray.specialize(element_type=U16, max_shape=(512,), member_name="buf")
+    with pytest.raises(ValueError, match=r"exceeding the HLS ap_uint limit of 8191 bits"):
+        Big.gen_pack()
+    with pytest.raises(ValueError, match=r"exceeding the HLS ap_uint limit of 8191 bits"):
+        Big.gen_unpack()
+
+
+def test_dataarray_within_limit_still_packs_whole_object():
+    """A small DataArray is unaffected — whole-object pack/unpack still emitted."""
+    assert CoeffArray.can_pack_whole() is True
+    assert "static ap_uint<bitwidth> pack_to_uint(const" in CoeffArray.gen_pack()
+    assert "unpack_from_uint(const ap_uint<bitwidth>&" in CoeffArray.gen_unpack()
+
+
 def test_datalist_gen_write_array_emits_expected_slices():
     content = Packet.gen_write(word_bw=32, dst_type="array")
 

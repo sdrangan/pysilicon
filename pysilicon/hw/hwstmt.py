@@ -96,6 +96,77 @@ class SynthCallStmt(HwStmt):
     outputs: list[HwVar]
 
 
+class MMArrayReadStmt(SynthCallStmt):
+    """IR node for ``port.read_array(elem_type, count, addr)`` — an m_axi
+    buffered read lowered to ``<elem>_array_utils::read_array<bw>(port +
+    byte_addr_to_word_index<bw>(addr), buf, count)`` (see
+    ``plans/aximm_codegen.md`` decision 4).
+
+    The constructor matches ``SynthCallStmt`` (``method``/``inputs``/``outputs``);
+    the named accessors below project the resolved positional args:
+    ``read_array(elem_type, count, addr)``.
+    """
+
+    @property
+    def port(self):
+        """The bound ``MMIFMaster`` endpoint (``method.__self__``)."""
+        return getattr(self.method, '__self__', None)
+
+    @property
+    def elem_type(self):
+        return self.inputs[0] if self.inputs else None
+
+    @property
+    def count_expr(self):
+        return self.inputs[1] if len(self.inputs) > 1 else None
+
+    @property
+    def addr_expr(self):
+        return self.inputs[2] if len(self.inputs) > 2 else None
+
+    @property
+    def target_var(self) -> "HwVar | None":
+        return self.outputs[0] if self.outputs else None
+
+    def __repr__(self) -> str:
+        tgt = self.target_var.name if self.target_var else '?'
+        return f"MMArrayReadStmt({tgt} = read_array)"
+
+
+class MMArrayWriteStmt(SynthCallStmt):
+    """IR node for ``port.write_array(buf, elem_type, addr, count)`` — an m_axi
+    buffered write lowered to ``<elem>_array_utils::write_array<bw>(buf, port +
+    byte_addr_to_word_index<bw>(addr), count)`` (the dual of
+    :class:`MMArrayReadStmt`).
+
+    Positional args: ``write_array(elements, elem_type, addr, count)``.
+    """
+
+    @property
+    def port(self):
+        return getattr(self.method, '__self__', None)
+
+    @property
+    def source_expr(self):
+        return self.inputs[0] if self.inputs else None
+
+    @property
+    def elem_type(self):
+        return self.inputs[1] if len(self.inputs) > 1 else None
+
+    @property
+    def addr_expr(self):
+        return self.inputs[2] if len(self.inputs) > 2 else None
+
+    @property
+    def count_expr(self):
+        return self.inputs[3] if len(self.inputs) > 3 else None
+
+    def __repr__(self) -> str:
+        src = getattr(self.source_expr, 'name', '?')
+        return f"MMArrayWriteStmt(write_array({src}))"
+
+
 @dataclass
 class FunctionStmt(SynthCallStmt):
     """Call to a user-written ``@synthesizable`` method (no ``synth_fn``).
@@ -142,8 +213,58 @@ class KernelCallStmt(HwStmt):
     (via ``cpp_kernel_name``) and emits ``poly(s_in, m_out, halted,
     error, tx_id, coeffs);`` — passing the locals introduced by the
     matching ``DutBindStmt`` in canonical kernel-signature order.
+
+    ``mem_local`` (when set) names a :class:`MemBindStmt` backing array passed
+    as the m_axi pointer argument, appended in canonical signature order
+    (streams, regmap, m_axi) so the call matches ``kernel_signature``.
     """
     local_name: str                 # Python-side DUT local (e.g. "dut")
+    mem_local: str | None = None    # MemComponent backing-array local (m_axi arg)
+
+
+@dataclass
+class MemBindStmt(HwStmt):
+    """A ``mem = MemComponent(**kwargs)`` binding inside a TB ``main()``.
+
+    Lowers to a flat backing array + a ``MemMgr`` (decision 9): the
+    ``MemComponent`` + ``Memory`` of the Python sim collapse to
+    ``static mem_word_t mem[MEM_SIZE]`` + ``MemMgr<bw> mem_mgr(mem, MEM_SIZE)``.
+    """
+    local_name: str
+    nwords_tot: int   # MEM_SIZE — static array size
+    word_size: int    # memory data width in bits
+
+
+@dataclass
+class MemAllocArrayStmt(HwStmt):
+    """A ``<cmd>.<field> = <mem>.alloc_array(<buf>, ElemT, count=<expr>)`` call.
+
+    Lowers to ``MemMgr::alloc`` (word index) → byte address into the command
+    field → ``<elem>_array_utils::write_array`` populate (decision 9).  Alloc
+    order is preserved by emitting the ``alloc`` calls in source order; the
+    address is **not** baked in Python (decision 8).
+    """
+    mem_local: str
+    target_local: str   # command struct local (e.g. "cmd")
+    target_field: str   # field receiving the byte address (e.g. "addr")
+    src_local: str      # buffer local to populate from (e.g. "buf")
+    elem_type: type
+    count: object       # ast expr for the element count
+
+
+@dataclass
+class MemReadArrayStmt(HwStmt):
+    """A ``<out> = <mem>.read_array(<addr_expr>, ElemT, count=<expr>)`` call.
+
+    Lowers to a static output buffer declaration + an
+    ``<elem>_array_utils::read_array`` burst from the byte address
+    (decision 9).  Reads kernel-produced data back for the functional-verify
+    step (decision 10)."""
+    mem_local: str
+    target_local: str   # output buffer local (e.g. "out")
+    addr: object        # ast expr for the byte address (e.g. cmd.addr)
+    elem_type: type
+    count: object       # ast expr for the element count
 
 
 @dataclass

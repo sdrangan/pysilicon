@@ -77,6 +77,7 @@ class HwStmtExtractor:
         # the extractor as it walks the body in Phase 3/4.
         self._duts: dict[str, object] = {}      # local_name -> HwComponent instance
         self._tb_locals: dict[str, object] = {} # local_name -> object (binding)
+        self._mems: dict[str, object] = {}      # local_name -> MemComponent class
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -218,7 +219,8 @@ class HwStmtExtractor:
         the kernel-mode handler (for stmts that have identical semantics in
         both modes, e.g. ``return``, ``if``, bare docstring constants).
         """
-        # `name = <ClassRef>(**kwargs)` — DUT or schema binding.
+        # `name = <ClassRef>(**kwargs)` — DUT / schema / MemComponent binding,
+        # or `name = <mem>.read_array(...)` — m_axi read-back.
         if (
             isinstance(stmt, ast.Assign)
             and len(stmt.targets) == 1
@@ -229,9 +231,27 @@ class HwStmtExtractor:
             bind = self._try_dut_bind(local_name, stmt.value, stmt)
             if bind is not None:
                 return bind
+            mem_bind = self._try_mem_bind(local_name, stmt.value, stmt)
+            if mem_bind is not None:
+                return mem_bind
             schema_bind = self._try_schema_bind(local_name, stmt.value, stmt)
             if schema_bind is not None:
                 return schema_bind
+            mem_read = self._try_mem_read_array(local_name, stmt.value, stmt)
+            if mem_read is not None:
+                return mem_read
+
+        # `cmd.addr = <mem>.alloc_array(buf, ElemT, count=...)` — alloc + populate.
+        if (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Attribute)
+            and isinstance(stmt.targets[0].value, ast.Name)
+            and isinstance(stmt.value, ast.Call)
+        ):
+            alloc = self._try_mem_alloc_array(stmt.targets[0], stmt.value, stmt)
+            if alloc is not None:
+                return alloc
         # Expression-statement calls (no return assignment): the bulk of TB
         # mode lives here — push/pop, file IO, regmap helpers, dut.run().
         if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
@@ -253,17 +273,31 @@ class HwStmtExtractor:
         attr = call.func.attr
         receiver_chain = call.func.value
 
-        # `dut.run()` — kernel call.
+        # `dut.run()` / `dut.run(mem=<memlocal>)` — kernel call.
         if (
             attr == 'run'
             and isinstance(receiver_chain, ast.Name)
             and receiver_chain.id in self._duts
         ):
-            if call.args or call.keywords:
+            if call.args:
                 raise SynthesisError(
-                    f"dut.run() takes no arguments (line {parent.lineno})"
+                    f"dut.run() takes no positional arguments (line {parent.lineno})"
                 )
-            return KernelCallStmt(local_name=receiver_chain.id)
+            mem_local: str | None = None
+            for kw in call.keywords:
+                if kw.arg == 'mem' and isinstance(kw.value, ast.Name):
+                    if kw.value.id not in self._mems:
+                        raise SynthesisError(
+                            f"dut.run(mem={kw.value.id}) — '{kw.value.id}' is not a "
+                            f"bound MemComponent local (line {parent.lineno})"
+                        )
+                    mem_local = kw.value.id
+                else:
+                    raise SynthesisError(
+                        f"dut.run() only accepts mem=<MemComponent local> "
+                        f"(line {parent.lineno})"
+                    )
+            return KernelCallStmt(local_name=receiver_chain.id, mem_local=mem_local)
 
         # `<schema_local>.read_uint32_file*(...)` / `.write_uint32_file*(...)`
         if (
@@ -331,6 +365,152 @@ class HwStmtExtractor:
             )
         self._tb_locals[local_name] = cls
         return SchemaBindStmt(local_name=local_name, schema_class=cls)
+
+    def _try_mem_bind(
+        self,
+        local_name: str,
+        call_node: ast.Call,
+        parent_stmt: ast.stmt,
+    ) -> "HwStmt | None":
+        """If ``call_node`` constructs a ``MemComponent``, return a
+        ``MemBindStmt`` (flat array + MemMgr).  ``None`` otherwise."""
+        from pysilicon.hw.hwstmt import MemBindStmt
+        from pysilicon.hw.memory import MemComponent
+
+        cls = self._resolve_tb_class(call_node.func)
+        if not (isinstance(cls, type) and issubclass(cls, MemComponent)):
+            return None
+        if call_node.args:
+            raise SynthesisError(
+                f"MemComponent construction must use keyword arguments only "
+                f"(line {parent_stmt.lineno})"
+            )
+        kwargs: dict[str, object] = {}
+        for kw in call_node.keywords:
+            if kw.arg is None:
+                raise SynthesisError(
+                    f"MemComponent construction does not accept **kwargs "
+                    f"(line {parent_stmt.lineno})"
+                )
+            kwargs[kw.arg] = self._eval_tb_literal(kw.value, parent_stmt)
+        word_size = int(kwargs.get('word_size', 32))
+        nwords_tot = kwargs.get('nwords_tot')
+        if nwords_tot is None:
+            raise SynthesisError(
+                f"MemComponent in a testbench must declare nwords_tot "
+                f"(the static array size) (line {parent_stmt.lineno})"
+            )
+        self._mems[local_name] = (word_size, int(nwords_tot))
+        return MemBindStmt(
+            local_name=local_name,
+            nwords_tot=int(nwords_tot),
+            word_size=word_size,
+        )
+
+    def _try_mem_alloc_array(
+        self,
+        target: ast.Attribute,
+        call: ast.Call,
+        parent: ast.stmt,
+    ) -> "HwStmt | None":
+        """``cmd.addr = mem.alloc_array(buf, ElemT, count=expr)``."""
+        from pysilicon.hw.hwstmt import MemAllocArrayStmt
+
+        func = call.func
+        if not (isinstance(func, ast.Attribute) and func.attr == 'alloc_array'
+                and isinstance(func.value, ast.Name)
+                and func.value.id in self._mems):
+            return None
+        mem_local = func.value.id
+        target_local = target.value.id  # type: ignore[union-attr]
+        target_field = target.attr
+        if len(call.args) != 2:
+            raise SynthesisError(
+                f"mem.alloc_array(buf, ElemT, count=...) requires two positional "
+                f"args (line {parent.lineno})"
+            )
+        buf_node, elem_node = call.args
+        if not (isinstance(buf_node, ast.Name) and buf_node.id in self._tb_locals):
+            raise SynthesisError(
+                f"mem.alloc_array first arg must be a bound buffer local "
+                f"(line {parent.lineno})"
+            )
+        elem_type = self._resolve_tb_class(elem_node)
+        if not isinstance(elem_type, type):
+            raise SynthesisError(
+                f"mem.alloc_array element type must resolve to a schema class "
+                f"(line {parent.lineno})"
+            )
+        count = self._extract_count_kwarg(call, 'alloc_array', parent)
+        return MemAllocArrayStmt(
+            mem_local=mem_local,
+            target_local=target_local,
+            target_field=target_field,
+            src_local=buf_node.id,
+            elem_type=elem_type,
+            count=count,
+        )
+
+    def _try_mem_read_array(
+        self,
+        local_name: str,
+        call: ast.Call,
+        parent: ast.stmt,
+    ) -> "HwStmt | None":
+        """``out = mem.read_array(addr_expr, ElemT, count=expr)``."""
+        from pysilicon.hw.hwstmt import MemReadArrayStmt
+
+        func = call.func
+        if not (isinstance(func, ast.Attribute) and func.attr == 'read_array'
+                and isinstance(func.value, ast.Name)
+                and func.value.id in self._mems):
+            return None
+        mem_local = func.value.id
+        if len(call.args) != 2:
+            raise SynthesisError(
+                f"mem.read_array(addr, ElemT, count=...) requires two positional "
+                f"args (line {parent.lineno})"
+            )
+        addr_node, elem_node = call.args
+        elem_type = self._resolve_tb_class(elem_node)
+        if not isinstance(elem_type, type):
+            raise SynthesisError(
+                f"mem.read_array element type must resolve to a schema class "
+                f"(line {parent.lineno})"
+            )
+        count = self._extract_count_kwarg(call, 'read_array', parent)
+        # Register the output buffer local so a following write_uint32_file_array
+        # recognizes it.  Sized at the backing memory's nwords_tot (static array).
+        from pysilicon.hw.dataschema import DataArray
+        _word_size, mem_nwords = self._mems[mem_local]
+        out_cls = DataArray.specialize(
+            element_type=elem_type,
+            max_shape=(mem_nwords,),
+            static=True,
+        )
+        self._tb_locals[local_name] = out_cls
+        return MemReadArrayStmt(
+            mem_local=mem_local,
+            target_local=local_name,
+            addr=addr_node,
+            elem_type=elem_type,
+            count=count,
+        )
+
+    def _eval_tb_literal(self, node: ast.expr, parent: ast.stmt) -> object:
+        """Resolve a TB construction kwarg value: literal constant or a
+        module-global name (e.g. ``nwords_tot=MAX_N``)."""
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            method = getattr(self._comp, self._method_name)
+            globs = getattr(method, '__globals__', {})
+            if node.id in globs:
+                return globs[node.id]
+        raise SynthesisError(
+            f"MemComponent kwarg must be a literal or module global "
+            f"(line {getattr(parent, 'lineno', '?')})"
+        )
 
     def _make_file_io_stmt(
         self,

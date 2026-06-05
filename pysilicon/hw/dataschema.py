@@ -31,6 +31,14 @@ Words: TypeAlias = NDArray[np.uint32] | NDArray[np.uint64]
 from pysilicon.build.build import Buildable, BuildConfig, BuildResult
 
 
+# Vitis HLS caps ``ap_uint<N>`` at 8191 bits.  A schema whose whole-object packed
+# width exceeds this cannot be packed into a single ``ap_uint`` word in
+# synthesizable code (C-sim's software ``ap_uint`` tolerates wider values, which
+# is why this only bites at C-synthesis).  Large buffers must be accessed
+# element-wise / by burst (``array_utils``) rather than packed whole.
+HLS_AP_UINT_MAX_BITWIDTH = 8191
+
+
 class DataSchema(ABC):
     """Abstract base class for schema nodes.
 
@@ -2859,7 +2867,36 @@ class DataArray(DataSchema):
         return [f"{indent}{cls._element_type().cpp_class_name()} {cls._member_name()}{suffix};"]
 
     @classmethod
+    def _reject_oversized_whole_object_pack(cls) -> None:
+        """Fail fast if this array's packed width exceeds the HLS ``ap_uint`` limit.
+
+        Backstop for :meth:`gen_pack` / :meth:`gen_unpack`: the header emitter
+        skips whole-object pack/unpack for such arrays (see ``can_pack_whole``),
+        so this only fires if generation genuinely tries to pack a >8191-bit
+        object — which would emit non-synthesizable ``ap_uint<bitwidth>`` C++.
+        """
+        width = cls.get_bitwidth()
+        if width > HLS_AP_UINT_MAX_BITWIDTH:
+            raise ValueError(
+                f"DataArray {cls.cpp_class_name()} packs to {width} bits, exceeding "
+                f"the HLS ap_uint limit of {HLS_AP_UINT_MAX_BITWIDTH} bits. A buffer "
+                "this large cannot be packed into a single word; access it "
+                "element-wise/burst (array_utils) instead of "
+                "pack_to_uint/unpack_from_uint."
+            )
+
+    @classmethod
+    def can_pack_whole(cls) -> bool:
+        """Whether a whole-object ``pack_to_uint``/``unpack_from_uint`` is emittable.
+
+        ``False`` for buffers wider than the HLS ``ap_uint`` limit, whose
+        whole-object packing would be non-synthesizable.
+        """
+        return cls.get_bitwidth() <= HLS_AP_UINT_MAX_BITWIDTH
+
+    @classmethod
     def gen_pack(cls, indent_level: int = 0) -> str:
+        cls._reject_oversized_whole_object_pack()
         cls_name = cls.cpp_class_name()
         elem_bw = cls._element_type().get_bitwidth()
         shape = cls._normalized_shape()
@@ -2890,6 +2927,7 @@ class DataArray(DataSchema):
 
     @classmethod
     def gen_unpack(cls, indent_level: int = 0) -> str:
+        cls._reject_oversized_whole_object_pack()
         cls_name = cls.cpp_class_name()
         elem_bw = cls._element_type().get_bitwidth()
         shape = cls._normalized_shape()
@@ -3696,14 +3734,19 @@ class DataArray(DataSchema):
         if nwords_len_helpers:
             lines.append("")
             lines.extend(nwords_len_helpers.splitlines())
-        pack_decl = cls.gen_pack(indent_level=1)
-        if pack_decl:
-            lines.append("")
-            lines.extend(pack_decl.splitlines())
-        unpack_decl = cls.gen_unpack(indent_level=1)
-        if unpack_decl:
-            lines.append("")
-            lines.extend(unpack_decl.splitlines())
+        # Whole-object pack/unpack is non-synthesizable past the HLS ap_uint
+        # limit (a large buffer cannot ride a single word); skip it for such
+        # arrays so the header still compiles under C-synthesis.  Element-wise /
+        # burst access (array_utils, below) is how these buffers are used.
+        if cls.can_pack_whole():
+            pack_decl = cls.gen_pack(indent_level=1)
+            if pack_decl:
+                lines.append("")
+                lines.extend(pack_decl.splitlines())
+            unpack_decl = cls.gen_unpack(indent_level=1)
+            if unpack_decl:
+                lines.append("")
+                lines.extend(unpack_decl.splitlines())
         stream_helpers = cls.gen_stream_helpers(indent_level=1, word_bw_supported=word_bw_supported)
         if stream_helpers:
             lines.append("")

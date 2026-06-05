@@ -62,6 +62,8 @@ import numpy as np
 import simpy
 
 from pysilicon.hw.interface import InterfaceEndpoint, QueuedTransferIF, Words
+from pysilicon.hw.hwstmt import MMArrayReadStmt, MMArrayWriteStmt
+from pysilicon.hw.synth import synthesizable
 from pysilicon.simulation.simobj import ProcessGen
 
 
@@ -194,21 +196,30 @@ class MMIFMaster(InterfaceEndpoint):
         words = yield from self.read(nwords, addr)
         return schema_type().deserialize(words, word_bw=word_bw)
 
+    @synthesizable(stmt_class=MMArrayWriteStmt)
     def write_array(
         self,
         elements: Any,
         element_type: type,
         addr: int,
+        count: int | None = None,
         word_bw: int = 32,
     ) -> ProcessGen[None]:
         """Serialize *elements* and write them to *addr*.
 
         Accepts a ``np.ndarray`` (fast path for scalar ``FloatField`` /
         ``IntField`` types) or an iterable of schema instances / raw values.
+
+        *count* — when given — selects the first *count* elements before
+        packing.  It exists so a synthesizable m_axi write carries an explicit
+        runtime length (the static local buffer is sized at ``max``, written in
+        ``[0, count)``); the dual of :meth:`read_array`'s *count*.
         """
         from pysilicon.hw.schema_transfer_interface import (
             _scalar_dtype_for_fast_path, _to_words,
         )
+        if count is not None:
+            elements = elements[:int(count)]
         fast = _scalar_dtype_for_fast_path(element_type, word_bw)
         if fast is not None and isinstance(elements, np.ndarray):
             elem_dtype, word_dtype = fast
@@ -223,6 +234,7 @@ class MMIFMaster(InterfaceEndpoint):
             all_words[i * nwpe:(i + 1) * nwpe] = elem.serialize(word_bw=word_bw)
         yield from self.write(all_words, addr)
 
+    @synthesizable(stmt_class=MMArrayReadStmt)
     def read_array(
         self,
         element_type: type,
