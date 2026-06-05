@@ -1,6 +1,6 @@
 ---
 title: Python Simulation
-parent: Register Map
+parent: Register Map (simple function)
 nav_order: 2
 has_children: false
 ---
@@ -9,7 +9,7 @@ has_children: false
 
 We now show how to simulate the Python model. Python simulation is fast and easy to debug, so we usually perform the simulation in Python before synthesizing and simulating the RTL.
 
-The interesting part of this page is *not* the SimPy simulation itself — that happens inside `simulate_case()` in [`simp_fun.py`](../../../examples/regmap_simp_fun/simp_fun.py) and was covered on the [Python model](./python.md) page. What this page covers is how the simulation is wrapped into a **build DAG** so its inputs, outputs, and timing measurements become first-class artifacts that downstream stages (Vitis C-sim, C-synth, RTL cosim, timing validation) can consume.
+The interesting part of this page is *not* the SimPy simulation itself — that happens inside `simulate_case()` in [`simp_fun.py`](../../../examples/regmap/simp_fun.py) and was covered on the [Python model](./python.md) page. What this page covers is how the simulation is wrapped into a **build DAG** so its inputs, outputs, and timing measurements become first-class artifacts that downstream stages (Vitis C-sim, C-synth, RTL cosim, timing validation) can consume.
 
 ## Creating a Build DAG
 
@@ -18,7 +18,7 @@ A **build DAG** is PySilicon's pipeline abstraction: a directed acyclic graph of
 For the Python-only portion of the simp_fun flow, the DAG has three steps:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 def build_simp_fun_dag() -> BuildDag:
     dag = BuildDag()
     dag.add(SourceStep(artifact="simp_fun_source",
@@ -45,7 +45,7 @@ In a PySilicon build, an **artifact** is a named output produced by one step and
 A step declares its artifact contract as class attributes:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 @dataclass(kw_only=True)
 class BuildInputsStep(BuildStep):
     description = "Write scalar AXI-Lite inputs for the simp_fun example."
@@ -85,7 +85,7 @@ The two artifacts worth flagging:
 
 To get a meaningful cycle measurement out of the Python simulation, both the kernel and the host emit named events to a `Logger` at key moments. The logger writes a CSV row with `time` (in seconds) and `event` (a string label) for each call.
 
-The relevant log points in [`simp_fun.py`](../../../examples/regmap_simp_fun/simp_fun.py):
+The relevant log points in [`simp_fun.py`](../../../examples/regmap/simp_fun.py):
 
 ```python
 # Host side (SimpFunHost.run_proc)
@@ -106,7 +106,7 @@ self._log("kernel_done", 1)           # at hook exit
 `ExtractPyTimingStep` reads back the CSV, picks out the events that bracket the transaction, and emits a structured JSON:
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py — ExtractPyTimingStep.run
+# examples/regmap/simp_fun_build.py — ExtractPyTimingStep.run
 t_start = events.get("ap_start_host")
 t_end   = events.get("host_done", events.get("kernel_done"))
 transaction_seconds = t_end - t_start
@@ -127,7 +127,7 @@ Cycles are derived from seconds via the configured `clk_freq` — same number Vi
 Run the Python-only portion of the flow:
 
 ```bash
-cd examples/regmap_simp_fun
+cd examples/regmap
 python simp_fun_build.py --through extract_py_timing
 ```
 

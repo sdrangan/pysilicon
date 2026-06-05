@@ -21,7 +21,7 @@ nav_order: 5
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyTBHls.main()` demonstrates DUT binding, stream push/pop, regmap status write, and `dut.run()`:
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), `PolyTBHls.main()` demonstrates DUT binding, stream push/pop, regmap status write, and `dut.run()`:
 
 ```python
 dut = PolyAccelComponent()

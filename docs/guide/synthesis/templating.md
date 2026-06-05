@@ -21,7 +21,7 @@ Hook stubs become `.tpp` when parameterized template arguments are needed. This 
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), bus widths are declared with `HwParam` so codegen can specialize stream types:
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), bus widths are declared with `HwParam` so codegen can specialize stream types:
 
 ```python
 in_bw:  HwParam[int] = 32

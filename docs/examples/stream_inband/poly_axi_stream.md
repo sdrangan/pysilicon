@@ -1,6 +1,6 @@
 ---
 title: AXI4-Stream Timing Analysis
-parent: Polynomial Accelerator
+parent: Stream In-Band Control (polynomial)
 nav_order: 6
 has_children: false
 ---
@@ -14,7 +14,7 @@ Vitis HLS kernel from an existing VCD file — **without** rerunning RTL
 co-simulation.  
 
 The source code for everything on this page lives in
-`examples/poly/timing_analysis.py`. The demo uses
+`examples/stream_inband/timing_analysis.py`. The demo uses
 PySilicon's [AXI4-stream VCD analysis tools](../../guide/timing/axistream.md). 
 
 ## Overview
@@ -53,7 +53,7 @@ Each `burst` dict has keys `data`, `beat_type`, `start_idx`, and `tstart`.
 
 ```python
 import sys
-sys.path.insert(0, "examples/poly")   # make the sibling poly / timing_analysis modules importable
+sys.path.insert(0, "examples/stream_inband")   # make the sibling poly / timing_analysis modules importable
 from timing_analysis import analyze_poly_vcd
 
 result = analyze_poly_vcd("vcd/dump.vcd")

@@ -1,6 +1,6 @@
 ---
 title: RTL Cosim Timing Verification
-parent: Polynomial Accelerator
+parent: Stream In-Band Control (polynomial)
 nav_order: 5
 ---
 
@@ -106,7 +106,7 @@ build-DAG step in its own right.
 ## Run the whole pipeline
 
 ```bash
-python -m examples.poly.poly_build --through validate_timing --force --live-output
+python -m examples.stream_inband.poly_build --through validate_timing --force --live-output
 ```
 
 Requires Vitis HLS on `PATH`.  Produces `results/timing_verdict.json`

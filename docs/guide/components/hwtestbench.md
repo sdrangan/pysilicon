@@ -20,7 +20,7 @@ The v1 model is sequential: blocking file I/O, stream push/pop operations, and `
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyTBHls.main()`:
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), `PolyTBHls.main()`:
 
 ```python
 dut = PolyAccelComponent()

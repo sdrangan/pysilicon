@@ -381,7 +381,7 @@ def test_extract_kernel_with_regmap_uses_on_start():
 def _ensure_poly_on_path():
     import sys
     from pathlib import Path
-    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
+    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "stream_inband"
     if str(POLY_DIR) not in sys.path:
         sys.path.insert(0, str(POLY_DIR))
 

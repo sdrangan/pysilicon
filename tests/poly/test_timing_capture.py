@@ -124,7 +124,7 @@ class TestRunXsimVcdNonWindows:
 
 _XSIM_AVAILABLE = (
     IS_WINDOWS
-    and (Path("pysilicon_poly_proj").exists() or Path("examples/poly/pysilicon_poly_proj").exists())
+    and (Path("pysilicon_poly_proj").exists() or Path("examples/stream_inband/pysilicon_poly_proj").exists())
 )
 
 requires_xsim = pytest.mark.skipif(
@@ -140,7 +140,7 @@ class TestRunXsimVcdIntegration:
             top="poly",
             comp="pysilicon_poly_proj",
             out="test_out.vcd",
-            workdir=Path(__file__).resolve().parents[2] / "examples" / "poly",
+            workdir=Path(__file__).resolve().parents[2] / "examples" / "stream_inband",
         )
         assert out_path.exists(), f"Expected VCD at {out_path}"
         assert out_path.stat().st_size > 0

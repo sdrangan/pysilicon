@@ -1,11 +1,11 @@
 ---
-title: Polynomial Accelerator
+title: Stream In-Band Control (polynomial)
 parent: Examples
-nav_order: 4
+nav_order: 3
 has_children: true
 ---
 
-# Polynomial Accelerator
+# Stream In-Band Control (polynomial)
 
 End-to-end PySilicon tutorial for a small polynomial accelerator —
 covering every stage from the Python golden model through RTL cosim
@@ -16,7 +16,7 @@ philosophy this example is meant to teach.
 ## The five-group narrative arc
 
 The full pipeline reads as five conceptually distinct groups, in
-[`examples/poly/poly_build.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly_build.py)
+[`examples/stream_inband/poly_build.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/poly_build.py)
 expressed as docstring markers in the DAG-construction function:
 
 ```
@@ -66,10 +66,10 @@ once cosim has run with tracing enabled.
 
 | File | What it holds |
 |------|---------------|
-| [`examples/poly/poly.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly.py) | Schemas, `PolyAccelComponent`, `PolyTB` (SimPy), `PolyTBHls` (codegen-source) |
-| [`examples/poly/poly_build.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly_build.py) | Build DAG — the five groups above plus step definitions |
-| [`examples/poly/poly_evaluate_impl.tpp`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly_evaluate_impl.tpp) | Hand-written Horner evaluation hook (sticky impl) |
-| [`examples/poly/run.tcl`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/run.tcl) | Vitis HLS TCL driver consumed by `CSimStep` / `CSynthStep` |
+| [`examples/stream_inband/poly.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/poly.py) | Schemas, `PolyAccelComponent`, `PolyTB` (SimPy), `PolyTBHls` (codegen-source) |
+| [`examples/stream_inband/poly_build.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/poly_build.py) | Build DAG — the five groups above plus step definitions |
+| [`examples/stream_inband/poly_evaluate_impl.tpp`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/poly_evaluate_impl.tpp) | Hand-written Horner evaluation hook (sticky impl) |
+| [`examples/stream_inband/run.tcl`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/run.tcl) | Vitis HLS TCL driver consumed by `CSimStep` / `CSynthStep` |
 
 `gen/` (kernel + TB C++) and `include/` (schema + utility headers) are
 generated artifacts — they are `.gitignored` and rebuilt by the DAG.
@@ -77,7 +77,7 @@ generated artifacts — they are `.gitignored` and rebuilt by the DAG.
 ## Running the full pipeline
 
 ```bash
-python -m examples.poly.poly_build --through validate_timing --force --live-output
+python -m examples.stream_inband.poly_build --through validate_timing --force --live-output
 ```
 
 The last step (`validate_timing`) emits `results/timing_verdict.json`

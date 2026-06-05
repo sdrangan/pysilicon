@@ -9,7 +9,7 @@ has_children: true
 
 ## Example
 
-A representative schema appears in the [polynomial example](../../examples/poly/):
+A representative schema appears in the [polynomial example](../../examples/stream_inband/):
 
 ```python
 include_dir = "include"

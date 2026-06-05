@@ -1,7 +1,7 @@
 """Build DAG for the increment-buffer toy: Python golden → m_axi kernel codegen
 → Vitis C-sim functional verification (against the Python model).
 
-Mirrors examples/poly/poly_build.py, trimmed to the C-sim milestone (decision
+Mirrors examples/stream_inband/poly_build.py, trimmed to the C-sim milestone (decision
 11): the generated kernel is proven with the hand-written incr_tb.cpp before TB
 codegen (Phase 5).
 """

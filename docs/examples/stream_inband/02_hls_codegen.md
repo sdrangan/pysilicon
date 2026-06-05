@@ -1,6 +1,6 @@
 ---
 title: HLS Code Generation
-parent: Polynomial Accelerator
+parent: Stream In-Band Control (polynomial)
 nav_order: 2
 ---
 
@@ -98,7 +98,7 @@ body.
 ## Run just this group
 
 ```bash
-python -m examples.poly.poly_build --through gen_tb
+python -m examples.stream_inband.poly_build --through gen_tb
 ```
 
 Produces every `gen/*.cpp/.hpp` and `include/*.h` the Vitis steps in

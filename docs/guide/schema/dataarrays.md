@@ -18,7 +18,7 @@ A `DataArray` subclass declares:
 - `static`: fixed-size (`True`) or runtime-length (`False`, leading dimension)
 - `cpp_storage`: C++ layout mode (`"struct"` or `"raw"`)
 
-Example from [`examples/poly/poly.py`](../../../examples/poly/poly.py):
+Example from [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py):
 
 ```python
 class CoeffArray(DataArray):

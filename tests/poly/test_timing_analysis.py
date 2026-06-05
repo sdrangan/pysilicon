@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-# ---- path setup for examples/poly sibling module ----
-_POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
+# ---- path setup for examples/stream_inband sibling module ----
+_POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "stream_inband"
 if str(_POLY_DIR) not in sys.path:
     sys.path.insert(0, str(_POLY_DIR))
 

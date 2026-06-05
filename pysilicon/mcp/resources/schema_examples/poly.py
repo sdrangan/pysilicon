@@ -2,7 +2,7 @@
 Curated schema definitions from the polynomial accelerator example.
 
 This file contains the data schemas for the polynomial accelerator,
-extracted from examples/poly/poly_demo.py for use as teaching examples.
+extracted from examples/stream_inband/poly_demo.py for use as teaching examples.
 """
 from __future__ import annotations
 

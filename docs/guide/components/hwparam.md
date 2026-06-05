@@ -21,7 +21,7 @@ During `HwComponent.__post_init__`, raw values for `HwParam` fields are wrapped 
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py):
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py):
 
 ```python
 in_bw: HwParam[int] = 32

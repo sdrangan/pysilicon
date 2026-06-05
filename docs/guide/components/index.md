@@ -30,7 +30,7 @@ Endpoints are declared in `__post_init__` and attached with `add_endpoint(...)`,
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyAccelComponent` declares stream + regmap endpoints in `__post_init__` and registers each endpoint through `add_endpoint(...)`.
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), `PolyAccelComponent` declares stream + regmap endpoints in `__post_init__` and registers each endpoint through `add_endpoint(...)`.
 
 ## Quick reference
 

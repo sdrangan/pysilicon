@@ -359,7 +359,7 @@ class TbStatusJsonStmt(HwStmt):
     Field values are read from the C++ regmap locals that the DUT
     binding introduced (the same locals the kernel call took as
     references).  The emitter lowers this to an inline ``std::ofstream``
-    block matching the hand-written ``examples/poly/poly_tb.cpp``
+    block matching the hand-written ``examples/stream_inband/poly_tb.cpp``
     schema.
     """
     dut_local: str

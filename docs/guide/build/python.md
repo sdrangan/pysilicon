@@ -6,7 +6,7 @@ nav_order: 3
 
 # Python Simulation Pattern
 
-PySilicon doesn't ship a generic "run a SimPy simulation" build step — every design has its own components, testbench, and result format, and a generic step would either need a long parameter list or constrain you to one shape. Instead this page is the **pattern**: a worked recipe for writing your own `BuildStep` that runs a Python simulation, derived from the poly accelerator's [`PySimStep`](https://github.com/sdrangan/pysilicon/tree/main/examples/poly/poly_build.py).
+PySilicon doesn't ship a generic "run a SimPy simulation" build step — every design has its own components, testbench, and result format, and a generic step would either need a long parameter list or constrain you to one shape. Instead this page is the **pattern**: a worked recipe for writing your own `BuildStep` that runs a Python simulation, derived from the poly accelerator's [`PySimStep`](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py).
 
 When PySilicon has more than one example that follows this pattern, the common scaffolding will be extracted into a framework-level base class. Until then, copy this recipe.
 
@@ -189,7 +189,7 @@ Notes:
 
 ## CLI integration
 
-If you want a `poly_build.py` style CLI on top of your DAG, the [poly version](https://github.com/sdrangan/pysilicon/tree/main/examples/poly/poly_build.py) is the reference:
+If you want a `poly_build.py` style CLI on top of your DAG, the [poly version](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) is the reference:
 
 - `--through STEP` → `dag.run(config, through=STEP)`
 - `--force` / `--force-step STEP` → `dag.run(config, force=...)`

@@ -7,6 +7,50 @@ has_children: true
 
 # Examples
 
-The examples section collects runnable end-to-end flows that show how PySilicon schemas, generated headers, and test vectors fit together.
+PySilicon's examples are a **teaching progression**: each one introduces a single
+new hardware-interface concept on top of the previous, using a small computation
+as its vehicle. Every directory is named for the **pattern** it teaches; the
+computation keeps its own identity in the files inside (e.g. `stream_inband/`
+holds the polynomial accelerator in `poly.py`).
 
-- [Simple polynomial accelerator](./poly/): A complete Python and Vitis C-simulation example for a polynomial evaluation accelerator.
+## The general PySilicon flow
+
+Python is the single source of truth. Every *full* example walks the same five
+stages, each derived from the one before:
+
+1. **Python model** — the golden numerical behavior, in numpy / PyTorch.
+2. **Python simulation** — the SimPy transactional simulation (Components +
+   Interfaces): protocol-accurate, cycle-approximate.
+3. **Code generation** — a Vitis HLS C++ kernel **and** testbench emitted from
+   that same Python model.
+4. **C and RTL simulation** — Vitis C-simulation, then C-synthesis followed by
+   RTL co-simulation, each checked against the Python golden model.
+5. **Timing extraction** — cycle and burst measurements pulled from
+   co-simulation and fed back into the Python timing model.
+
+The *Flow coverage* column below cites these stage numbers.
+
+## The five patterns
+
+The progression moves more of the host↔accelerator contract off the control
+plane and into shared structures at each step: from **all control in registers**,
+to **control in-band on the data stream**, to **data in memory**, to **control
+also in memory**. `pure_stream` slots in early as the boundary-free streaming
+base case.
+
+| # | Pattern (directory) | Vehicle | New concept introduced | Flow coverage | Status |
+|---|---|---|---|---|---|
+| 1 | [`regmap`](./regmap/) | simple function | register-mapped control (AXI4-Lite) | stages 1–5 | available |
+| 2 | `pure_stream` | moving-average filter | streaming dataflow — no packet boundary, no TLAST, no control | planned | reserved (not built yet) |
+| 3 | [`stream_inband`](./stream_inband/) | polynomial | packetization (TLAST) + in-band control on the stream | stages 1–5 | available |
+| 4 | `shared_mem` | histogram | data in memory (AXI-MM), control over a dedicated stream | stages 1–5 | dir still `examples/histogram/`; codegen upgrade pending |
+| 5 | `mem_queue` | vector unit | control *also* in memory, via a descriptor queue | stages 1–2 (codegen TBD) | reserved (not built yet) |
+
+## Minimal codegen reference
+
+[`examples/increment/`](https://github.com/sdrangan/pysilicon/tree/main/examples/increment)
+is **not** one of the five teaching patterns — it is the *minimal* AXI-MM
+(`m_axi`) codegen regression: the smallest vehicle (increment a buffer in place)
+that exercises the full generated-kernel path, stages 1–5, for memory-mapped
+access. Reach for it when you want the smallest working reference for `m_axi`
+codegen rather than a didactic walkthrough.

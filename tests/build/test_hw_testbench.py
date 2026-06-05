@@ -190,7 +190,7 @@ def test_tb_files_to_str_returns_single_file():
 # Phase 3 — DUT binding + dut.run() lowering
 # ---------------------------------------------------------------------------
 
-from examples.poly.poly import PolyAccelComponent
+from examples.stream_inband.poly import PolyAccelComponent
 
 
 @dataclass
@@ -293,7 +293,7 @@ def test_phase3_dut_run_with_args_is_rejected():
 # Phase 4 — push/pop + file IO + status JSON
 # ---------------------------------------------------------------------------
 
-from examples.poly.poly import CoeffArray, PolyCmdHdr, PolyRespHdr, Float32
+from examples.stream_inband.poly import CoeffArray, PolyCmdHdr, PolyRespHdr, Float32
 from pysilicon.hw.dataschema import DataArray
 
 

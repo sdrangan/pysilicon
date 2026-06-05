@@ -21,7 +21,7 @@ This keeps timing checks reproducible and machine-readable: build runs always pr
 
 ## Example
 
-From [`examples/poly/poly_build.py`](../../../examples/poly/poly_build.py), the timing-check segment wires the three-step chain:
+From [`examples/stream_inband/poly_build.py`](../../../examples/stream_inband/poly_build.py), the timing-check segment wires the three-step chain:
 
 ```python
 outer_dag.add(ExtractPyTimingStep(...))

@@ -1,6 +1,6 @@
 ---
 title: C-Sim Functional Verification
-parent: Polynomial Accelerator
+parent: Stream In-Band Control (polynomial)
 nav_order: 3
 ---
 
@@ -86,7 +86,7 @@ under its golden filename so a side-by-side hexdump is one
 ## Run just this group
 
 ```bash
-python -m examples.poly.poly_build --through validate_csim
+python -m examples.stream_inband.poly_build --through validate_csim
 ```
 
 Requires Vitis HLS on `PATH` (the C-sim step shells out to

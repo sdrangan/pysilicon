@@ -1,11 +1,11 @@
 ---
-title: Register Map
+title: Register Map (simple function)
 parent: Examples
-nav_order: 5
+nav_order: 1
 has_children: true
 ---
 
-# Register Map
+# Register Map (simple function)
 
 This is the first end-to-end example in the interface guide. It walks through one PySilicon kernel from the Python specification all the way to RTL co-simulation, using the simplest of the AXI-* interfaces — an **AXI-Lite register map**.
 
@@ -68,7 +68,7 @@ Vitis HLS prepends a small fixed control region to every `s_axilite`-controlled 
 
 ## File map
 
-The Python source, build script, and Vitis driver all live in [`examples/regmap_simp_fun/`](../../../examples/regmap_simp_fun/):
+The Python source, build script, and Vitis driver all live in [`examples/regmap/`](../../../examples/regmap/):
 
 - `simp_fun.py` — the `HwComponent` kernel, its `VitisRegMap`, and a SimPy host-side testbench.
 - `simp_fun_build.py` — the build DAG: golden Python sim → HLS codegen → Vitis C-sim → C-synth → cosim timing.

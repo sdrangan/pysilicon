@@ -149,7 +149,7 @@ Must return a `dict[str, Any]` covering every name in `produces`. Raise `Runtime
 
 ### expected_paths(config)
 
-Optional override. Returns a `dict[str, Path]` for any file artifact whose path depends on `config.params` rather than being a static `Path` declared in `produces`. The DAG calls this during pre-build path resolution (used by `--list-artifacts` and `--status`). See `PySimStep` in [examples/poly/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/poly/poly_build.py) for the canonical example: its log file path comes from `config.params["log_file"]`.
+Optional override. Returns a `dict[str, Path]` for any file artifact whose path depends on `config.params` rather than being a static `Path` declared in `produces`. The DAG calls this during pre-build path resolution (used by `--list-artifacts` and `--status`). See `PySimStep` in [examples/stream_inband/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) for the canonical example: its log file path comes from `config.params["log_file"]`.
 
 ---
 
@@ -236,7 +236,7 @@ The DAG offers a few read-only views useful for CLIs, AI tools, and debugging:
 - `dag.describe()` — same data as a Markdown table.
 - `dag.results_status(config)` — pre-build freshness status: per file artifact, `{path, exists, mtime, stale, stale_because}`.
 
-These are the primitives behind `--list-steps`, `--list-artifacts`, `--status`, and the verbose listing in the [poly CLI](https://github.com/sdrangan/pysilicon/tree/main/examples/poly/poly_build.py).
+These are the primitives behind `--list-steps`, `--list-artifacts`, `--status`, and the verbose listing in the [poly CLI](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py).
 
 ---
 

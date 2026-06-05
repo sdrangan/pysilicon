@@ -16,7 +16,7 @@ from pysilicon.build.verify_steps import FunctionalVerifyStep
 from pysilicon.toolchain import toolchain
 
 try:
-    from examples.regmap_simp_fun.simp_fun import (
+    from examples.regmap.simp_fun import (
         DEFAULT_VECTOR,
         S32,
         SimpFunCase,
@@ -25,7 +25,7 @@ try:
         simulate_case,
         write_sim_summary,
     )
-    from examples.regmap_simp_fun.timing_diagram import write_timing_diagram
+    from examples.regmap.timing_diagram import write_timing_diagram
 except ModuleNotFoundError:
     from simp_fun import (  # type: ignore[no-redef]
         DEFAULT_VECTOR,
@@ -304,7 +304,7 @@ def build_simp_fun_dag() -> BuildDag:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the regmap_simp_fun example.")
+    parser = argparse.ArgumentParser(description="Run the regmap example.")
     parser.add_argument("--through", metavar="STEP", default="extract_py_timing",
                         help="Run the DAG up to and including this step.")
     parser.add_argument("--list-steps", action="store_true",

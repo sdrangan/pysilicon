@@ -524,7 +524,7 @@ def test_cpp_kernel_name_poly_accel_uses_override():
     from pysilicon.build.hwgen import cpp_kernel_name
     import sys
     from pathlib import Path
-    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
+    POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "stream_inband"
     if str(POLY_DIR) not in sys.path:
         sys.path.insert(0, str(POLY_DIR))
     from poly import PolyAccelComponent

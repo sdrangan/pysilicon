@@ -22,7 +22,7 @@ Kernel extraction selects `on_start` when a component carries a `VitisRegMapMMIF
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyAccelComponent.on_start()` and `@synthesizable evaluate(...)` are extracted as kernel IR, while `PolyTBHls.main()` is extracted through testbench mode.
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), `PolyAccelComponent.on_start()` and `@synthesizable evaluate(...)` are extracted as kernel IR, while `PolyTBHls.main()` is extracted through testbench mode.
 
 ```python
 @synthesizable

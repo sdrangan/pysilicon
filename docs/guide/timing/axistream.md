@@ -12,7 +12,7 @@ The VcdParser class has specific methods for extracting data on AXI4 streams.
 ## Loading the AXI4-Stream Signals
 
 After you have created a [VcdParser](./vcd.md), you can load the AXI4-stream signals into the parser as follows.
-Consider  [polynomial example demo](../../examples/poly/) where the polynomial accelerator kernel,`poly`,  communicates over two AXI4-Stream interfaces:
+Consider  [polynomial example demo](../../examples/stream_inband/) where the polynomial accelerator kernel,`poly`,  communicates over two AXI4-Stream interfaces:
 
 - `in_stream`: An AXI4 input stream that receives the command header followed by input sample data
 - `out_stream`: An AXI4 output stream where the kernel sends response header, output sample data, and response footer

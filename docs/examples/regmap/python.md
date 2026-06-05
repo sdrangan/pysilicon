@@ -1,6 +1,6 @@
 ---
 title: Python model
-parent: Register Map
+parent: Register Map (simple function)
 nav_order: 1
 has_children: false
 ---
@@ -23,7 +23,7 @@ PySilicon's [`VitisRegMap`](../../guide/interface/regmap.md) class mirrors this 
 A register map is declared by passing a dict of `RegField` entries to `VitisRegMap`. Each `RegField` carries the field's data schema (here `S32` — a specialised signed 32-bit `IntField`) and its host-side access mode (`R` / `W` / `RW` / `W1C` / `W1S`). Offsets are assigned automatically in declaration order; field names become the keys you use for `get` / `set` everywhere downstream.
 
 ```python
-# examples/regmap_simp_fun/simp_fun.py
+# examples/regmap/simp_fun.py
 S32 = IntField.specialize(bitwidth=32, signed=True)
 
 self.regmap = VitisRegMap({

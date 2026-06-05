@@ -1468,7 +1468,7 @@ def _emit_tb_regmap_file_read(
 def _emit_tb_status_json(stmt: TbStatusJsonStmt, ctx: TbCodegenCtx) -> str:
     """``dut.regmap.write_status_json(path, fields=[...])`` →
     inline ``std::ofstream`` block matching the hand-written
-    ``examples/poly/poly_tb.cpp`` schema (each field cast to ``int``).
+    ``examples/stream_inband/poly_tb.cpp`` schema (each field cast to ``int``).
     """
     pad = ctx.pad()
     path_cpp = _emit_str_expr(stmt.path, ctx)

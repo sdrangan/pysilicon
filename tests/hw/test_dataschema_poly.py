@@ -17,8 +17,8 @@ from pysilicon.toolchain import toolchain
 
 TEST_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TEST_DIR.parent.parent
-POLY_EXAMPLE_DIR = REPO_ROOT / "examples" / "poly"
-POLY_HPP_PATH = REPO_ROOT / "examples" / "poly" / "poly.hpp"
+POLY_EXAMPLE_DIR = REPO_ROOT / "examples" / "stream_inband"
+POLY_HPP_PATH = REPO_ROOT / "examples" / "stream_inband" / "poly.hpp"
 
 INCLUDE_DIR = "include"
 WORD_BW_SUPPORTED = [32, 64]
@@ -148,7 +148,7 @@ def _float32_words(values: np.ndarray) -> np.ndarray:
 
 
 def _copy_poly_vitis_resources(dst_dir: Path) -> None:
-    # Keep examples/poly as the canonical Vitis kernel and test bench sources.
+    # Keep examples/stream_inband as the canonical Vitis kernel and test bench sources.
     for name in ["poly.hpp", "poly.cpp", "poly_tb.cpp", "run.tcl"]:
         shutil.copy(POLY_EXAMPLE_DIR / name, dst_dir / name)
 

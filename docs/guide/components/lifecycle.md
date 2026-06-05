@@ -22,7 +22,7 @@ For regmap-driven kernels, `on_start` is used as the invocation-style body trigg
 
 ## Example
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyAccelComponent` defines `on_start` for regmap-triggered kernel entry and a `@sim_only` helper (`_inc_job`) excluded from synthesis extraction.
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), `PolyAccelComponent` defines `on_start` for regmap-triggered kernel entry and a `@sim_only` helper (`_inc_job`) excluded from synthesis extraction.
 
 ## Quick reference
 

@@ -1,6 +1,6 @@
 ---
 title: Vitis HLS Code Generation
-parent: Register Map
+parent: Register Map (simple function)
 nav_order: 3
 has_children: false
 ---
@@ -13,10 +13,10 @@ The codegen pipeline reuses the same `HlsCodegenStep` build step used by every P
 
 ## Build Step
 
-Both stages are added to the build DAG in [`simp_fun_build.py`](../../../examples/regmap_simp_fun/simp_fun_build.py):
+Both stages are added to the build DAG in [`simp_fun_build.py`](../../../examples/regmap/simp_fun_build.py):
 
 ```python
-# examples/regmap_simp_fun/simp_fun_build.py
+# examples/regmap/simp_fun_build.py
 dag.add(HlsCodegenStep(
     name="gen_kernel",
     comp_class=SimpFunComponent,
@@ -62,7 +62,7 @@ The auto-generated kernel files declare the AXI-Lite slave, the regmap struct, e
 The full hand-written compute body for simp_fun:
 
 ```cpp
-// examples/regmap_simp_fun/simp_fun_compute_impl.cpp
+// examples/regmap/simp_fun_compute_impl.cpp
 #include <ap_int.h>
 
 namespace simp_fun_impl {
@@ -91,7 +91,7 @@ The first time you run the build, `HlsCodegenStep` writes a minimal stub for thi
 To run only the codegen portion of the flow:
 
 ```bash
-cd examples/regmap_simp_fun
+cd examples/regmap
 python simp_fun_build.py --through gen_tb
 ```
 

@@ -188,7 +188,7 @@ Source class: [`BoundRegMap`](../../../pysilicon/hw/regmap.py).
 
 ### Example (host-side testbench)
 
-From [`examples/poly/poly.py`](../../../examples/poly/poly.py), `PolyTB.run_proc`:
+From [`examples/stream_inband/poly.py`](../../../examples/stream_inband/poly.py), `PolyTB.run_proc`:
 
 ```python
 rm = self._regmap().bind_master(self.m_lite, base_addr=self.base_addr)
@@ -383,7 +383,7 @@ class VitisRegMapMMIFSlave(RegMapMMIFSlave):
 
 ## Worked example: poly accelerator
 
-The polynomial-evaluation kernel from [examples/poly](https://github.com/sdrangan/pysilicon/tree/main/examples/poly) uses a `VitisRegMap` for control and status. The kernel implements the **persistent-kernel** pattern: the host writes `ap_start` once, the kernel processes transactions back-to-back from its AXI-Stream input, and only halts (returning) when an error is detected. On halt, the error code and offending transaction ID are latched into the register map for the host to read.
+The polynomial-evaluation kernel from [examples/stream_inband](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband) uses a `VitisRegMap` for control and status. The kernel implements the **persistent-kernel** pattern: the host writes `ap_start` once, the kernel processes transactions back-to-back from its AXI-Stream input, and only halts (returning) when an error is detected. On halt, the error code and offending transaction ID are latched into the register map for the host to read.
 
 ### Field declarations
 
@@ -642,4 +642,4 @@ from pysilicon.hw.regmap import (
 
 ## Worked example
 
-For an end-to-end walkthrough that puts these abstractions to work — declaring a `VitisRegMap`, running it in SimPy, generating the Vitis HLS kernel, and validating the measured RTL timing against the Python model — see the [Register Map example](../../examples/regmap_simp_fun/) in the Examples section.
+For an end-to-end walkthrough that puts these abstractions to work — declaring a `VitisRegMap`, running it in SimPy, generating the Vitis HLS kernel, and validating the measured RTL timing against the Python model — see the [Register Map example](../../examples/regmap/) in the Examples section.

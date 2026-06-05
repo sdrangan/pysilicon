@@ -6,7 +6,7 @@ nav_order: 4
 
 # Vitis Pattern
 
-> **Status: pattern only.** PySilicon does not yet ship framework-level steps for Vitis C-sim, C-synth, or report inspection. The steps below live in [examples/poly/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/poly/poly_build.py) and serve as the canonical recipe to copy. Once a second design uses them, the genuinely-common pieces (toolchain invocation, report parsing) will be extracted into `pysilicon/build/`.
+> **Status: pattern only.** PySilicon does not yet ship framework-level steps for Vitis C-sim, C-synth, or report inspection. The steps below live in [examples/stream_inband/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) and serve as the canonical recipe to copy. Once a second design uses them, the genuinely-common pieces (toolchain invocation, report parsing) will be extracted into `pysilicon/build/`.
 
 A typical Vitis pipeline has four steps:
 

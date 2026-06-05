@@ -22,7 +22,7 @@ from pysilicon.simulation.simulation import Simulation
 from pysilicon.toolchain import toolchain
 
 try:
-    from examples.poly.poly import (
+    from examples.stream_inband.poly import (
         Float32, PolyAccelComponent, PolyCmdHdr, PolyCmdType,
         PolyError, PolyRespHdr, PolyTB, PolyTBHls,
         SCHEMA_CLASSES, WORD_BW_SUPPORTED, CoeffArray,

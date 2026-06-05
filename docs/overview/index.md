@@ -149,4 +149,4 @@ who want a more structured and machine-readable hardware representation for auto
 
 - [Motivation](./motivation.md)
 - [Example](./example.md)
-- [Poly tutorial](../examples/poly/)
+- [Poly tutorial](../examples/stream_inband/)

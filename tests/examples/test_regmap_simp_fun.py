@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from examples.regmap_simp_fun.simp_fun import DEFAULT_VECTOR, S32, run_functional_cases
-from examples.regmap_simp_fun.simp_fun_build import build_simp_fun_dag
-from examples.regmap_simp_fun.timing_diagram import write_timing_diagram
+from examples.regmap.simp_fun import DEFAULT_VECTOR, S32, run_functional_cases
+from examples.regmap.simp_fun_build import build_simp_fun_dag
+from examples.regmap.timing_diagram import write_timing_diagram
 from pysilicon.build.build import BuildConfig
 
 

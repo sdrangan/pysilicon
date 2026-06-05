@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from examples.poly.poly import (
+from examples.stream_inband.poly import (
     Float32,
     PolyAccelComponent,
     PolyCmdHdr,
@@ -17,7 +17,7 @@ from examples.poly.poly import (
     PolyTB,
     connect,
 )
-from examples.poly.poly_build import build_poly_dag
+from examples.stream_inband.poly_build import build_poly_dag
 from pysilicon.build.build import BuildConfig
 from pysilicon.hw.clock import Clock
 from pysilicon.simulation.simulation import Simulation
@@ -38,7 +38,7 @@ def _read_event_times(log_file: Path) -> dict[str, float]:
     return events
 
 
-POLY_EXAMPLE_DIR = Path(__file__).resolve().parents[2] / "examples" / "poly"
+POLY_EXAMPLE_DIR = Path(__file__).resolve().parents[2] / "examples" / "stream_inband"
 
 
 def _copy_poly_vitis_resources(dst_dir: Path) -> None:

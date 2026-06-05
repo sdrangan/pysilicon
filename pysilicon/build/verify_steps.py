@@ -8,7 +8,7 @@ is fully driven by a manifest of file comparisons declared on the step
 instance.
 
 Three comparator shapes are supported, matching what
-``examples/poly/poly_build.py``'s legacy ``ValidateCSimStep`` needed:
+``examples/stream_inband/poly_build.py``'s legacy ``ValidateCSimStep`` needed:
 
 - **Schemas**: a structured :class:`~pysilicon.hw.dataschema.DataSchema`
   instance per file, compared via :meth:`DataSchema.is_close`.

@@ -16,7 +16,7 @@ import pytest
 
 from pysilicon.build.build import BuildConfig
 from pysilicon.build.verify_steps import FunctionalVerifyStep
-from examples.poly.poly import Float32, PolyCmdHdr, PolyRespHdr
+from examples.stream_inband.poly import Float32, PolyCmdHdr, PolyRespHdr
 
 
 pytestmark = pytest.mark.phase5

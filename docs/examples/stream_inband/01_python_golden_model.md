@@ -1,6 +1,6 @@
 ---
 title: Python Golden Model
-parent: Polynomial Accelerator
+parent: Stream In-Band Control (polynomial)
 nav_order: 1
 ---
 
@@ -20,7 +20,7 @@ produces.
 ## Schemas: the single source of truth
 
 The same `DataSchema` definitions in
-[`examples/poly/poly.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/poly/poly.py)
+[`examples/stream_inband/poly.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/poly.py)
 drive Python serialization, generated C++ headers, and runtime
 sample-buffer sizing:
 
@@ -90,7 +90,7 @@ parameter-fitting tooling that consumes a corpus of these files.
 ## Run just this group
 
 ```bash
-python -m examples.poly.poly_build --through extract_py_timing
+python -m examples.stream_inband.poly_build --through extract_py_timing
 ```
 
 Produces `results/sim/`, `results/sim_log.csv`, and

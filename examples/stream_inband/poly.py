@@ -340,7 +340,7 @@ class PolyTBHls(HwTestbench):
     kernel, drain the response, and emit ``regmap_status.json``.  The
     Phase-14 codegen pipeline lowers this directly to ``gen/poly_tb.cpp``
     — the file that replaces the hand-written
-    ``examples/poly/poly_tb.cpp`` deleted by Phase 6.
+    ``examples/stream_inband/poly_tb.cpp`` deleted by Phase 6.
 
     Coexists with :class:`PolyTB` (the SimPy timing-accurate model used
     by ``PySimStep``).  ``PolyTBHls`` is the codegen-only counterpart;

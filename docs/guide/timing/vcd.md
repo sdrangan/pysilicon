@@ -33,7 +33,7 @@ Next, you will have to identify the following parameters.
 | `workdir`    | CWD               | Working directory containing the `comp` folder |
 
 
-You can get the component and solution names from the directory structure created by Vitis. Running RTL co-simulation creates directories of the form `<comp>/<soln>`. For example, in the [polynomial example](../../examples/poly/), the RTL simulation generates:
+You can get the component and solution names from the directory structure created by Vitis. Running RTL co-simulation creates directories of the form `<comp>/<soln>`. For example, in the [polynomial example](../../examples/stream_inband/), the RTL simulation generates:
 
 ```bash
 pysilicon_poly_proj/solution1
@@ -82,7 +82,7 @@ vcd_path = run_xsim_vcd(
     top="poly",
     comp="pysilicon_poly_proj",
     out="dump.vcd",
-    workdir=Path("examples/poly"),
+    workdir=Path("examples/stream_inband"),
 )
 print(f"VCD written to: {vcd_path}")
 ```

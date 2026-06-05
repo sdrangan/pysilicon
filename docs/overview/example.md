@@ -42,4 +42,4 @@ outer_dag.add(ExtractCosimTimingStep(top=top_name, report_dir_artifact="report_d
 outer_dag.add(ValidateTimingStep(tolerance_cycles=timing_tol_cycles))
 ```
 
-For the complete walkthrough and artifacts, see [Examples / Poly](../examples/poly/).
+For the complete walkthrough and artifacts, see [Examples / Poly](../examples/stream_inband/).

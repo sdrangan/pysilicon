@@ -1,4 +1,4 @@
-# `regmap_simp_fun`
+# `regmap`
 
 Teaching-first `VitisRegMap` example for a scalar AXI-Lite kernel.
 

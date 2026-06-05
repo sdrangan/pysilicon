@@ -1,6 +1,6 @@
 ---
 title: C-Synth Resource Estimation
-parent: Polynomial Accelerator
+parent: Stream In-Band Control (polynomial)
 nav_order: 4
 ---
 
@@ -51,7 +51,7 @@ implementation sketch.
 ## Run just this group
 
 ```bash
-python -m examples.poly.poly_build --through inspect_synth
+python -m examples.stream_inband.poly_build --through inspect_synth
 ```
 
 Produces `pysilicon_poly_proj/solution1/syn/report/csynth.xml`,

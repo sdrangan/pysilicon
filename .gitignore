@@ -111,15 +111,15 @@ pysilicon-extension/*.vsix
 examples/dataschema
 examples/vecunit
 examples/test
-examples/poly/include
-examples/poly/logs
-examples/poly/pysilicon_poly_proj
-examples/poly/data
-examples/poly/results
+examples/stream_inband/include
+examples/stream_inband/logs
+examples/stream_inband/pysilicon_poly_proj
+examples/stream_inband/data
+examples/stream_inband/results
 .hls.failed
 
 # Generated VCD output (use tests/fixtures/poly/timing/ for committed fixtures)
-examples/poly/vcd/
+examples/stream_inband/vcd/
 
 examples/histogram/include/
 examples/histogram/pysilicon_hist_proj/

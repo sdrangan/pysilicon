@@ -55,4 +55,4 @@ dag.run(config, through="extract_py_timing")          # stop before Vitis
 dag.run(config)                                       # full build through validate_timing
 ```
 
-See [examples/poly/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/poly/poly_build.py) for the full working pipeline this snippet is drawn from.
+See [examples/stream_inband/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) for the full working pipeline this snippet is drawn from.

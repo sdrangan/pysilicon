@@ -21,7 +21,7 @@ The emitter handles C++ type lowering, top-level function signatures, namespace-
 
 ## Example
 
-From [`examples/poly/poly_build.py`](../../../examples/poly/poly_build.py), `HlsCodegenStep` is used in the build DAG to emit `poly.hpp`, `poly.cpp`, and impl stubs:
+From [`examples/stream_inband/poly_build.py`](../../../examples/stream_inband/poly_build.py), `HlsCodegenStep` is used in the build DAG to emit `poly.hpp`, `poly.cpp`, and impl stubs:
 
 ```python
 inner_dag.add(HlsCodegenStep(
