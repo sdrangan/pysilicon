@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import time as _time
 from dataclasses import dataclass
@@ -245,6 +246,52 @@ class GenerateTimingDiagramStep(BuildStep):
         return {"timing_diagram_svg": svg_path, "timing_diagram_json": json_path}
 
 
+@dataclass(kw_only=True)
+class SyncDocsFiguresStep(BuildStep):
+    """Promote the generated timing diagram into the committed docs asset, on demand.
+
+    Copies ``results/timing_diagram.svg`` -> ``docs/examples/regmap/images/`` and
+    writes a ``sync_status.json`` provenance record (source path + content hash) --
+    the cheap staleness signal a docs lint can check without re-running Vitis.
+    Mirrors the shared_mem committed-figure workflow.  Run on demand via
+    ``python simp_fun_build.py --through sync_docs_figures``; review the resulting
+    ``git diff`` under ``docs/examples/regmap/images/`` and commit.
+    """
+
+    description = "Copy the generated timing diagram into docs/images and record provenance."
+    consumes = ["timing_diagram_svg"]
+    produces = {"docs_figures_sync": Path("docs/examples/regmap/images/sync_status.json")}
+    params = {}
+
+    def run(self, config: BuildConfig, timing_diagram_svg, **_) -> dict:
+        # docs/ lives at the repo root; the example dir is examples/regmap.
+        repo_root = config.root_dir.parents[1]
+        src = Path(timing_diagram_svg)
+        if not src.exists():
+            raise RuntimeError(
+                f"Timing diagram missing: {src} "
+                "(run --through generate_timing_diagram first)."
+            )
+        images_dir = repo_root / "docs" / "examples" / "regmap" / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        dst = images_dir / "timing_diagram.svg"
+        dst.write_bytes(src.read_bytes())
+        sync_path = images_dir / "sync_status.json"
+        sync_path.write_text(
+            json.dumps(
+                {"figures": [{
+                    "name": "timing_diagram",
+                    "source": "results/timing_diagram.svg",
+                    "dest": "docs/examples/regmap/images/timing_diagram.svg",
+                    "source_sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
+                }]},
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        return {"docs_figures_sync": sync_path}
+
+
 def build_simp_fun_dag() -> BuildDag:
     dag = BuildDag()
     dag.add(SourceStep(artifact="simp_fun_source", path=_SOURCE_DIR / "simp_fun.py"))
@@ -300,6 +347,7 @@ def build_simp_fun_dag() -> BuildDag:
         tolerance_cycles=4,
     ))
     dag.add(GenerateTimingDiagramStep(name="generate_timing_diagram"))
+    dag.add(SyncDocsFiguresStep(name="sync_docs_figures"))
     return dag
 
 
