@@ -480,9 +480,10 @@ class RegMapMMIFSlave(MMIFSlave):
 class VitisRegMap(RegMap):
     """RegMap with Vitis ap_ctrl_hs control conventions auto-applied.
 
-    v1: prepends ``ap_start`` (W1S) at offset 0x00.  User fields start at 0x04.
-    v2: expands to the full bit-packed control word (ap_done, ap_idle, ap_ready,
-        auto_restart) plus optional GIE/IER/ISR interrupt registers. (Not in v1.)
+    Prepends ``ap_start`` (W1S) at 0x00 and ``ap_done`` (R) at 0x04; user fields
+    start at 0x08.  A future v2 would pack the remaining control bits (ap_idle,
+    ap_ready, auto_restart) into one word plus optional GIE/IER/ISR interrupt
+    registers.
     """
 
     def __init__(self, fields: dict[str, RegField], bitwidth: int = 32) -> None:

@@ -183,6 +183,7 @@ Kernel-side `RegMap.get()` / `RegMap.set()` run in-process on the component obje
 - `BoundRegMap.get(name)` (coroutine): reads through `master.read_schema(...)` and returns native Python values (`int`, `IntEnum`, `float`, or schema instances for array/list fields).
 - `BoundRegMap.set(name, value)` (coroutine): writes through `master.write_schema(...)`, auto-wrapping raw values using the field schema.
 - `BoundRegMap.start()` (coroutine): convenience launch helper for `VitisRegMap` that writes `ap_start`.
+- `BoundRegMap.poll_end(field="ap_done", interval=…, max_polls=…)` (coroutine): polls a status field until it reads its completion value (default `ap_done == 1`), returns the read value, and raises after `max_polls`. The standard "wait for the kernel to finish" helper on a `VitisRegMap`.
 
 Source class: [`BoundRegMap`](../../../pysilicon/hw/regmap.py).
 
@@ -208,7 +209,7 @@ This keeps host-side register access aligned with kernel-side ergonomics while p
 - Use `bind_master(...)` once per `(master, base_addr)` pair.
 - `get(name)` returns deserialized typed values.
 - `set(name, value)` accepts either schema instances or raw values.
-- `start()` is available on `VitisRegMap`-backed maps for `ap_start`.
+- `start()` / `poll_end()` are available on `VitisRegMap`-backed maps — for the `ap_start` launch and the `ap_done` completion poll.
 - `BoundRegMap` is host-side only; kernel logic still uses `RegMap.get/set`.
 
 ---
@@ -311,15 +312,16 @@ For composite fields, callers that need "all words written" semantics must track
 
 ## VitisRegMap
 
-A `VitisRegMap` is a `RegMap` subclass that auto-prepends the standard Vitis HLS `ap_ctrl_hs` control register at offset `0x00`. The user only declares their own kernel-specific fields; `ap_start` is added automatically.
+A `VitisRegMap` is a `RegMap` subclass that auto-prepends the standard Vitis HLS `ap_ctrl_hs` control registers. The user only declares their own kernel-specific fields; `ap_start` (W1S, `0x00`) and `ap_done` (R, `0x04`) are added automatically, and the [`VitisRegMapMMIFSlave`](#vitisregmapmmifslave) manages their values (it clears `ap_done` on launch and sets it when the kernel returns).
 
 ```python
 class VitisRegMap(RegMap):
     """RegMap with Vitis ap_ctrl_hs control conventions auto-applied.
 
-    v1: prepends `ap_start` (W1S) at offset 0x00.  User fields start at 0x04.
-    v2: expands to the full bit-packed control word (ap_done, ap_idle, ap_ready,
-        auto_restart) plus optional GIE/IER/ISR interrupt registers.
+    Prepends `ap_start` (W1S) at 0x00 and `ap_done` (R) at 0x04; user fields
+    start at 0x08.  A future v2 packs the remaining control bits (ap_idle,
+    ap_ready, auto_restart) into one word plus optional GIE/IER/ISR interrupt
+    registers.
     """
     def __init__(self, fields: dict[str, RegField], bitwidth: int = 32) -> None: ...
 
@@ -338,12 +340,12 @@ POLY_REGMAP = VitisRegMap({
     "tx_id":        RegField(TxIdField,      RegAccess.R,   description="TX id of halted txn"),
     "coeffs":       RegField(CoeffArray,     RegAccess.RW,  description="Default coefficients"),
 })
-# offset_of("ap_start") == 0x00, offset_of("status_clear") == 0x04, etc.
+# offset_of("ap_start") == 0x00, offset_of("ap_done") == 0x04, offset_of("status_clear") == 0x08, etc.
 ```
 
 User-declared field names beginning with `ap_` are rejected at construction time to prevent collisions with current and future Vitis-reserved names.
 
-The bit layout of the v1 control register is a simplification of Vitis's real control word — Vitis packs `ap_start`, `ap_done`, `ap_idle`, `ap_ready`, and `auto_restart` into one 32-bit register with bit-level access semantics. In v1, only `ap_start` is exposed and it occupies the entire word at `0x00`. Host driver code that writes `1` to `0x00` to launch is bit-compatible with Vitis; reads of `0x00` are not (Vitis returns the live state of the other bits). See [Planned (v2)](#planned-vitisregmap-v2-control-register).
+PySilicon's control region is a simplification of Vitis's real control word. Vitis packs `ap_start`, `ap_done`, `ap_idle`, `ap_ready`, and `auto_restart` into one 32-bit register at `0x00` with bit-level access semantics. PySilicon instead exposes `ap_start` and `ap_done` as **two separate full-word registers** (`0x00` and `0x04`) — enough for the launch-then-poll lifecycle, and simpler to model. Host code that writes `1` to `0x00` to launch is bit-compatible with Vitis; the packed `ap_idle` / `ap_ready` / `auto_restart` bits are not yet modeled. See [Planned (v2)](#planned-vitisregmap-v2-control-register).
 
 ---
 
@@ -362,8 +364,8 @@ class VitisRegMapMMIFSlave(RegMapMMIFSlave):
 
 1. Host writes `1` to the `ap_start` register.
 2. If `on_start` is already running (a previous launch hasn't returned), the write is silently ignored. This mirrors Vitis `ap_ctrl_hs`, where `ap_start` writes are gated by `ap_idle`. The W1S auto-clear of `ap_start` still fires.
-3. Otherwise the slave spawns `env.process(on_start())` and marks itself busy.
-4. When `on_start` returns, the slave marks itself idle. Subsequent `ap_start` writes will launch a new invocation.
+3. Otherwise the slave clears `ap_done` to `0`, spawns `env.process(on_start())`, and marks itself busy.
+4. When `on_start` returns, the slave sets `ap_done` to `1` (in a `finally` block) and marks itself idle. The host polls `ap_done` to detect completion; subsequent `ap_start` writes launch a new invocation.
 
 ### What `on_start` should do
 
@@ -376,8 +378,8 @@ class VitisRegMapMMIFSlave(RegMapMMIFSlave):
 
 ### What the slave does not do
 
-- The slave does **not** set any status field automatically. Error codes, transaction IDs, sticky flags, etc. are kernel-specific and remain the kernel author's responsibility (set via `regmap.set(name, value)` before `return`ing).
-- The slave does **not** model `ap_done` / `ap_idle` / `ap_ready` as readable registers in v1 (deferred to v2 — see below).
+- The slave **does** auto-manage `ap_done` (cleared on launch, set on return), but does **not** set any *user* status field. Error codes, transaction IDs, sticky flags, etc. are kernel-specific and remain the kernel author's responsibility (set via `regmap.set(name, value)` before `return`ing).
+- The slave does **not** model `ap_idle` / `ap_ready` / `auto_restart` as readable registers yet (deferred to v2 — see below).
 
 ---
 
@@ -496,7 +498,7 @@ The same `VitisRegMap` object drives the SimPy simulation, the (planned) HLS pra
 
 ## Planned: VitisRegMap v2 control register
 
-The v1 `VitisRegMap` simplifies the Vitis control register to a single W1S `ap_start` bit occupying the entire word at offset `0x00`. v2 expands it to the full bit-packed `ap_ctrl_hs` register that Vitis HLS actually generates, with bit-level access semantics within one bus word.
+Today `VitisRegMap` exposes `ap_start` (`0x00`) and `ap_done` (`0x04`) as two separate full-word registers — enough for the launch-then-poll lifecycle. v2 would pack them, plus the remaining control bits, into the single bit-packed `ap_ctrl_hs` register at `0x00` that Vitis HLS actually generates, with bit-level access semantics within one bus word.
 
 ### Bit layout at offset 0x00
 
