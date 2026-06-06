@@ -79,7 +79,7 @@ def compute(self, x: Int32, a: Int32, b: Int32) -> Int32:
     return Int32(relu_affine(int(x.val), int(a.val), int(b.val)))
 ```
 
-The `@synthesizable` decorator marks `compute` as a method whose body will be lowered to C++ by the codegen pipeline (covered on the [synthesis](./synthesis.md) page). `on_start` is sim-only; in the generated kernel it is replaced by Vitis's normal kernel-entry control flow.
+The `@synthesizable` decorator marks `compute` as a method whose body will be lowered to C++ by the codegen pipeline (covered on the [code generation](./codegen.md) page). `on_start` is sim-only; in the generated kernel it is replaced by Vitis's normal kernel-entry control flow.
 
 ## Creating the Host
 
@@ -143,7 +143,7 @@ def simulate_case(case: SimpFunCase, *, clk_freq=100e6, latency_cycles=4):
                             ap_done=int(host.ap_done), passed=bool(host.passed))
 ```
 
-After `sim.run_sim()` returns, `host.y` holds the computed result and `host.ap_done` holds the completion bit; the `SimpFunSimResult` packages them with the input case for downstream comparison against the C-sim and RTL-cosim runs (covered on the [synthesis](./synthesis.md) page).
+After `sim.run_sim()` returns, `host.y` holds the computed result and `host.ap_done` holds the completion bit; the `SimpFunSimResult` packages them with the input case for downstream comparison against the C-sim and RTL-cosim runs (covered on the [C and RTL simulation](./rtlsim.md) page).
 
 A direct invocation looks like:
 
@@ -156,4 +156,4 @@ That's the full Python model — one regmap declaration, one kernel hook, one ho
 
 ## Next
 
-- [Synthesis and timing](./synthesis.md) — generating Vitis HLS code from the same Python source, running the Vitis flows, and comparing measured RTL timing against the Python model.
+- [Python Simulation](./pysim.md) — running this model in SimPy with the host-side testbench and logging the cycle timing that the synthesis pages later validate against.

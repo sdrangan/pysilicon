@@ -34,7 +34,7 @@ The kernel has three input registers (`x`, `a`, `b`) and one output register (`y
 3. Poll a  `status` (or wait for an interrupt on `ap_done`) until the kernel signals it is finished.
 4. Read `y` from its register offset.
 
-The Python simulation in [`simulation.md`](./simulation.md) implements exactly this sequence in SimPy.
+The Python simulation in [`pysim.md`](./pysim.md) implements exactly this sequence in SimPy.
 
 ## File map
 
@@ -48,7 +48,7 @@ The Python source, build script, and Vitis driver all live in [`examples/regmap/
 
 ## End-to-end stages
 
-The build DAG in `simp_fun_build.py` chains the standard five-stage pipeline introduced by the [poly example](../poly/):
+The build DAG in `simp_fun_build.py` chains the standard five-stage pipeline introduced by the [stream_inband example](../stream_inband/):
 
 - **Python golden model** — run the kernel in SimPy and record `y` plus a cycle-accurate timing log.
 - **HLS code generation** — emit the Vitis HLS kernel C++ and testbench C++ from the Python source.
@@ -58,6 +58,8 @@ The build DAG in `simp_fun_build.py` chains the standard five-stage pipeline int
 
 ## Next
 
-- [Understanding Vitis Register maps](./regmap.md) - provides a review of the register maps and the AXI4-Lite protocol
-- [Python simulation](./simulation.md) — declaring the regmap, running it in SimPy, and the host-side testbench.
-- [Synthesis and timing](./synthesis.md) — code generation, Vitis flows, and the RTL-vs-Python cycle comparison.
+- [Understanding Vitis Register Maps](./regmap.md) — a review of register maps and the AXI4-Lite protocol.
+- [Python model](./python.md) — declaring the `VitisRegMap` and writing the kernel as an `HwComponent`.
+- [Python Simulation](./pysim.md) — running it in SimPy with the host-side testbench.
+- [Vitis HLS Code Generation](./codegen.md) — generating the kernel and testbench C++ from the Python source.
+- [C and RTL Simulation](./rtlsim.md) — the Vitis flows and the RTL-vs-Python cycle comparison.
