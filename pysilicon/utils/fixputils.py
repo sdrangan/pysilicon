@@ -1,168 +1,252 @@
-from numpy.typing import NDArray
+"""Integer-backed, Vitis-bit-exact fixed-point numeric core.
+
+A value in ``ap_fixed<W, I, Q, O>`` is the stored W-bit integer ``s`` interpreted as
+``s · 2**-(W-I)``.  This module is the pure-numeric engine: the ``QMode``/``OMode``
+enums, the ``Format`` descriptor (with the fail-fast width guard), float<->stored
+quantization, the integer requantizer, and the vectorized integer arithmetic
+primitives (``mult``/``add``/``sub``/``shift``/``fixed_sum``) with their result-format
+derivation.  No DataSchema dependency — unit-testable in isolation against an exact
+``Fraction`` oracle.
+
+dtype strategy (decision 5): a single 64-bit numpy int dtype — ``int64`` for signed
+formats, ``uint64`` for unsigned (a W-bit value fits iff ``W <= 64``).  Any format
+width, declared OR derived by an op, that exceeds 64 raises ``NotImplementedError``
+at the *format-derivation* step — numpy int64/uint64 silently wrap on overflow, so
+the guard is a compile-time width check, never a runtime hope.  Ops are implemented
+wrap-free at ``W = 64`` (same-sign operands; ``AP_RND`` via ``floor + round-bit``,
+not an overflowing add).  Wide (>64-bit) support is Future, via the ``(n, k)``
+uint64-word convention.
+"""
+from __future__ import annotations
+
+import enum
+from dataclasses import dataclass
+
 import numpy as np
+from numpy.typing import NDArray
 
-# Vitis ap_fixed quantization (Q) and overflow (O) modes — the v1 subset.
-# Quantization decides how the real value's sub-LSB bits become an integer;
-# overflow decides what happens when that integer leaves the W-bit range.
-AP_TRN = "AP_TRN"    # quantize: round toward minus infinity (floor) — Vitis default
-AP_RND = "AP_RND"    # quantize: round half up (toward plus infinity on ties)
-AP_WRAP = "AP_WRAP"  # overflow: two's-complement wrap (mask) — Vitis default
-AP_SAT = "AP_SAT"    # overflow: saturate (clip to [min, max])
-
-QUANT_MODES = (AP_TRN, AP_RND)
-OVERFLOW_MODES = (AP_WRAP, AP_SAT)
+MAX_WIDTH = 64
 
 
+class QMode(enum.Enum):
+    """Quantization mode (value = the Vitis ``ap_fixed`` template token)."""
+    AP_TRN = "AP_TRN"    # round toward minus infinity (floor) — Vitis default
+    AP_RND = "AP_RND"    # round half up (ties toward plus infinity)
+
+
+class OMode(enum.Enum):
+    """Overflow mode (value = the Vitis ``ap_fixed`` template token)."""
+    AP_WRAP = "AP_WRAP"  # two's-complement wrap (mask) — Vitis default
+    AP_SAT = "AP_SAT"    # saturate (clip to [min, max])
+
+
+@dataclass(frozen=True)
+class Format:
+    """A fixed-point format ``ap_fixed<W, I, q, o>`` (or ``ap_ufixed`` if unsigned).
+
+    ``W`` total bits, ``int_bits`` = I, ``frac_bits`` = F = W - I.  Construction is
+    where the width guard fires (decision 5): any ``W > MAX_WIDTH`` — declared or
+    derived by an op — raises ``NotImplementedError`` before any numpy op can wrap.
+    """
+    W: int
+    int_bits: int                       # I (integer bits, sign-inclusive when signed)
+    signed: bool = True
+    q_mode: QMode = QMode.AP_TRN
+    o_mode: OMode = OMode.AP_WRAP
+
+    def __post_init__(self) -> None:
+        if self.W <= 0:
+            raise ValueError(f"W (total bits) must be positive, got {self.W}.")
+        if self.W > MAX_WIDTH:
+            raise NotImplementedError(
+                f"fixed-point format width W={self.W} exceeds the {MAX_WIDTH}-bit v1 "
+                "limit (numpy int64/uint64 would silently wrap). Wide (>64-bit) support "
+                "via the (n, k) uint64-word convention is Future.")
+
+    @property
+    def frac_bits(self) -> int:
+        return self.W - self.int_bits
+
+    @property
+    def dtype(self) -> type:
+        return np.int64 if self.signed else np.uint64
+
+
+def _require_same_sign(a: Format, b: Format) -> None:
+    if a.signed != b.signed:
+        raise NotImplementedError(
+            "mixed signed/unsigned fixed-point arithmetic is not supported in v1 "
+            "(numpy would coerce int64/uint64 to float64). Promote both operands to a "
+            "common signed format first.")
+
+
+# --- overflow primitives (W <= 64 safe; >= 64 wrap/sat is identity in-dtype) --
 def truncate(
     x: NDArray[np.int64] | int,
     wid: int = 32,
     signed: bool = True,
 ) -> NDArray[np.int64] | int:
-    """
-    Truncate integers to a signed or unsigned `wid`-bit two's-complement value.
-
-    Parameters
-    ----------
-    x : int or NDArray[np.int64]
-        Input integer(s) to be truncated.
-    wid : int
-        Target bit-width (including sign bit if signed=True).
-    signed : bool
-        If True, interpret the result as signed two's-complement.
-
-    Returns
-    -------
-    y : int or NDArray[np.int64]
-        The truncated value(s).
-    """
+    """Wrap integers to a ``wid``-bit two's-complement (``AP_WRAP``)."""
+    arr = np.asarray(x)
+    if wid >= MAX_WIDTH:
+        return arr                              # already within the 64-bit dtype
     mask = (1 << wid) - 1
-    y = x & mask
-
+    y = (arr.astype(np.int64) & mask)
     if signed:
         signbit = 1 << (wid - 1)
         y = np.where(y >= signbit, y - (1 << wid), y)
-
     return y
+
 
 def saturate(
     x: NDArray[np.int64] | int,
     wid: int = 32,
     signed: bool = True,
 ) -> NDArray[np.int64] | int:
-    """
-    Saturate integers to a signed or unsigned `wid`-bit two's-complement value.
-
-    Parameters
-    ----------
-    x : int or NDArray[np.int64]
-        Input integer(s) to be saturated.
-    wid : int
-        Target bit-width (including sign bit if signed=True).
-    signed : bool
-        If True, interpret the result as signed two's-complement.
-
-    Returns
-    -------
-    y : int or NDArray[np.int64]
-        The saturated value(s).
-    """
+    """Saturate integers to the ``wid``-bit range (``AP_SAT``)."""
+    arr = np.asarray(x)
+    if wid >= MAX_WIDTH:
+        return arr                              # range == dtype range -> identity
     if signed:
-        min_val = -(1 << (wid - 1))
-        max_val = (1 << (wid - 1)) - 1
+        lo, hi = -(1 << (wid - 1)), (1 << (wid - 1)) - 1
     else:
-        min_val = 0
-        max_val = (1 << wid) - 1
-    y = np.clip(x, min_val, max_val)
-
-    return y
+        lo, hi = 0, (1 << wid) - 1
+    return np.clip(arr, lo, hi)
 
 
-def _validate_format(W: int, q_mode: str, o_mode: str) -> None:
-    if W <= 0:
-        raise ValueError(f"W (total bits) must be positive, got {W}.")
-    if q_mode not in QUANT_MODES:
-        raise ValueError(f"Unsupported quantization mode {q_mode!r}; v1 supports {QUANT_MODES}.")
-    if o_mode not in OVERFLOW_MODES:
-        raise ValueError(f"Unsupported overflow mode {o_mode!r}; v1 supports {OVERFLOW_MODES}.")
+def _apply_overflow(q: NDArray, fmt: Format) -> NDArray:
+    y = truncate(q, fmt.W, fmt.signed) if fmt.o_mode == OMode.AP_WRAP \
+        else saturate(q, fmt.W, fmt.signed)
+    return np.asarray(y).astype(fmt.dtype)
 
 
-def quantize(
-    value: NDArray[np.float64] | float,
-    W: int,
-    I: int,  # noqa: E741 — ap_fixed integer-bit count
-    signed: bool = True,
-    q_mode: str = AP_TRN,
-    o_mode: str = AP_WRAP,
-) -> NDArray[np.int64] | int:
-    """Quantize real value(s) to the stored integer of ``ap_fixed<W, I, q, o>``.
+# --- quantization -------------------------------------------------------------
+def quantize_real(values: NDArray[np.float64] | float, fmt: Format) -> NDArray:
+    """Quantize real value(s) into ``fmt``'s stored integer (float -> fixed).
 
-    An ``ap_fixed<W, I>`` holds ``stored_int * 2**-(W-I)``: a ``W``-bit two's-
-    complement (signed) or unsigned integer with an implied binary point ``I``
-    bits from the MSB.  This returns that stored integer — bit-exact with what
-    Vitis stores when the same value is assigned to the type.
-
-    The pipeline is **quantize then overflow** (Vitis's order):
-
-    1. Scale to LSB units: ``scaled = value * 2**(W-I)``.  Multiplying a float64
-       by an exact power of two is an exact exponent shift, so for the v1 range
-       (``W <= 53``, magnitudes well under ``2**53``) this and the floor below are
-       exact — no rounding is introduced before the quantization being modeled.
-    2. Quantize to an integer: ``AP_TRN`` → ``floor(scaled)`` (toward -inf, for
-       positives and negatives alike); ``AP_RND`` → ``floor(scaled + 0.5)``
-       (round half up, ties toward +inf).
-    3. Overflow the W-bit range: ``AP_WRAP`` → two's-complement wrap
-       (:func:`truncate`); ``AP_SAT`` → clip to ``[min, max]`` (:func:`saturate`).
-
-    Fully vectorized: scalar in → ``int`` out, array in → ``int64`` array out.
-
-    Notes
-    -----
-    For ``W > 53`` (beyond float64's exact-integer range) an exact int/``Fraction``
-    backend would be required; v1 formats are ``W <= 53`` (compile-time template
-    params). See ``tests/utils/test_fixputils.py`` for the exact ``Fraction``
-    oracle this float64 path is proven bit-equal to.
-    """
-    _validate_format(W, q_mode, o_mode)
-    F = W - I
-    arr = np.asarray(value, dtype=np.float64)
-    scaled = arr * (2.0 ** F)               # exact exponent shift for v1 range
-
-    if q_mode == AP_TRN:
-        q = np.floor(scaled)
-    else:                                   # AP_RND — round half up (NOT np.round)
-        q = np.floor(scaled + 0.5)
-    q = q.astype(np.int64)
-
-    out = truncate(q, W, signed) if o_mode == AP_WRAP else saturate(q, W, signed)
-    out = np.asarray(out, dtype=np.int64)
-    return int(out) if arr.ndim == 0 else out
+    For loading real data into a format. ``scaled = value * 2**F`` is an exact
+    float64 exponent shift for the v1 input range (``F`` modest); the only lossy
+    step is the rounding the mode selects. Returns an array in ``fmt.dtype``."""
+    scaled = np.asarray(values, dtype=np.float64) * (2.0 ** fmt.frac_bits)
+    q = np.floor(scaled) if fmt.q_mode == QMode.AP_TRN else np.floor(scaled + 0.5)
+    return _apply_overflow(q.astype(np.int64), fmt)
 
 
-def to_float(
-    stored_int: NDArray[np.int64] | int,
-    W: int,
-    I: int,  # noqa: E741 — ap_fixed integer-bit count
-) -> NDArray[np.float64] | float:
-    """Inverse of :func:`quantize`: the real value ``stored_int * 2**-(W-I)``.
+def quantize(stored: NDArray, src: Format, target: Format) -> NDArray:
+    """Requantize stored integers from ``src`` to ``target`` format (fixed -> fixed).
 
-    Exact for the v1 range (``W <= 53``).  Vectorized (scalar → ``float``, array
-    → ``float64`` array)."""
-    F = W - I
-    arr = np.asarray(stored_int, dtype=np.int64)
-    out = arr * (2.0 ** (-F))
+    The lossy arithmetic step. Integer-exact (no float). With ``dF = Fsrc - Ftarget``:
+    ``dF <= 0`` shifts left (target keeps more fraction bits, exact); ``dF > 0``
+    rounds — ``AP_TRN`` = arithmetic ``>>`` (floor toward -inf), ``AP_RND`` =
+    ``floor + round-bit`` (the wrap-free round-half-up). Then overflow to W."""
+    s = np.asarray(stored)
+    dF = src.frac_bits - target.frac_bits
+    if dF <= 0:
+        intermediate_width = src.int_bits + target.frac_bits
+        if intermediate_width > MAX_WIDTH:
+            raise NotImplementedError(
+                f"requantize up-scale intermediate width {intermediate_width} exceeds "
+                f"{MAX_WIDTH} bits; wide support is Future.")
+        q = s.astype(target.dtype) << (-dF)
+    else:
+        floor = s >> dF                                   # arithmetic (signed) -> floor
+        if target.q_mode == QMode.AP_RND:
+            q = floor + ((s >> (dF - 1)) & 1)             # wrap-free round half up
+        else:
+            q = floor
+    return _apply_overflow(q, target)
+
+
+# --- views --------------------------------------------------------------------
+def to_float(stored: NDArray | int, fmt: Format) -> NDArray[np.float64] | float:
+    """Real-valued view ``stored * 2**-F`` (exact for the v1 range)."""
+    arr = np.asarray(stored, dtype=np.float64)
+    out = arr * (2.0 ** (-fmt.frac_bits))
     return float(out) if arr.ndim == 0 else out
 
 
-def to_bits(
-    stored_int: NDArray[np.int64] | int,
-    W: int,
-) -> NDArray[np.uint64] | int:
-    """The raw ``W``-bit unsigned bit pattern of the stored integer.
-
-    This is what Vitis's ``.range()`` returns — the two's-complement bits for a
-    signed value.  Vectorized."""
+def to_bits(stored: NDArray | int, W: int) -> NDArray[np.uint64] | int:
+    """The raw ``W``-bit unsigned pattern (Vitis ``.range()``); two's-complement."""
     if W <= 0:
-        raise ValueError(f"W (total bits) must be positive, got {W}.")
-    arr = np.asarray(stored_int, dtype=np.int64)
-    out = arr & ((1 << W) - 1)
-    return int(out) if arr.ndim == 0 else np.asarray(out, dtype=np.uint64)
+        raise ValueError(f"W must be positive, got {W}.")
+    arr = np.asarray(stored)
+    bits64 = arr.astype(np.int64).view(np.uint64) if np.issubdtype(arr.dtype, np.signedinteger) \
+        else arr.astype(np.uint64)
+    if W >= 64:
+        out = bits64
+    else:
+        out = bits64 & np.uint64((1 << W) - 1)
+    return int(out) if arr.ndim == 0 else out
+
+
+# --- format derivation (the width guard fires inside Format(...)) -------------
+def mult_format(a: Format, b: Format) -> Format:
+    """``ap_fixed`` mult: ``<Wa+Wb, Ia+Ib>`` (fraction bits add); signed if either."""
+    _require_same_sign(a, b)
+    return Format(a.W + b.W, a.int_bits + b.int_bits, a.signed or b.signed)
+
+
+def add_format(a: Format, b: Format) -> Format:
+    """``ap_fixed`` add: align fractions (F = max), grow integer bits by 1 (carry)."""
+    _require_same_sign(a, b)
+    frac = max(a.frac_bits, b.frac_bits)
+    ints = max(a.int_bits, b.int_bits) + 1
+    return Format(ints + frac, ints, a.signed or b.signed)
+
+
+def sub_format(a: Format, b: Format) -> Format:
+    """``ap_fixed`` sub: like add, but the result is always signed."""
+    _require_same_sign(a, b)
+    frac = max(a.frac_bits, b.frac_bits)
+    ints = max(a.int_bits, b.int_bits) + 1
+    return Format(ints + frac, ints, True)
+
+
+def shift_format(a: Format, n: int) -> Format:
+    """Rescale by ``2**n`` (point-move): same W/bits, I grows by n, F shrinks by n."""
+    return Format(a.W, a.int_bits + n, a.signed, a.q_mode, a.o_mode)
+
+
+def sum_format(a: Format, n_terms: int) -> Format:
+    """Reduction of ``n_terms`` values: grow integer bits by ``ceil(log2(n_terms))``."""
+    if n_terms < 1:
+        raise ValueError(f"n_terms must be >= 1, got {n_terms}.")
+    growth = (n_terms - 1).bit_length()         # ceil(log2(n_terms))
+    ints = a.int_bits + growth
+    return Format(ints + a.frac_bits, ints, a.signed, a.q_mode, a.o_mode)
+
+
+# --- vectorized integer arithmetic primitives (stored-int arrays) -------------
+def mult(sa: NDArray, a: Format, sb: NDArray, b: Format) -> tuple[NDArray, Format]:
+    r = mult_format(a, b)
+    out = np.asarray(sa).astype(r.dtype) * np.asarray(sb).astype(r.dtype)
+    return out.astype(r.dtype), r
+
+
+def add(sa: NDArray, a: Format, sb: NDArray, b: Format) -> tuple[NDArray, Format]:
+    r = add_format(a, b)
+    aa = np.asarray(sa).astype(r.dtype) << (r.frac_bits - a.frac_bits)
+    bb = np.asarray(sb).astype(r.dtype) << (r.frac_bits - b.frac_bits)
+    return (aa + bb).astype(r.dtype), r
+
+
+def sub(sa: NDArray, a: Format, sb: NDArray, b: Format) -> tuple[NDArray, Format]:
+    r = sub_format(a, b)
+    aa = np.asarray(sa).astype(r.dtype) << (r.frac_bits - a.frac_bits)
+    bb = np.asarray(sb).astype(r.dtype) << (r.frac_bits - b.frac_bits)
+    return (aa - bb).astype(r.dtype), r
+
+
+def shift(sa: NDArray, a: Format, n: int) -> tuple[NDArray, Format]:
+    """Lossless point-move rescale: stored bits unchanged, value scaled by 2**n."""
+    r = shift_format(a, n)
+    return np.asarray(sa).astype(r.dtype).copy(), r
+
+
+def fixed_sum(sa: NDArray, a: Format, axis: int | None = None) -> tuple[NDArray, Format]:
+    """Full-precision reduction: sum stored ints, format grown by ceil(log2(N))."""
+    arr = np.asarray(sa)
+    n_terms = arr.size if axis is None else arr.shape[axis]
+    r = sum_format(a, n_terms)
+    out = arr.astype(r.dtype).sum(axis=axis)
+    return np.asarray(out).astype(r.dtype), r
