@@ -20,7 +20,14 @@ import pytest
 
 from vcdvcd import VCDVCD
 
-from pysilicon.utils.vcd import AximmBeatType, SigInfo, VcdParser
+from pysilicon.utils.vcd import AximmBeatType, SigInfo, VcdParser, vcd_trace
+
+
+def test_vcd_trace_maps_levels():
+    assert vcd_trace("port") == "port"
+    assert vcd_trace("all") == "all"
+    assert vcd_trace("none") == "*"
+    assert vcd_trace("whatever") == "*"
 
 
 # ---------------------------------------------------------------------------

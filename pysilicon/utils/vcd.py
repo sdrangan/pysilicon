@@ -17,6 +17,16 @@ class AximmBeatType(IntEnum):
     IDLE = 1
     STALL = 2
 
+
+def vcd_trace(trace_level: str) -> str:
+    """Map a user trace level to the HLS cosim VCD trace pattern.
+
+    ``"port"`` and ``"all"`` pass through unchanged; any other value maps to
+    ``"*"`` (the xsim "trace everything" pattern).
+    """
+    return trace_level if trace_level in ("port", "all") else "*"
+
+
 def binary_str_to_numeric(
         bin_str : str,
         dtype : str,

@@ -31,7 +31,8 @@ from pysilicon.hw.arrayutils import (
 from pysilicon.hw.dataschema import DataSchemaStep
 from pysilicon.hw.memory import AddrUnit, Memory
 from pysilicon.toolchain import toolchain
-from pysilicon.utils.vcd import AximmBeatType
+from pysilicon.utils.jsonutil import hex_word, json_scalar
+from pysilicon.utils.vcd import AximmBeatType, vcd_trace
 
 try:
     from examples.shared_mem.hist import (
@@ -64,21 +65,6 @@ TRACE_LEVELS = ("none", "port", "all")
 DEFAULT_MAX_READ_BURST_LENGTH = 16
 DEFAULT_MAX_WRITE_BURST_LENGTH = 16
 
-def _json_scalar(value):
-    if isinstance(value, (np.integer, np.floating)):
-        return value.item()
-    return value
-
-def _json_hex_word(value, bitwidth: int) -> str:
-    if bitwidth <= 0:
-        raise ValueError("bitwidth must be positive.")
-
-    int_value = int(_json_scalar(value))
-    mask = (1 << bitwidth) - 1
-    hex_width = (bitwidth + 3) // 4
-    return f"0x{(int_value & mask):0{hex_width}x}"
-
-
 def _run_tcl(config: BuildConfig, *, start_at: str, through: str,
              trace_level: str, live_output: bool) -> None:
     """Drive run.tcl over a stage range (the env HistTest.test_vitis used)."""
@@ -91,10 +77,6 @@ def _run_tcl(config: BuildConfig, *, start_at: str, through: str,
             "PYSILICON_HIST_TRACE_LEVEL": trace_level,
         },
     )
-
-
-def _vcd_trace(trace_level: str) -> str:
-    return trace_level if trace_level in ("port", "all") else "*"
 
 
 # --- Migrated HLS / burst / timing harness (from hist_demo.HistTest) ---
@@ -364,32 +346,32 @@ class HistTest(object):
             raw_len = burst.get(len_key)
             nwords = len(burst.get("data", []))
             if raw_len is not None:
-                nwords = int(_json_scalar(raw_len)) + 1
+                nwords = int(json_scalar(raw_len)) + 1
             layout.append({
-                "addr": int(_json_scalar(addr)),
+                "addr": int(json_scalar(addr)),
                 "nwords": int(nwords),
             })
         return layout
 
     @staticmethod
     def _burst_to_jsonable(burst: dict[str, object], data_bitwidth: int) -> dict[str, object]:
-        beat_types = [int(_json_scalar(value)) for value in burst.get("beat_type", [])]
-        data_values = [_json_scalar(value) for value in np.asarray(burst.get("data", [])).tolist()]
+        beat_types = [int(json_scalar(value)) for value in burst.get("beat_type", [])]
+        data_values = [json_scalar(value) for value in np.asarray(burst.get("data", [])).tolist()]
         return {
-            "addr": None if burst.get("addr") is None else int(_json_scalar(burst["addr"])),
-            "start_idx": int(_json_scalar(burst["start_idx"])),
-            "tstart": float(_json_scalar(burst["tstart"])),
-            "data_start_idx": None if burst.get("data_start_idx") is None else int(_json_scalar(burst["data_start_idx"])),
-            "data_end_idx": None if burst.get("data_end_idx") is None else int(_json_scalar(burst["data_end_idx"])),
-            "data_tstart": None if burst.get("data_tstart") is None else float(_json_scalar(burst["data_tstart"])),
-            "data_tend": None if burst.get("data_tend") is None else float(_json_scalar(burst["data_tend"])),
-            "queue_wait_cycles": None if burst.get("queue_wait_cycles") is None else int(_json_scalar(burst["queue_wait_cycles"])),
+            "addr": None if burst.get("addr") is None else int(json_scalar(burst["addr"])),
+            "start_idx": int(json_scalar(burst["start_idx"])),
+            "tstart": float(json_scalar(burst["tstart"])),
+            "data_start_idx": None if burst.get("data_start_idx") is None else int(json_scalar(burst["data_start_idx"])),
+            "data_end_idx": None if burst.get("data_end_idx") is None else int(json_scalar(burst["data_end_idx"])),
+            "data_tstart": None if burst.get("data_tstart") is None else float(json_scalar(burst["data_tstart"])),
+            "data_tend": None if burst.get("data_tend") is None else float(json_scalar(burst["data_tend"])),
+            "queue_wait_cycles": None if burst.get("queue_wait_cycles") is None else int(json_scalar(burst["queue_wait_cycles"])),
             "beat_type": beat_types,
             "beat_type_names": [AximmBeatType(value).name.lower() for value in beat_types],
             "data": data_values,
-            "data_hex": [_json_hex_word(value, data_bitwidth) for value in data_values],
-            "awlen": None if burst.get("awlen") is None else int(_json_scalar(burst["awlen"])),
-            "arlen": None if burst.get("arlen") is None else int(_json_scalar(burst["arlen"])),
+            "data_hex": [hex_word(value, data_bitwidth) for value in data_values],
+            "awlen": None if burst.get("awlen") is None else int(json_scalar(burst["awlen"])),
+            "arlen": None if burst.get("arlen") is None else int(json_scalar(burst["arlen"])),
         }
 
     def extract_bursts(
@@ -748,7 +730,7 @@ class CosimStep(BuildStep):
         case = HistCase(ndata=ndata, nbins=nbins, seed=seed)
         data, edges = case.write_inputs(data_dir)
         _run_tcl(config, start_at="csim", through="cosim",
-                 trace_level=_vcd_trace(trace_level), live_output=live_output)
+                 trace_level=vcd_trace(trace_level), live_output=live_output)
         ok, detail = case.check_outputs(data_dir, data, edges)
         if not ok:
             raise RuntimeError(f"Cosim output mismatch (reference vector): {detail}")
@@ -766,7 +748,7 @@ class GenerateVcdStep(BuildStep):
 
     def run(self, config: BuildConfig, ndata, nbins, trace_level, **_) -> dict[str, Any]:
         ht = HistTest(example_dir=config.root_dir, ndata=ndata, nbins=nbins)
-        vcd = ht.generate_vcd(trace_level=_vcd_trace(trace_level))
+        vcd = ht.generate_vcd(trace_level=vcd_trace(trace_level))
         return {"vcd": Path(vcd)}
 
 
