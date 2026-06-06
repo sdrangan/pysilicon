@@ -24,33 +24,221 @@ rides ``m_out``); the data lives in memory over ``m_mem``. The codegen root is
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import ClassVar
 
 import numpy as np
 import numpy.typing as npt
 
-from pysilicon.hw.arrayutils import get_nwords
+from pysilicon.hw.arrayutils import get_nwords, read_array, write_array
 from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataArray
+from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField, MemAddr
 from pysilicon.hw.hw_component import HwComponent, HwParam
 from pysilicon.hw.hw_testbench import HwTestbench
 from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
 from pysilicon.hw.memif import DirectMMIF, MMIFMaster
-from pysilicon.hw.memory import MemComponent
+from pysilicon.hw.memory import AddrUnit, MemComponent, Memory
 from pysilicon.hw.synth import synthesizable
 from pysilicon.simulation.simobj import ProcessGen, SimObj
 from pysilicon.simulation.simulation import Simulation
 
-try:
-    from examples.shared_mem.hist_demo import (
-        Float32, HistCmd, HistError, HistResp, MAX_NDATA, MAX_NBINS,
-        MEM_AWIDTH, MEM_DWIDTH, STREAM_DWIDTH, Uint32Field,
-    )
-except ModuleNotFoundError:  # direct execution from the example dir
-    from hist_demo import (  # type: ignore[no-redef]
-        Float32, HistCmd, HistError, HistResp, MAX_NDATA, MAX_NBINS,
-        MEM_AWIDTH, MEM_DWIDTH, STREAM_DWIDTH, Uint32Field,
-    )
+# ---------------------------------------------------------------------------
+# Data model — schemas, type fields, constants, and the numpy golden
+# (the data-model home for the example, matching simp_fun.py; hist_build.py
+# and hist_demo.py import these from here).
+# ---------------------------------------------------------------------------
+INCLUDE_DIR = "include"
+
+TxIdField = IntField.specialize(bitwidth=16, signed=False)
+NdataField = IntField.specialize(bitwidth=32, signed=False)
+NbinField = IntField.specialize(bitwidth=32, signed=False)
+Uint32Field = IntField.specialize(bitwidth=32, signed=False, include_dir=INCLUDE_DIR)
+
+"""
+Parameters
+"""
+MAX_NDATA = 1024        # number of float32 data elements
+MAX_NBINS = 32          # number of histogram bins
+STREAM_DWIDTH = 32      # stream data width
+MEM_DWIDTH = 32         # memory data width
+MEM_AWIDTH = 64         # memory address width
+MEM_AUNIT = AddrUnit.byte  # memory address unit
+
+AddrField = MemAddr.specialize(bitwidth=MEM_AWIDTH)
+Float32 = FloatField.specialize(bitwidth=32, include_dir=INCLUDE_DIR)
+
+"""
+Define the data schemas for the histogram accelerator
+"""
+
+
+class HistError(IntEnum):
+    NO_ERROR = 0
+    INVALID_NDATA = 1
+    INVALID_NBINS = 2
+    ADDRESS_ERROR = 3
+
+
+HistErrorField = EnumField.specialize(enum_type=HistError)
+
+
+class HistCmd(DataList):
+    """Command descriptor for the histogram accelerator."""
+
+    elements = {
+        "tx_id": {
+            "schema": TxIdField,
+            "description": "Transaction ID for correlating command and response",
+        },
+        "data_addr": {
+            "schema": AddrField,
+            "description": "Base address of the input data buffer",
+        },
+        "bin_edges_addr": {
+            "schema": AddrField,
+            "description":("Base address of the output histogram bin edges.  " 
+                  "There should be nbins-1 edge values.  "
+                  "bin 0 will have values x < bin_edges[0], bin i will have values "
+                  "bin_edges[i-1] <= x < bin_edges[i], and the last bin will have values "
+                  "x >= bin_edges[nbins-2]"),
+        },
+        "ndata": {
+            "schema": NdataField,
+            "description": "Number of input data elements to histogram",
+        },
+        "nbins": {
+            "schema": NbinField,
+            "description": "Number of histogram bins to produce",
+        },
+        "cnt_addr": {
+            "schema": AddrField,
+            "description": "Base address of the output histogram counts buffer",
+        },
+    }
+
+
+class HistResp(DataList):
+    """Response descriptor returned by the histogram accelerator."""
+
+    elements = {
+        "tx_id": {
+            "schema": TxIdField,
+            "description": "Echo of the transaction ID from the command",
+        },
+        "status": {
+            "schema": HistErrorField,
+            "description": "Histogram execution status code",
+        },
+    }
+
+
+SCHEMA_CLASSES = [
+    HistErrorField,
+    HistCmd,
+    HistResp,
+]
+
+
+@dataclass(slots=True)
+class HistSimResult:
+    """Result bundle returned by HistTest.simulate."""
+
+    cmd: HistCmd
+    resp: HistResp
+    counts: np.ndarray
+    expected: np.ndarray
+
+    @property
+    def passed(self) -> bool:
+        return np.array_equal(self.counts, self.expected)
+
+
+
+class HistogramAccel(object):
+    """
+    Python model for the histogram accelerator.  This is where the core logic of the histogram computation lives, and it operates on the Memory model to read inputs and write outputs.  In a real implementation, this logic would be synthesized into hardware, but here we can use the full expressiveness of Python and numpy to implement it in a straightforward way.
+    """
+
+    def __init__(
+            self,
+            mem : Memory,
+            max_ndata: int = MAX_NDATA,
+            max_nbins: int = MAX_NBINS
+            ):
+        """
+        Constructor with the dimensioning parameters and reference to the shared memory.
+
+        Parameters:
+        -----------
+        mem: Memory
+            Reference to the shared memory instance for reading inputs and writing outputs.
+        max_ndata: int
+            Maximum number of data elements that the accelerator can process in one command.
+        max_nbins: int
+            Maximum number of histogram bins that the accelerator can produce in one command.
+        """
+        self.max_ndata = max_ndata
+        self.max_nbins = max_nbins
+        self.mem = mem
+
+    def compute_hist(
+        self,
+        cmd : HistCmd,
+    ) -> HistResp:
+        """
+        Compute the histogram based on the input command descriptor.  This method reads the input data and bin edges from memory, computes the histogram counts, and writes the counts back to memory.  It also constructs a response descriptor with the appropriate status code.
+
+        Parameters:
+        -----------
+        cmd: HistCmd
+            The command descriptor containing the transaction ID, input data address, bin edges address, number of data elements, number of bins, and output counts address.
+
+        Returns:
+        --------
+        HistResp
+            The response descriptor containing the transaction ID and status code.
+        """
+        resp = HistResp()
+        resp.tx_id = cmd.tx_id
+
+        ndata = int(cmd.ndata)
+        nbins = int(cmd.nbins)
+
+        if ndata <= 0 or ndata > self.max_ndata:
+            resp.status = HistError.INVALID_NDATA
+            return resp
+
+        if nbins <= 0 or nbins > self.max_nbins:
+            resp.status = HistError.INVALID_NBINS
+            return resp
+
+        try:
+            data_nwords = get_nwords(Float32, word_bw=self.mem.word_size, shape=ndata)
+            data_words = self.mem.read(int(cmd.data_addr), nwords=data_nwords)
+            data = np.asarray(read_array(data_words, elem_type=Float32, word_bw=self.mem.word_size, shape=ndata), dtype=np.float32)
+
+            if nbins > 1:
+                edge_shape = nbins - 1
+                edge_nwords = get_nwords(Float32, word_bw=self.mem.word_size, shape=edge_shape)
+                edge_words = self.mem.read(int(cmd.bin_edges_addr), nwords=edge_nwords)
+                bin_edges = np.asarray(
+                    read_array(edge_words, elem_type=Float32, word_bw=self.mem.word_size, shape=edge_shape),
+                    dtype=np.float32,
+                )
+            else:
+                bin_edges = np.array([], dtype=np.float32)
+
+            bin_index = np.searchsorted(bin_edges, data, side="right")
+            counts = np.bincount(bin_index, minlength=nbins).astype(np.uint32, copy=False)
+            packed_counts = write_array(counts, elem_type=Uint32Field, 
+                                        word_bw=self.mem.word_size)
+            self.mem.write(int(cmd.cnt_addr), packed_counts)
+        except ValueError:
+            resp.status = HistError.ADDRESS_ERROR
+            return resp
+
+        resp.status = HistError.NO_ERROR
+        return resp
 
 
 # ---------------------------------------------------------------------------
