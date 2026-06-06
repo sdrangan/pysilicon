@@ -7,7 +7,7 @@ has_children: false
 
 # Headless Testing Mode
 
-As described earlier, PySilicon is being equipped with an [MCP server](../installation/mcp_setup.md) to enable agentic assistance in building PySilicon code.  Most users will use this MCP in a **workspace** such as Claude Code or VS Code.  In these environments, the PySilicon MCP tools will be combined with the workspace tools along with the user context.  For example, given a prompt to build a new PySilicon hardware object, VS Code can inspect existing objects and use other context in addition to the PySilicon MCP tools for fetching examples.
+As described earlier, PySilicon is being equipped with an [MCP server](../ai_tooling/mcp_setup.md) to enable agentic assistance in building PySilicon code.  Most users will use this MCP in a **workspace** such as Claude Code or VS Code.  In these environments, the PySilicon MCP tools will be combined with the workspace tools along with the user context.  For example, given a prompt to build a new PySilicon hardware object, VS Code can inspect existing objects and use other context in addition to the PySilicon MCP tools for fetching examples.
 
 In testing the MCP agentic system, it is often useful to evaluate the agent in a **headless mode** to simulate a new user with a specified context.  For this purpose, developers have access to the `headless.run_session` command.  In this command, the user runs:
 

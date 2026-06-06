@@ -1,7 +1,7 @@
 ---
 title: OpenAI Setup
-parent: Installation
-nav_order: 2
+parent: AI Tooling
+nav_order: 3
 has_children: false
 ---
 

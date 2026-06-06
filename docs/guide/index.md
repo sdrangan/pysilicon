@@ -15,3 +15,4 @@ Welcome to PySilicon.  This folder will have guides to use the PySilicon functio
 - [Timing Analysis Tools](./timing)
 - [Hardware Interfaces](./interface/overview.md)
 - [Build System](./build/)
+- [AI Tooling](./ai_tooling/)

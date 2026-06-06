@@ -1,6 +1,6 @@
 ---
 title: Semantic Example Search
-parent: Installation
+parent: AI Tooling
 nav_order: 4
 has_children: false
 ---
