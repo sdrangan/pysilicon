@@ -4259,6 +4259,8 @@ def _wrap_datarray(val: Any, elem: type[DataSchema]) -> DataArray:
 
 
 def _elem_kind(elem: type[DataSchema]) -> str:
+    if getattr(elem, "is_complex_field", False):    # ComplexField (marker; avoids a cycle)
+        return "complex"
     if hasattr(elem, "get_format"):                 # FixedField (duck-typed; avoids a cycle)
         return "fixed"
     if isinstance(elem, type) and issubclass(elem, IntField):
@@ -4308,6 +4310,10 @@ def _datarray_binop(a: DataArray, b: Any, op: str) -> DataArray:
         raise TypeError(
             f"cannot apply '{op}' to {a.element_type.__name__} and {b.element_type.__name__} "
             "arrays (operands must be the same numeric kind: int, fixed, or float).")
+    if ka == "complex":
+        # sugar over the ComplexField functions; lazy import avoids a module cycle
+        from waveflow.hw.complexfield import cadd as _cadd, cmult as _cmult, csub as _csub
+        return {"mul": _cmult, "add": _cadd, "sub": _csub}[op](a, b)
     if ka == "fixed":
         # sugar over the existing FixedField functions; lazy import avoids a module cycle
         from waveflow.hw.fixpoint import add as _fadd, mult as _fmult, sub as _fsub
