@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 310"
+     role="img" aria-labelledby="t d" style="color-scheme: light dark;">
+  <title id="t">Waveflow flow</title>
+  <desc id="d">Python model to Python sim to HLS codegen to RTL synthesis/simulation (violet build
+    pipeline). A teal Design / verify / calibrate / iterate tier is fed by a fast inner loop from
+    Python sim and a slow outer loop from RTL, and returns to refine the model. AI assists codegen
+    and the iteration loop.</desc>
+
+  <style>
+    /* NYU Violet (#57068C) build pipeline + teal feedback loops, theme-aware via light-dark() */
+    .box   { fill: light-dark(#F3EAFB,#281243); stroke: light-dark(#57068C,#C9A0EC); stroke-width: 2.5; }
+    .bar   { fill: light-dark(#E1F3F1,#0E3A36); stroke: light-dark(#138A80,#5FD0C5); stroke-width: 2; }
+    .chip  { fill: light-dark(#F3EAFB,#2A1442); stroke: light-dark(#8A4FB8,#B98FE0); stroke-width: 1.3; }
+    .head  { fill: light-dark(#57068C,#EBD8FB); font: 700 15px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .sub   { fill: light-dark(#7A6E86,#B4A4C8); font: 400 11px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .barlbl{ fill: light-dark(#0C5E57,#D6F2EE); font: 700 15px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .ai    { fill: light-dark(#57068C,#D9C2F2); font: 700 15px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .tag   { fill: light-dark(#3E7D77,#8FC9C2); font: italic 11px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .meta  { stroke: light-dark(#8A4FB8,#B98FE0); stroke-width: 1.6; stroke-dasharray: 5 4; fill: none;
+             stroke-linecap: round; }
+    .loop  { stroke: light-dark(#138A80,#5FD0C5); stroke-width: 3; fill: none;
+             stroke-linecap: round; stroke-linejoin: round; }
+    .vio   { stroke: light-dark(#57068C,#C9A0EC); stroke-width: 1.3; fill: none; stroke-linecap: round; }
+    .afill { fill: light-dark(#8A4FB8,#B98FE0); }
+    .vfill { fill: light-dark(#57068C,#C9A0EC); }   /* violet build arrows */
+    .tfill { fill: light-dark(#138A80,#5FD0C5); }   /* teal loop arrowheads */
+    .rhead { fill: light-dark(#F3EAFB,#281243); stroke: light-dark(#57068C,#C9A0EC); stroke-width: 1.2; }
+  </style>
+
+  <defs>
+    <marker id="arrm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" class="afill"/>
+    </marker>
+    <marker id="tarr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" class="tfill"/>
+    </marker>
+  </defs>
+
+  <!-- ===== four-stage build pipeline (violet) ===== -->
+  <g>
+    <rect class="box" x="38"  y="68" width="176" height="86" rx="10"/>
+    <text class="head" x="126" y="106" text-anchor="middle">Python model</text>
+    <text class="sub"  x="126" y="125" text-anchor="middle">architecture &#183; algorithms</text>
+
+    <rect class="box" x="254" y="68" width="176" height="86" rx="10"/>
+    <text class="head" x="342" y="106" text-anchor="middle">Python sim</text>
+    <text class="sub"  x="342" y="125" text-anchor="middle">fast &#183; bit-exact</text>
+    <text class="sub"  x="342" y="139" text-anchor="middle">cycle-approximate</text>
+
+    <rect class="box" x="470" y="68" width="176" height="86" rx="10"/>
+    <text class="head" x="558" y="106" text-anchor="middle">HLS codegen</text>
+    <text class="sub"  x="558" y="125" text-anchor="middle">typed &#183; interface-defined</text>
+
+    <rect class="box" x="686" y="68" width="176" height="86" rx="10"/>
+    <text class="head" x="774" y="106" text-anchor="middle">RTL synth / sim</text>
+    <text class="sub"  x="774" y="125" text-anchor="middle">slow &#183; cycle-exact</text>
+  </g>
+
+  <!-- ===== forward dataflow: violet block arrows ===== -->
+  <polygon class="vfill" points="216,106 239,106 239,101 252,111 239,121 239,116 216,116"/>
+  <polygon class="vfill" points="432,106 455,106 455,101 468,111 455,121 455,116 432,116"/>
+  <polygon class="vfill" points="648,106 671,106 671,101 684,111 671,121 671,116 648,116"/>
+
+  <!-- ===== feedback loops: teal arrows ===== -->
+  <!-- return (bent): Design tier -> refine the model -->
+  <path class="loop" d="M270 266 H134 Q126 266 126 258 V157" marker-end="url(#tarr)"/>
+  <!-- inner / fast loop (straight): Python sim -> Design tier -->
+  <path class="loop" d="M342 156 V241" marker-end="url(#tarr)"/>
+  <text class="tag" x="350" y="201">fast loop</text>
+  <!-- outer / slow loop (bent): RTL -> Design tier -->
+  <path class="loop" d="M774 156 V258 Q774 266 766 266 H632" marker-end="url(#tarr)"/>
+  <text class="tag" x="782" y="205">slow loop</text>
+
+  <!-- ===== teal Design tier (narrower) + AI-agent robot ===== -->
+  <rect class="bar" x="270" y="243" width="360" height="46" rx="23"/>
+  <g>  <!-- robot, agent of iteration -->
+    <line  class="vio"  x1="300" y1="258" x2="300" y2="254"/>
+    <circle class="vfill" cx="300" cy="253" r="1.6"/>
+    <rect  class="rhead" x="290" y="258" width="20" height="15" rx="3"/>
+    <circle class="vfill" cx="296" cy="265" r="1.7"/>
+    <circle class="vfill" cx="304" cy="265" r="1.7"/>
+    <line  class="vio"  x1="296" y1="269.5" x2="304" y2="269.5"/>
+  </g>
+  <text class="barlbl" x="480" y="272" text-anchor="middle">Design &#183; verify &#183; calibrate &#183; iterate</text>
+
+  <!-- ===== AI assist over codegen ===== -->
+  <rect class="chip" x="518" y="14" width="80" height="32" rx="16"/>
+  <path class="afill" d="M544 19 L546.47 27.53 L555 30 L546.47 32.47 L544 41 L541.53 32.47 L533 30 L541.53 27.53 Z"/>
+  <text class="ai" x="570" y="35" text-anchor="middle">AI</text>
+  <line class="meta" x1="558" y1="46" x2="558" y2="66" marker-end="url(#arrm)"/>
+</svg>

@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 360"
+     role="img" aria-labelledby="t d" style="color-scheme: light dark;">
+  <title id="t">The Waveflow methodology — two calibrated loops</title>
+  <desc id="d">A violet build pipeline (Python model, SimPy DES, HLS codegen, RTL synth/sim) with a
+    teal feedback system. A calibrated Timing/resource model feeds SimPy DES. A fast inner loop runs
+    Agentic DSE off SimPy results; a slow outer loop runs RTL into Calibration, which fits the
+    Timing/resource model; functional verification checks the SimPy golden against RTL and feeds
+    fixes back to the model. AI assists codegen and the agentic exploration.</desc>
+
+  <style>
+    /* NYU Violet build pipeline + teal feedback machinery, theme-aware via light-dark() */
+    .box   { fill: light-dark(#F3EAFB,#281243); stroke: light-dark(#57068C,#C9A0EC); stroke-width: 2.4; }
+    .tbox  { fill: light-dark(#E1F3F1,#0E3A36); stroke: light-dark(#138A80,#5FD0C5); stroke-width: 2; }
+    .chip  { fill: light-dark(#F3EAFB,#2A1442); stroke: light-dark(#8A4FB8,#B98FE0); stroke-width: 1.3; }
+    .head  { fill: light-dark(#57068C,#EBD8FB); font: 700 14px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .sub   { fill: light-dark(#7A6E86,#B4A4C8); font: 400 10.5px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .thead { fill: light-dark(#0C5E57,#D6F2EE); font: 700 14px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .tsub  { fill: light-dark(#3E7D77,#8FC9C2); font: 400 10.5px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .ai    { fill: light-dark(#57068C,#D9C2F2); font: 700 14px 'Segoe UI',Helvetica,Arial,sans-serif; }
+    .loop  { stroke: light-dark(#138A80,#5FD0C5); stroke-width: 2.6; fill: none;
+             stroke-linecap: round; stroke-linejoin: round; }
+    .meta  { stroke: light-dark(#8A4FB8,#B98FE0); stroke-width: 1.6; stroke-dasharray: 5 4; fill: none;
+             stroke-linecap: round; }
+    .vio   { stroke: light-dark(#57068C,#C9A0EC); stroke-width: 1.3; fill: none; stroke-linecap: round; }
+    .vfill { fill: light-dark(#57068C,#C9A0EC); }
+    .afill { fill: light-dark(#8A4FB8,#B98FE0); }
+    .tfill { fill: light-dark(#138A80,#5FD0C5); }
+    .rhead { fill: light-dark(#F3EAFB,#281243); stroke: light-dark(#57068C,#C9A0EC); stroke-width: 1.2; }
+  </style>
+
+  <defs>
+    <marker id="tarr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" class="tfill"/>
+    </marker>
+    <marker id="arrm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" class="afill"/>
+    </marker>
+  </defs>
+
+  <!-- ===== top teal tier: Timing/resource model + Calibration ===== -->
+  <rect class="tbox" x="244" y="10" width="174" height="42" rx="10"/>
+  <text class="thead" x="331" y="29" text-anchor="middle">Timing / resource model</text>
+  <text class="tsub"  x="331" y="43" text-anchor="middle">calibrated &#183; approximate</text>
+
+  <rect class="tbox" x="525" y="10" width="150" height="42" rx="10"/>
+  <text class="thead" x="600" y="29" text-anchor="middle">Calibration</text>
+  <text class="tsub"  x="600" y="43" text-anchor="middle">fit timing &amp; resources</text>
+
+  <!-- ===== four-stage build pipeline (violet) ===== -->
+  <g>
+    <rect class="box" x="46"  y="90" width="150" height="72" rx="10"/>
+    <text class="head" x="121" y="121" text-anchor="middle">Python model</text>
+    <text class="sub"  x="121" y="139" text-anchor="middle">architecture &#183; algorithms</text>
+
+    <rect class="box" x="256" y="90" width="150" height="72" rx="10"/>
+    <text class="head" x="331" y="121" text-anchor="middle">SimPy DES</text>
+    <text class="sub"  x="331" y="139" text-anchor="middle">fast &#183; bit-exact</text>
+    <text class="sub"  x="331" y="152" text-anchor="middle">cycle-approximate</text>
+
+    <rect class="box" x="466" y="90" width="150" height="72" rx="10"/>
+    <text class="head" x="541" y="121" text-anchor="middle">HLS codegen</text>
+    <text class="sub"  x="541" y="139" text-anchor="middle">typed &#183; interface-defined</text>
+
+    <rect class="box" x="676" y="90" width="150" height="72" rx="10"/>
+    <text class="head" x="751" y="121" text-anchor="middle">RTL synth / sim</text>
+    <text class="sub"  x="751" y="139" text-anchor="middle">slow &#183; cycle-exact</text>
+  </g>
+
+  <!-- forward dataflow: violet block arrows -->
+  <polygon class="vfill" points="198,121 241,121 241,116 254,126 241,136 241,131 198,131"/>
+  <polygon class="vfill" points="408,121 451,121 451,116 464,126 451,136 451,131 408,131"/>
+  <polygon class="vfill" points="618,121 661,121 661,116 674,126 661,136 661,131 618,131"/>
+
+  <!-- ===== bottom teal tier: Agentic DSE + Functional verification ===== -->
+  <rect class="tbox" x="105" y="262" width="150" height="60" rx="10"/>
+  <g>  <!-- AI agent robot -->
+    <line  class="vio"  x1="180" y1="278" x2="180" y2="274"/>
+    <circle class="tfill" cx="180" cy="273" r="1.6"/>
+    <rect  class="rhead" x="170" y="278" width="20" height="15" rx="3"/>
+    <circle class="tfill" cx="176" cy="285" r="1.7"/>
+    <circle class="tfill" cx="184" cy="285" r="1.7"/>
+    <line  class="vio"  x1="176" y1="289.5" x2="184" y2="289.5"/>
+  </g>
+  <text class="thead" x="180" y="312" text-anchor="middle">Agentic DSE</text>
+
+  <rect class="tbox" x="391" y="262" width="190" height="60" rx="10"/>
+  <text class="thead" x="486" y="289" text-anchor="middle">Functional verification</text>
+  <text class="tsub"  x="486" y="305" text-anchor="middle">SimPy golden &#8596; RTL, bit-exact</text>
+
+  <!-- ===== teal feedback loops ===== -->
+  <!-- calibrated model feeds the sim -->
+  <path class="loop" d="M331 52 V90" marker-end="url(#tarr)"/>
+  <!-- inner loop: SimPy DES -> Agentic DSE -> refine model -->
+  <path class="loop" d="M300 162 V230 Q300 236 294 236 H211 Q205 236 205 242 V262" marker-end="url(#tarr)"/>
+  <path class="loop" d="M150 262 V211 Q150 205 144 205 H116 Q110 205 110 199 V162" marker-end="url(#tarr)"/>
+  <!-- functional verification inputs (SimPy DES + RTL) and fix back to model -->
+  <path class="loop" d="M360 162 V216 Q360 222 366 222 H444 Q450 222 450 228 V262" marker-end="url(#tarr)"/>
+  <path class="loop" d="M720 162 V216 Q720 222 714 222 H531 Q525 222 525 228 V262" marker-end="url(#tarr)"/>
+  <path class="loop" d="M440 322 V339 Q440 345 434 345 H78 Q72 345 72 339 V162" marker-end="url(#tarr)"/>
+  <!-- outer loop: RTL -> Calibration -> Timing/resource model -->
+  <path class="loop" d="M751 90 V37 Q751 31 745 31 H678" marker-end="url(#tarr)"/>
+  <path class="loop" d="M525 31 H423" marker-end="url(#tarr)"/>
+
+  <!-- ===== AI assist over codegen ===== -->
+  <rect class="chip" x="450" y="58" width="70" height="24" rx="12"/>
+  <path class="afill" d="M467 63 L468.63 68.37 L474 70 L468.63 71.63 L467 77 L465.37 71.63 L460 70 L465.37 68.37 Z"/>
+  <text class="ai" x="494" y="74" text-anchor="middle">AI</text>
+  <line class="meta" x1="485" y1="82" x2="485" y2="90" marker-end="url(#arrm)"/>
+</svg>
