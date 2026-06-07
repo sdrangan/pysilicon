@@ -33,5 +33,20 @@ pipeline itself is deterministic (structured `hwgen`, not an LLM), and Waveflow 
 **beneath** an agent, not just an orchestration layer **over** one. That is the difference between
 AI output that is merely plausible and AI output you can trust.
 
-Where AI plugs into the flow — assisting **codegen** and driving the **agentic DSE** loop — is
-shown in [the Waveflow flow](./flow.md).
+## AI in Waveflow (future work)
+
+Waveflow is designed to integrate AI in three places — an active and largely forward-looking area
+of development:
+
+- **AI-assisted codegen.** Generate a component's HLS kernel from its Python model against the
+  typed interface contract, so an agent fills in one well-scoped block at a time instead of a whole
+  design. (Today the codegen pipeline is deterministic `hwgen`; AI assistance layers on top of it.)
+- **Agentic design-space exploration.** An agent drives the fast inner loop, using tools that
+  extract performance, timing, and resource estimates from the SimPy simulation to choose the next
+  design point and iterate.
+- **MCP tooling.** Model Context Protocol servers help users write Waveflow code and let AI agents
+  query simulation and synthesis results directly — grounding suggestions in real artifacts rather
+  than guesswork.
+
+These map onto [the Waveflow flow](./flow.md): AI assists at **codegen** and drives the
+**agentic DSE** loop, both grounded by the bit-exact substrate.
