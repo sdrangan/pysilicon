@@ -1,7 +1,7 @@
 ---
 title: Code Generation
 parent: Data Schemas
-nav_order: 6
+nav_order: 7
 ---
 
 # Auto-generating Vitis HLS Files
