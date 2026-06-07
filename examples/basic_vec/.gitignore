@@ -1,0 +1,9 @@
+gen/
+results/
+basic_vec_proj/
+*.log
+in_a.txt
+in_b.txt
+in_c.txt
+out_bits.txt
+kernel.cpp
