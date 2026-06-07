@@ -6,8 +6,6 @@ nav_order: 3
 
 # The Waveflow flow
 
-Waveflow runs **two coupled loops**, joined by a calibrated timing/resource model.
-
 <p align="center">
   <img src="../assets/waveflow_methodology.svg" width="820"
        alt="Two-loop methodology: a violet build pipeline (Python model, SimPy DES, HLS codegen, RTL synth/sim) with a teal feedback system — Agentic DSE and Functional verification below, Calibration and the Timing/resource model above, and AI assisting codegen and exploration.">
@@ -20,6 +18,13 @@ discrete-event simulation (DES)** runs **fast** and **bit-exact** using a **cali
 cycle-approximate** timing/resource model. The same model generates **HLS codegen** (kernel +
 testbench), which **RTL synthesis / simulation** turns into cycle- and resource-**exact** ground
 truth.
+
+The whole pipeline is orchestrated by a **`BuildDag`** — a directed graph of build steps (generate
+sources, simulate, synthesize, compare bits) with explicit dependencies between them. Because those
+dependencies are declared, a run is **deterministic and reproducible**: each step's inputs and
+outputs are tracked, stages re-run only when their inputs change, and every artifact — generated
+kernels, simulation results, timing and resource reports — traces back to the design that produced
+it.
 
 ## Inner loop — fast, all-Python (agentic DSE)
 
@@ -40,9 +45,3 @@ loops share.
 In parallel, **functional verification** compares the **SimPy golden** against the generated
 **RTL**, **bit-for-bit**. A mismatch is a model or codegen bug to fix — this is the correctness
 guarantee that makes the fast loop's numbers worth trusting.
-
-## Where AI fits
-
-AI assists at **codegen** (generate the HLS) and as the **agent driving DSE** (search the design
-space). Its output is grounded and verified by the bit-exact substrate — Waveflow is the harness
-that makes AI useful here, not the other way around.
