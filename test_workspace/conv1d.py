@@ -1,4 +1,4 @@
-from pysilicon.hw.dataschema import DataArray, DataList, FloatField, IntField, MemAddr
+from waveflow.hw.dataschema import DataArray, DataList, FloatField, IntField, MemAddr
 
 
 INCLUDE_DIR = "include"

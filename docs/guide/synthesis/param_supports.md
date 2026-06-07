@@ -14,9 +14,9 @@ This pattern is used when Vitis needs concrete tops rather than templated top-le
 
 ## API
 
-- [`param_supports`](../../../pysilicon/hw/hw_component.py) class variable on `HwComponent`.
-- [`validate_param_supports(comp_class)`](../../../pysilicon/hw/hw_component.py) checks keys and overrides.
-- Kernel naming follows `cpp_kernel_name` + `_<variant_key>` in [`kernel_signature`](../../../pysilicon/build/hwgen.py).
+- [`param_supports`](../../../waveflow/hw/hw_component.py) class variable on `HwComponent`.
+- [`validate_param_supports(comp_class)`](../../../waveflow/hw/hw_component.py) checks keys and overrides.
+- Kernel naming follows `cpp_kernel_name` + `_<variant_key>` in [`kernel_signature`](../../../waveflow/build/hwgen.py).
 
 ## Example
 

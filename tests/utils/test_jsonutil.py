@@ -1,10 +1,10 @@
-"""Unit tests for pysilicon.utils.jsonutil (json_scalar, hex_word)."""
+"""Unit tests for waveflow.utils.jsonutil (json_scalar, hex_word)."""
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from pysilicon.utils.jsonutil import hex_word, json_scalar
+from waveflow.utils.jsonutil import hex_word, json_scalar
 
 
 def test_json_scalar_coerces_numpy_scalars():

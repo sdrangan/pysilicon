@@ -7,7 +7,7 @@ has_children: false
 
 # Memory Interfaces in Vitis HLS
 
-This page explains how the PySilicon memory model maps to HLS/Vitis memory interfaces. Two interface styles are covered:
+This page explains how the Waveflow memory model maps to HLS/Vitis memory interfaces. Two interface styles are covered:
 
 - **AXI master (`m_axi`)** — byte-addressed, used for off-chip DDR or PYNQ buffers.
 - **Local array / BRAM-like** — word-indexed, used for on-chip storage or direct BRAM ports.
@@ -77,7 +77,7 @@ const int edge_word_idx  = memmgr::byte_addr_to_word_index<mem_dwidth>(cmd.bin_e
 const int count_word_idx = memmgr::byte_addr_to_word_index<mem_dwidth>(cmd.cnt_addr);
 ```
 
-`byte_addr_to_word_index<W>(addr)` computes `addr / (W / 8)`. These helpers are in `memmgr.hpp`, which is included automatically when you use the PySilicon build utilities.
+`byte_addr_to_word_index<W>(addr)` computes `addr / (W / 8)`. These helpers are in `memmgr.hpp`, which is included automatically when you use the Waveflow build utilities.
 
 ### Serialized reads and writes
 
@@ -160,7 +160,7 @@ cmd.cnt_addr       = count_addr
 ```cpp
 // Flat memory buffer
 static mem_word_t mem[MEM_SIZE] = {};
-pysilicon::memmgr::MemMgr<mem_dwidth> mgr(mem, MEM_SIZE);
+waveflow::memmgr::MemMgr<mem_dwidth> mgr(mem, MEM_SIZE);
 
 // Allocate regions — same first-fit algorithm as Python Memory.alloc
 const int data_word_idx  = mgr.alloc(nwords_data);

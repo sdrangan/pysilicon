@@ -10,7 +10,7 @@ has_children: false
 `FixedField` is a **Vitis-bit-exact** fixed-point scalar type. It maps to Vitis HLS
 `ap_fixed<W, I, Q, O>` (or `ap_ufixed<...>`) and its Python value model reproduces the
 hardware **bit-for-bit** — for quantization *and* arithmetic. It is defined in
-[`pysilicon/hw/fixpoint.py`](../../../pysilicon/hw/fixpoint.py); vector operations are
+[`waveflow/hw/fixpoint.py`](../../../waveflow/hw/fixpoint.py); vector operations are
 covered on the [Fixed-point vectors & arithmetic](./fixp_vector.md) page.
 
 ## The `ap_fixed` model
@@ -33,8 +33,8 @@ the fractional bits. For example `ap_fixed<8, 4>` has `F = 4`, so its LSB is
 format**:
 
 ```python
-from pysilicon.hw.fixpoint import FixedField
-from pysilicon.utils.fixputils import QMode, OMode
+from waveflow.hw.fixpoint import FixedField
+from waveflow.utils.fixputils import QMode, OMode
 
 Q8_4 = FixedField.specialize(8, 4)                       # ap_fixed<8, 4, AP_TRN, AP_WRAP>
 U8_4 = FixedField.specialize(8, 4, signed=False)         # ap_ufixed<8, 4, AP_TRN, AP_WRAP>

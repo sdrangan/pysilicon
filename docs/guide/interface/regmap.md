@@ -9,7 +9,7 @@ has_children: false
 
 A **register map** is the conventional way to expose a small block of named, individually-addressable control and status fields to a host over AXI-Lite. Each named field gets its own bus offset, so the host can read or write one field at a time without paying for the others.
 
-PySilicon provides the register-map abstraction as a thin layer on top of the existing [MM interfaces](./aximm.md). The slave endpoint is an `MMIFSlave` that is wired by the framework — the component author declares a `RegMap`, and the slave's read/write callbacks dispatch to fields automatically.
+Waveflow provides the register-map abstraction as a thin layer on top of the existing [MM interfaces](./aximm.md). The slave endpoint is an `MMIFSlave` that is wired by the framework — the component author declares a `RegMap`, and the slave's read/write callbacks dispatch to fields automatically.
 
 | Class | Role |
 |---|---|
@@ -18,7 +18,7 @@ PySilicon provides the register-map abstraction as a thin layer on top of the ex
 | `RegMap` | Ordered collection of `RegField`s; owns the backing values |
 | `RegMapMMIFSlave` | Subclass of `MMIFSlave` that dispatches reads/writes to a `RegMap` |
 
-The register map matches the model that Vitis HLS generates from `s_axilite` scalars and arrays: each field becomes one or more 32-bit registers in a single auto-generated AXI-Lite slave. When PySilicon eventually generates the HLS pragmas for a kernel, the offsets in the Python `RegMap` are the offsets the host driver uses.
+The register map matches the model that Vitis HLS generates from `s_axilite` scalars and arrays: each field becomes one or more 32-bit registers in a single auto-generated AXI-Lite slave. When Waveflow eventually generates the HLS pragmas for a kernel, the offsets in the Python `RegMap` are the offsets the host driver uses.
 
 ---
 
@@ -26,9 +26,9 @@ The register map matches the model that Vitis HLS generates from `s_axilite` sca
 
 ```python
 from enum import IntEnum
-from pysilicon.hw.aximm import AXIMMCrossBarIF, AXIMMProtocol, MMIFMaster
-from pysilicon.hw.dataschema import EnumField, IntField
-from pysilicon.hw.regmap import RegMap, RegField, RegAccess, RegMapMMIFSlave
+from waveflow.hw.aximm import AXIMMCrossBarIF, AXIMMProtocol, MMIFMaster
+from waveflow.hw.dataschema import EnumField, IntField
+from waveflow.hw.regmap import RegMap, RegField, RegAccess, RegMapMMIFSlave
 
 class ErrorCode(IntEnum):
     OK           = 0
@@ -185,7 +185,7 @@ Kernel-side `RegMap.get()` / `RegMap.set()` run in-process on the component obje
 - `BoundRegMap.start()` (coroutine): convenience launch helper for `VitisRegMap` that writes `ap_start`.
 - `BoundRegMap.poll_end(field="ap_done", interval=…, max_polls=…)` (coroutine): polls a status field until it reads its completion value (default `ap_done == 1`), returns the read value, and raises after `max_polls`. The standard "wait for the kernel to finish" helper on a `VitisRegMap`.
 
-Source class: [`BoundRegMap`](../../../pysilicon/hw/regmap.py).
+Source class: [`BoundRegMap`](../../../waveflow/hw/regmap.py).
 
 ### Example (host-side testbench)
 
@@ -345,7 +345,7 @@ POLY_REGMAP = VitisRegMap({
 
 User-declared field names beginning with `ap_` are rejected at construction time to prevent collisions with current and future Vitis-reserved names.
 
-PySilicon's control region is a simplification of Vitis's real control word. Vitis packs `ap_start`, `ap_done`, `ap_idle`, `ap_ready`, and `auto_restart` into one 32-bit register at `0x00` with bit-level access semantics. PySilicon instead exposes `ap_start` and `ap_done` as **two separate full-word registers** (`0x00` and `0x04`) — enough for the launch-then-poll lifecycle, and simpler to model. Host code that writes `1` to `0x00` to launch is bit-compatible with Vitis; the packed `ap_idle` / `ap_ready` / `auto_restart` bits are not yet modeled. See [Planned (v2)](#planned-vitisregmap-v2-control-register).
+Waveflow's control region is a simplification of Vitis's real control word. Vitis packs `ap_start`, `ap_done`, `ap_idle`, `ap_ready`, and `auto_restart` into one 32-bit register at `0x00` with bit-level access semantics. Waveflow instead exposes `ap_start` and `ap_done` as **two separate full-word registers** (`0x00` and `0x04`) — enough for the launch-then-poll lifecycle, and simpler to model. Host code that writes `1` to `0x00` to launch is bit-compatible with Vitis; the packed `ap_idle` / `ap_ready` / `auto_restart` bits are not yet modeled. See [Planned (v2)](#planned-vitisregmap-v2-control-register).
 
 ---
 
@@ -385,14 +385,14 @@ class VitisRegMapMMIFSlave(RegMapMMIFSlave):
 
 ## Worked example: poly accelerator
 
-The polynomial-evaluation kernel from [examples/stream_inband](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband) uses a `VitisRegMap` for control and status. The kernel implements the **persistent-kernel** pattern: the host writes `ap_start` once, the kernel processes transactions back-to-back from its AXI-Stream input, and only halts (returning) when an error is detected. On halt, the error code and offending transaction ID are latched into the register map for the host to read.
+The polynomial-evaluation kernel from [examples/stream_inband](https://github.com/sdrangan/waveflow/tree/main/examples/stream_inband) uses a `VitisRegMap` for control and status. The kernel implements the **persistent-kernel** pattern: the host writes `ap_start` once, the kernel processes transactions back-to-back from its AXI-Stream input, and only halts (returning) when an error is detected. On halt, the error code and offending transaction ID are latched into the register map for the host to read.
 
 ### Field declarations
 
 ```python
 from enum import IntEnum
-from pysilicon.hw.dataschema import IntField, EnumField, FloatField, DataArray
-from pysilicon.hw.regmap import VitisRegMap, RegField, RegAccess
+from waveflow.hw.dataschema import IntField, EnumField, FloatField, DataArray
+from waveflow.hw.regmap import VitisRegMap, RegField, RegAccess
 
 class PolyError(IntEnum):
     NO_ERROR             = 0
@@ -428,7 +428,7 @@ POLY_REGMAP_FIELDS = {
 The component declares its endpoints and an `on_start` method. There is **no** `run_proc`, no `start_event`, and no post-construction hook wiring — the slave owns the launch lifecycle.
 
 ```python
-from pysilicon.hw.regmap import VitisRegMap, VitisRegMapMMIFSlave, RegField, RegAccess
+from waveflow.hw.regmap import VitisRegMap, VitisRegMapMMIFSlave, RegField, RegAccess
 
 @dataclass
 class PolyAccelComponent(HwComponent):
@@ -619,7 +619,7 @@ The driver is the single touchpoint for host-side firmware and software-in-the-l
 ## Quick reference
 
 ```python
-from pysilicon.hw.regmap import (
+from waveflow.hw.regmap import (
     RegMap, RegField, RegAccess, RegMapMMIFSlave,
     VitisRegMap, VitisRegMapMMIFSlave,
 )

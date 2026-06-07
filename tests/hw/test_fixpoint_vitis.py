@@ -16,13 +16,13 @@ import numpy as np
 import pytest
 
 from examples.schemas.fixedpoint.kernels import render_binop
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.arrayutils import gen_array_utils, read_array, write_array
-from pysilicon.hw.fixpoint import FixedField, from_real, mult, quantize, to_real
-from pysilicon.utils import fixputils
-from pysilicon.utils.fixputils import OMode, QMode
-from pysilicon.toolchain import toolchain
+from waveflow.build.build import BuildConfig
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.arrayutils import gen_array_utils, read_array, write_array
+from waveflow.hw.fixpoint import FixedField, from_real, mult, quantize, to_real
+from waveflow.utils import fixputils
+from waveflow.utils.fixputils import OMode, QMode
+from waveflow.toolchain import toolchain
 
 RESOURCE_DIR = Path(__file__).parent / "resources"
 FIXEDPOINT_DIR = Path(__file__).resolve().parents[2] / "examples" / "schemas" / "fixedpoint"

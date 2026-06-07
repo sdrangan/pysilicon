@@ -1,7 +1,7 @@
 import pytest
 
-from pysilicon.simulation.simobj import ActionOverlap, ActionRecord, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.simulation.simobj import ActionOverlap, ActionRecord, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 def test_init_defaults_and_custom_name() -> None:

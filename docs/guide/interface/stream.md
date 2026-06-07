@@ -87,10 +87,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave, Words
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave, Words
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 @dataclass
@@ -168,7 +168,7 @@ def route_by_first_word(words: Words, port_in: int) -> int:
 ### Example: 2×2 crossbar
 
 ```python
-from pysilicon.hw.interface import CrossBarIF, CrossBarIFInput, CrossBarIFOutput
+from waveflow.hw.interface import CrossBarIF, CrossBarIFInput, CrossBarIFOutput
 
 xbar = CrossBarIF(
     sim=sim,
@@ -233,13 +233,13 @@ def rx_proc(self, words: Words) -> ProcessGen:
 ## Quick reference
 
 ```python
-from pysilicon.hw.interface import (
+from waveflow.hw.interface import (
     StreamIF, StreamIFMaster, StreamIFSlave,
     StreamGetPipelinedStmt, StreamWritePipelinedStmt,
     CrossBarIF, CrossBarIFInput, CrossBarIFOutput,
     Words,
 )
-from pysilicon.hw.clock import Clock
+from waveflow.hw.clock import Clock
 ```
 
 | Operation | Code |

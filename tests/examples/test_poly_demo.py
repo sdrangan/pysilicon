@@ -18,10 +18,10 @@ from examples.stream_inband.poly import (
     connect,
 )
 from examples.stream_inband.poly_build import build_poly_dag
-from pysilicon.build.build import BuildConfig
-from pysilicon.hw.clock import Clock
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.toolchain import toolchain
+from waveflow.build.build import BuildConfig
+from waveflow.hw.clock import Clock
+from waveflow.simulation.simulation import Simulation
+from waveflow.toolchain import toolchain
 
 
 _CLK_FREQ = 100e6
@@ -170,7 +170,7 @@ class _FailingPolyAccelComponent(PolyAccelComponent):
     """
 
     def evaluate(self, cmd_hdr, s_in, m_out, coeffs):  # type: ignore[override]
-        from pysilicon.hw.arrayutils import array
+        from waveflow.hw.arrayutils import array
         del coeffs  # injected for signature parity; this stub forces an error path.
         resp_hdr = PolyRespHdr()
         resp_hdr.tx_id = cmd_hdr.tx_id
@@ -251,7 +251,7 @@ def test_poly_vitis_cosim_matches_python_model(tmp_path: Path) -> None:
         resp_dir=results['validate_csim'].path('vitis_dir'),
     )
     # Vitis 2025.1 writes poly_cosim.rpt; older versions wrote cosim.log
-    sim_report_dir = tmp_path / "pysilicon_poly_proj" / "solution1" / "sim" / "report"
+    sim_report_dir = tmp_path / "waveflow_poly_proj" / "solution1" / "sim" / "report"
     cosim_reports = list(sim_report_dir.glob("*cosim*")) if sim_report_dir.exists() else []
 
     assert vitis_result.passed is True

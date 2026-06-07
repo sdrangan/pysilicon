@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from pysilicon.mcp.headless import _build_tool_runtime
+from waveflow.mcp.headless import _build_tool_runtime
 
 
 def test_build_tool_runtime_workspace_includes_rag_but_not_file_tools():
@@ -12,8 +12,8 @@ def test_build_tool_runtime_workspace_includes_rag_but_not_file_tools():
 
     names = {schema["function"]["name"] for schema in tool_schemas}
 
-    assert "pysilicon_get_components" in names
-    assert "pysilicon_rag_search_examples" in names
+    assert "waveflow_get_components" in names
+    assert "waveflow_rag_search_examples" in names
     assert "list_files" not in names
     with pytest.raises(ValueError, match="Unknown tool name"):
         dispatch_tool("list_files", {})
@@ -27,8 +27,8 @@ def test_build_tool_runtime_headless_includes_file_tools(tmp_path):
 
     names = {schema["function"]["name"] for schema in tool_schemas}
 
-    assert "pysilicon_get_components" in names
-    assert "pysilicon_rag_search_examples" in names
+    assert "waveflow_get_components" in names
+    assert "waveflow_rag_search_examples" in names
     assert {"list_files", "read_file", "write_file", "edit_file"}.issubset(names)
 
     result = dispatch_tool("read_file", {"path": "sample.txt"})
@@ -39,7 +39,7 @@ def test_build_tool_runtime_headless_includes_file_tools(tmp_path):
 def test_build_tool_runtime_headless_resolves_validation_paths_against_work_dir(tmp_path):
     schema_path = tmp_path / "demo_schema.py"
     schema_path.write_text(
-        "from pysilicon.hw import DataList, IntField\n"
+        "from waveflow.hw import DataList, IntField\n"
         "U16 = IntField.specialize(bitwidth=16, signed=False)\n"
         "class DemoPacket(DataList):\n"
         "    elements = {\n"
@@ -51,10 +51,10 @@ def test_build_tool_runtime_headless_resolves_validation_paths_against_work_dir(
     tool_schemas, dispatch_tool = _build_tool_runtime(mode="headless", work_dir=tmp_path)
 
     names = {schema["function"]["name"] for schema in tool_schemas}
-    assert "pysilicon_validate_schema" in names
+    assert "waveflow_validate_schema" in names
 
     result = dispatch_tool(
-        "pysilicon_validate_schema",
+        "waveflow_validate_schema",
         {
             "schema_name": "demo_schema",
             "input_path": "demo_schema.py",

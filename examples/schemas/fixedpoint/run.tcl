@@ -14,9 +14,9 @@ set d [file dirname [file normalize [info script]]]
 set argv_paths "[file join $d in_a.txt] [file join $d in_b.txt] [file join $d out_bits.txt]"
 
 if {[catch {csim_design -argv $argv_paths} res]} {
-    puts "PYSILICON_ERROR: HLS C-Simulation failed."
+    puts "WAVEFLOW_ERROR: HLS C-Simulation failed."
     puts $res
     exit 1
 }
-puts "PYSILICON_SUCCESS: fixedpoint conformance csim passed."
+puts "WAVEFLOW_SUCCESS: fixedpoint conformance csim passed."
 exit 0

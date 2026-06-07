@@ -7,7 +7,7 @@
 // early-return on a non-NO_ERROR status; this hook is the datapath.
 #include "hist.hpp"
 
-namespace memmgr = pysilicon::memmgr;
+namespace memmgr = waveflow::memmgr;
 
 namespace hist_impl {
 

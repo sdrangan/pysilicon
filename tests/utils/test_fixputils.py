@@ -12,8 +12,8 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-from pysilicon.utils import fixputils as fp
-from pysilicon.utils.fixputils import (
+from waveflow.utils import fixputils as fp
+from waveflow.utils.fixputils import (
     Format, OMode, QMode, add, add_format, fixed_sum, mult, mult_format, quantize,
     quantize_real, shift, sub, sub_format, sum_format, to_bits, to_float,
 )

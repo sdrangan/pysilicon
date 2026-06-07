@@ -1,5 +1,5 @@
 """
-Unit tests for pysilicon/hw/aximm.py.
+Unit tests for waveflow/hw/aximm.py.
 
 Coverage
 --------
@@ -24,7 +24,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from pysilicon.hw.aximm import (
+from waveflow.hw.aximm import (
     AXIMMAddressRange,
     AXIMMCrossBarIF,
     AXIMMProtocol,
@@ -34,9 +34,9 @@ from pysilicon.hw.aximm import (
     assign_address_ranges,
     Words,
 )
-from pysilicon.hw.clock import Clock
-from pysilicon.simulation.simobj import ProcessGen
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.simulation.simobj import ProcessGen
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -876,7 +876,7 @@ class TestMMIFMasterSchemaHelpers:
         return sim, sim.env, master_ep, mem
 
     def test_write_schema_read_schema(self):
-        from pysilicon.hw.dataschema import DataList, IntField
+        from waveflow.hw.dataschema import DataList, IntField
         Uint32 = IntField.specialize(bitwidth=32, signed=False)
 
         class TwoWords(DataList):
@@ -897,7 +897,7 @@ class TestMMIFMasterSchemaHelpers:
         assert int(result[0].b) == 0xBB
 
     def test_write_array_read_array_float32(self):
-        from pysilicon.hw.dataschema import FloatField
+        from waveflow.hw.dataschema import FloatField
         F32 = FloatField.specialize(bitwidth=32)
 
         sim, env, master, _ = self._make_harness()

@@ -9,9 +9,9 @@ has_children: false
 
 ## Overview
 
-PySilicon can use OpenAI to power **semantic search** over the packaged example corpus that ships with the package. This is an **optional** feature: all core MCP tools work without an OpenAI key. The canonical search tool is `pysilicon_search_examples`.
+Waveflow can use OpenAI to power **semantic search** over the packaged example corpus that ships with the package. This is an **optional** feature: all core MCP tools work without an OpenAI key. The canonical search tool is `waveflow_search_examples`.
 
-Because PySilicon uses a **bring-your-own-key** (BYO-key) model, the setup is per-user:
+Because Waveflow uses a **bring-your-own-key** (BYO-key) model, the setup is per-user:
 
 - You create and pay for your own OpenAI account.
 - Your API key is never stored in the repository or shared with other users.
@@ -23,7 +23,7 @@ Because PySilicon uses a **bring-your-own-key** (BYO-key) model, the setup is pe
 
 1. Go to <https://platform.openai.com/> and sign in (or create a free account).
 2. Navigate to **API keys** → **Create new secret key**.
-3. Give the key a recognisable name (e.g. `pysilicon-dev`) and copy it.
+3. Give the key a recognisable name (e.g. `waveflow-dev`) and copy it.
 
 > **Keep your key secret.** Treat it like a password — do not commit it to version control or share it in chat.
 
@@ -34,7 +34,7 @@ Because PySilicon uses a **bring-your-own-key** (BYO-key) model, the setup is pe
 | Variable | Purpose |
 |----------|---------|
 | `OPENAI_API_KEY` | Authenticates every call to the OpenAI API. Required when building the vector store. |
-| `PYSILICON_EXAMPLES_VECTOR_STORE_ID` | The ID of the vector store created for your account. Written automatically by `pysilicon_mcp_setup --build-rag`. |
+| `WAVEFLOW_EXAMPLES_VECTOR_STORE_ID` | The ID of the vector store created for your account. Written automatically by `waveflow_mcp_setup --build-rag`. |
 
 Set your API key in the terminal before running any OpenAI-enabled commands:
 

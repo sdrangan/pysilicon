@@ -11,9 +11,9 @@ import pandas as pd
 
 from vcdvcd import VCDVCD
 
-from pysilicon.hw.arrayutils import read_array
-from pysilicon.utils.vcd import VcdParser
-from pysilicon.utils.timing import TimingDiagram
+from waveflow.hw.arrayutils import read_array
+from waveflow.utils.vcd import VcdParser
+from waveflow.utils.timing import TimingDiagram
 
 # Import conv2d schemas (sibling module)
 from conv2d_demo import Conv2DCmd, Conv2DResp, Conv2DDebug, Conv2DEvent

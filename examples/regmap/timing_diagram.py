@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from pysilicon.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
+from waveflow.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
 
 
 def _busy_signal(name: str, cycles: int, max_cycles: int) -> SigTimingInfo:

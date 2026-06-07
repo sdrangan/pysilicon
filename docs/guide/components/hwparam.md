@@ -14,10 +14,10 @@ During `HwComponent.__post_init__`, raw values for `HwParam` fields are wrapped 
 
 ## API
 
-- [`HwParam`](../../../pysilicon/hw/hw_component.py)
-- [`HwParamValue`](../../../pysilicon/hw/hw_component.py)
-- [`HwComponent.__post_init__`](../../../pysilicon/hw/hw_component.py)
-- [`HwComponent.__setattr__`](../../../pysilicon/hw/hw_component.py)
+- [`HwParam`](../../../waveflow/hw/hw_component.py)
+- [`HwParamValue`](../../../waveflow/hw/hw_component.py)
+- [`HwComponent.__post_init__`](../../../waveflow/hw/hw_component.py)
+- [`HwComponent.__setattr__`](../../../waveflow/hw/hw_component.py)
 
 ## Example
 

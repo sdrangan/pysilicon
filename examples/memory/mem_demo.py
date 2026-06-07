@@ -34,17 +34,17 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import IntField
-from pysilicon.hw.memif import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import IntField
+from waveflow.hw.memif import (
     AXIMMCrossBarIF,
     DirectMMIF,
     MMIFMaster,
     assign_address_ranges,
 )
-from pysilicon.hw.memory import MemComponent
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.memory import MemComponent
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 Uint32 = IntField.specialize(bitwidth=32, signed=False)

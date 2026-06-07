@@ -7,16 +7,16 @@ has_children: true
 
 # Memory Modeling
 
-PySilicon provides a lightweight memory model that lets you simulate AXI-style and local-array-style memory interfaces in Python, then connect those simulations directly to Vitis HLS kernels and testbenches.
+Waveflow provides a lightweight memory model that lets you simulate AXI-style and local-array-style memory interfaces in Python, then connect those simulations directly to Vitis HLS kernels and testbenches.
 
-## What is a memory model in PySilicon?
+## What is a memory model in Waveflow?
 
 A **memory model** is a sparse, word-addressed store that lives in Python during simulation. Rather than pre-allocating a large flat buffer, you allocate only the regions you actually use. Each allocated region is backed by a NumPy array, so the full NumPy ecosystem is available for generating and inspecting data.
 
-The central class is `Memory`, imported from `pysilicon.hw.memory`:
+The central class is `Memory`, imported from `waveflow.hw.memory`:
 
 ```python
-from pysilicon.hw.memory import AddrUnit, Memory
+from waveflow.hw.memory import AddrUnit, Memory
 ```
 
 ## Key features
@@ -53,7 +53,7 @@ With word addressing, `alloc()` returns a word index. Addresses map directly to 
 
 ## Connecting Python models to Vitis flows
 
-The memory model bridges two sides of a PySilicon flow:
+The memory model bridges two sides of a Waveflow flow:
 
 1. **Python simulation** — the Python accelerator model reads inputs from and writes outputs to a `Memory` instance, exactly as the synthesized kernel will access the AXI memory port.
 2. **Vitis/HLS testbench** — the C++ testbench uses `MemMgr<word_dwidth>` (from `memmgr_tb.hpp`) to mirror the Python allocation layout. Because both sides use the same first-fit algorithm, byte addresses computed in Python are valid in the C++ testbench as well.

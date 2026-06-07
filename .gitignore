@@ -102,10 +102,10 @@ Thumbs.db
 !.vscode/launch.json
 
 # VS Code extension artifacts
-pysilicon-extension/node_modules/
-pysilicon-extension/out/
-pysilicon-extension/.vscode-test/
-pysilicon-extension/*.vsix
+waveflow-extension/node_modules/
+waveflow-extension/out/
+waveflow-extension/.vscode-test/
+waveflow-extension/*.vsix
 
 # Temporary working directory
 examples/dataschema
@@ -113,7 +113,7 @@ examples/vecunit
 examples/test
 examples/stream_inband/include
 examples/stream_inband/logs
-examples/stream_inband/pysilicon_poly_proj
+examples/stream_inband/waveflow_poly_proj
 examples/stream_inband/data
 examples/stream_inband/results
 .hls.failed
@@ -122,20 +122,20 @@ examples/stream_inband/results
 examples/stream_inband/vcd/
 
 examples/shared_mem/include/
-examples/shared_mem/pysilicon_hist_proj/
+examples/shared_mem/waveflow_hist_proj/
 examples/shared_mem/logs/
 examples/shared_mem/gen/
 examples/shared_mem/data/
 examples/shared_mem/results/
 
 examples/conv2d/include/
-examples/conv2d/pysilicon_conv2d_proj/
+examples/conv2d/waveflow_conv2d_proj/
 examples/conv2d/logs/
 examples/conv2d/data/
 
 
 experiment/
 
-# Allow build directory in pysilicon
-!pysilicon/build/
+# Allow build directory in waveflow
+!waveflow/build/
 !**/guide/build/

@@ -7,7 +7,7 @@ has_children: false
 
 # Parsing a VCD File
 
-Once you have [generated a VCD file](./vcd.md), PySilicon provides a `VcdParser` tool for reading the data into python for analysis.
+Once you have [generated a VCD file](./vcd.md), Waveflow provides a `VcdParser` tool for reading the data into python for analysis.
 
 ## Loading the VCD file
 First, we load the VCD file into a VCDVCD object.  For example, if the file is `dump.vcd`:
@@ -32,10 +32,10 @@ print(tdatas)
 ## Creating a VCD Parser and Adding Signals
 
 
-Then, we create a PySilicon `VcdParser` object:
+Then, we create a Waveflow `VcdParser` object:
 
 ```python
-from pysilicon.utils.vcd import VcdParser
+from waveflow.utils.vcd import VcdParser
 vp = VcdParser(vcd)
 ```
 

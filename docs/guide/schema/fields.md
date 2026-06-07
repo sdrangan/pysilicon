@@ -7,7 +7,7 @@ has_children: false
 
 # Fields — the basic typed values
 
-A **field** is the smallest typed unit of data in a PySilicon design: a single value with
+A **field** is the smallest typed unit of data in a Waveflow design: a single value with
 an explicit **bit width** and interpretation (integer, float, …). Everything larger is
 built out of fields — structured records ([Data Lists](./datalists.md)) and typed arrays
 ([Data Arrays](./dataarrays.md)).
@@ -18,20 +18,20 @@ In ordinary software a number is "just an `int`": the language picks 32 or 64 bi
 never think about it. In **hardware, every value has a chosen bit width**, because each bit
 is physical — it costs flip-flops, wires, logic, power, and timing margin. A counter that
 only ever reaches 1000 needs **10 bits**, not 32; the other 22 bits are wasted silicon. So
-in PySilicon a field's width is part of its *type*, declared up front, and it maps directly
+in Waveflow a field's width is part of its *type*, declared up front, and it maps directly
 to the arbitrary-precision types Vitis HLS uses (`ap_int<W>` and friends).
 
 The first surprise coming from software is exactly this: **you size every number.**
 
 ## The two simple fields
 
-PySilicon has two basic numeric fields. (A third — fixed-point — is important enough in DSP
+Waveflow has two basic numeric fields. (A third — fixed-point — is important enough in DSP
 to get [its own page](./fixpoint.md); we set it aside here.)
 
 ### `IntField` — arbitrary-precision integer
 
 ```python
-from pysilicon.hw.dataschema import IntField
+from waveflow.hw.dataschema import IntField
 
 Int16 = IntField.specialize(bitwidth=16, signed=True)    # signed 16-bit
 UInt8 = IntField.specialize(bitwidth=8,  signed=False)   # unsigned 8-bit
@@ -44,7 +44,7 @@ needs.
 ### `FloatField` — IEEE floating point
 
 ```python
-from pysilicon.hw.dataschema import FloatField
+from waveflow.hw.dataschema import FloatField
 
 Float32 = FloatField.specialize(bitwidth=32)    # IEEE single precision
 Float64 = FloatField.specialize(bitwidth=64)    # IEEE double precision
@@ -102,10 +102,10 @@ it does one of two things, and **which one is a design choice you model explicit
   sticks at the maximum instead of wrapping to a negative. Costs a comparator, but is far
   safer for signals (a saturating adder never flips a loud sample into a quiet one).
 
-PySilicon provides both as vectorized helpers:
+Waveflow provides both as vectorized helpers:
 
 ```python
-from pysilicon.utils.fixputils import truncate, saturate
+from waveflow.utils.fixputils import truncate, saturate
 
 # An 8-bit signed value holds [-128, 127]. What becomes of 200?
 truncate(200, wid=8, signed=True)   # wrap  -> -56

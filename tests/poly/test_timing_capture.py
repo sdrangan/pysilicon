@@ -21,7 +21,7 @@ import pytest
 # Import the callable function under test
 # ---------------------------------------------------------------------------
 
-from pysilicon.scripts.xsim_vcd import (
+from waveflow.scripts.xsim_vcd import (
     run_xsim_vcd,
     modify_tcl,
     create_vcd_batch,
@@ -124,7 +124,7 @@ class TestRunXsimVcdNonWindows:
 
 _XSIM_AVAILABLE = (
     IS_WINDOWS
-    and (Path("pysilicon_poly_proj").exists() or Path("examples/stream_inband/pysilicon_poly_proj").exists())
+    and (Path("waveflow_poly_proj").exists() or Path("examples/stream_inband/waveflow_poly_proj").exists())
 )
 
 requires_xsim = pytest.mark.skipif(
@@ -138,7 +138,7 @@ class TestRunXsimVcdIntegration:
     def test_generates_vcd_file(self, tmp_path: Path) -> None:
         out_path = run_xsim_vcd(
             top="poly",
-            comp="pysilicon_poly_proj",
+            comp="waveflow_poly_proj",
             out="test_out.vcd",
             workdir=Path(__file__).resolve().parents[2] / "examples" / "stream_inband",
         )

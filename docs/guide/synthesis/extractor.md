@@ -14,11 +14,11 @@ Kernel extraction selects `on_start` when a component carries a `VitisRegMapMMIF
 
 ## API
 
-- [`HwStmtExtractor`](../../../pysilicon/build/hwcodegen.py) parses method source into `HwStmt`.
-- [`extract_kernel(comp) -> HwStmt`](../../../pysilicon/build/hwcodegen.py) chooses kernel entry point and resolves symbols.
-- [`extract_testbench(comp) -> HwStmt`](../../../pysilicon/build/hwcodegen.py) extracts `HwTestbench.main()`.
-- [`@synthesizable`](../../../pysilicon/hw/synth.py) marks callable methods for extraction and lowering.
-- Implicit-capture checks and pipelined-op restrictions are enforced in [`HwStmtExtractor`](../../../pysilicon/build/hwcodegen.py).
+- [`HwStmtExtractor`](../../../waveflow/build/hwcodegen.py) parses method source into `HwStmt`.
+- [`extract_kernel(comp) -> HwStmt`](../../../waveflow/build/hwcodegen.py) chooses kernel entry point and resolves symbols.
+- [`extract_testbench(comp) -> HwStmt`](../../../waveflow/build/hwcodegen.py) extracts `HwTestbench.main()`.
+- [`@synthesizable`](../../../waveflow/hw/synth.py) marks callable methods for extraction and lowering.
+- Implicit-capture checks and pipelined-op restrictions are enforced in [`HwStmtExtractor`](../../../waveflow/build/hwcodegen.py).
 
 ## Example
 

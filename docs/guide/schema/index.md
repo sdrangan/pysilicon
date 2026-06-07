@@ -5,9 +5,9 @@ nav_order: 2
 has_children: true
 ---
 
-# PySilicon Data Schemas
+# Waveflow Data Schemas
 
-PySilicon’s **data schemas** provide a general method for describing how data is stored in and communicated between different hardware modules. Since PySilicon is Python-based, each data structure’s schema is represented by a `DataSchema` class. The `DataSchema` abstraction provides:
+Waveflow’s **data schemas** provide a general method for describing how data is stored in and communicated between different hardware modules. Since Waveflow is Python-based, each data structure’s schema is represented by a `DataSchema` class. The `DataSchema` abstraction provides:
 
 - A detailed specification of data types and fields, including bitwidths—fully compatible with the general precision types supported by Vitis HLS.
 - Methods for representing and manipulating data structures in Python. When possible, these types are mapped to NumPy arrays to enable efficient, vectorized processing.

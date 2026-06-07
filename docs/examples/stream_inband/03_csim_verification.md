@@ -13,7 +13,7 @@ the same inputs produce the same outputs in both Python and Vitis.
 
 | Step | Produces | What it does |
 |------|----------|--------------|
-| `csim` | `csim_data_dir` | Invokes `vitis_hls run.tcl` with `PYSILICON_POLY_COSIM=0`; the generated `gen/poly_tb.cpp` reads `data/*.bin`, runs `poly(...)`, and writes `resp_hdr_data.bin`, `samp_out_data.bin`, `regmap_status.json` back into `data/` |
+| `csim` | `csim_data_dir` | Invokes `vitis_hls run.tcl` with `WAVEFLOW_POLY_COSIM=0`; the generated `gen/poly_tb.cpp` reads `data/*.bin`, runs `poly(...)`, and writes `resp_hdr_data.bin`, `samp_out_data.bin`, `regmap_status.json` back into `data/` |
 | `validate_csim` | `verify_report`, `vitis_dir` | Runs a generic `FunctionalVerifyStep` that compares the Vitis-side outputs against the Python-side outputs file-by-file |
 
 ## How the comparison is wired

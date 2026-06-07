@@ -7,9 +7,9 @@ has_children: false
 
 # Basic Timing Diagrams
 
-In most cases, we will build timing diagrams from traces from a C or RTL simulation.  However, the PySilicon package also provides methods for constructing timing manually from any python data arrays.  This manual creation is used in the teaching material and can also be used for illustrations in scientific articles.
+In most cases, we will build timing diagrams from traces from a C or RTL simulation.  However, the Waveflow package also provides methods for constructing timing manually from any python data arrays.  This manual creation is used in the teaching material and can also be used for illustrations in scientific articles.
 
-The basic module is `pysilicon.utils.timing` with three classes for building and visualising timing diagrams in matplotlib:
+The basic module is `waveflow.utils.timing` with three classes for building and visualising timing diagrams in matplotlib:
 
 - `SigTimingInfo`: Holds a named sequence of (time, value) transitions for any signal 
 -  `ClkSig`:  A particular instance of `SigTimingInfo` for aclock signal with a given period and number of cycles
@@ -29,7 +29,7 @@ To illustrate, consider visualize the waveforms for a simple registered pipeline
 These waveforms can be visualzied with the code:
 
 ```python
-from pysilicon.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
+from waveflow.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
 
 # Clock: 10 ns period, 4 cycles
 clk = ClkSig(clk_name="clk", period=10, ncycles=4)
@@ -79,9 +79,9 @@ different directory.
 ## Full runnable example
 
 See
-[`examples/timing/basic_timing_diagram.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/timing/basic_timing_diagram.py)
+[`examples/timing/basic_timing_diagram.py`](https://github.com/sdrangan/waveflow/blob/main/examples/timing/basic_timing_diagram.py)
 for the complete, annotated source.
 
 The companion Jupyter notebook
-[`examples/timing/timing_ex.ipynb`](https://github.com/sdrangan/pysilicon/blob/main/examples/timing/timing_ex.ipynb)
+[`examples/timing/timing_ex.ipynb`](https://github.com/sdrangan/waveflow/blob/main/examples/timing/timing_ex.ipynb)
 provides an interactive walkthrough of the same material.

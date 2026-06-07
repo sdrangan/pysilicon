@@ -8,8 +8,8 @@ Rounding stays an explicit quantize(); `.val` stays the numpy escape.
 import numpy as np
 import pytest
 
-from pysilicon.hw.dataschema import DataArray, FloatField, IntField
-from pysilicon.hw.fixpoint import (
+from waveflow.hw.dataschema import DataArray, FloatField, IntField
+from waveflow.hw.fixpoint import (
     FixedField, add, from_real, mult, quantize, sub, to_real,
 )
 

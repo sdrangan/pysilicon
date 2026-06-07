@@ -7,10 +7,10 @@ import numpy as np
 import simpy
 from numpy.typing import NDArray
 
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave, Words
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.hw.clock import Clock
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave, Words
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
 
 @dataclass  
 class Master(SimObj):

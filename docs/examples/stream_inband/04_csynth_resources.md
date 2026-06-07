@@ -12,8 +12,8 @@ total-resources summary.
 
 | Step | Produces | What it does |
 |------|----------|--------------|
-| `csynth` | `report_dir` | Invokes `vitis_hls run.tcl` with `PYSILICON_POLY_COSIM=1`, which runs csim then csynth and (when cosim is enabled) RTL co-simulation; populates `pysilicon_poly_proj/solution1/` |
-| `inspect_synth` | `loop_df` | Parses `csynth.xml` via `pysilicon.utils.csynthparse.CsynthParser`, prints the loop/resource tables, fails the build if any reported loop has `PipelineII > 1` |
+| `csynth` | `report_dir` | Invokes `vitis_hls run.tcl` with `WAVEFLOW_POLY_COSIM=1`, which runs csim then csynth and (when cosim is enabled) RTL co-simulation; populates `waveflow_poly_proj/solution1/` |
+| `inspect_synth` | `loop_df` | Parses `csynth.xml` via `waveflow.utils.csynthparse.CsynthParser`, prints the loop/resource tables, fails the build if any reported loop has `PipelineII > 1` |
 
 ## What gets reported
 
@@ -54,7 +54,7 @@ implementation sketch.
 python -m examples.stream_inband.poly_build --through inspect_synth
 ```
 
-Produces `pysilicon_poly_proj/solution1/syn/report/csynth.xml`,
+Produces `waveflow_poly_proj/solution1/syn/report/csynth.xml`,
 `results/loop_df.csv`, and the inline resource / latency tables in
 stdout.
 

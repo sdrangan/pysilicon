@@ -9,24 +9,24 @@ from typing import ClassVar
 import numpy as np
 import numpy.typing as npt
 
-from pysilicon.hw.arrayutils import array, read_array, read_uint32_file, write_array
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
-from pysilicon.hw.hw_component import HwComponent, HwConst, HwParam
-from pysilicon.hw.hw_testbench import HwTestbench
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
-from pysilicon.hw.memif import DirectMMIF, MMIFMaster
-from pysilicon.hw.regmap import (
+from waveflow.hw.arrayutils import array, read_array, read_uint32_file, write_array
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField
+from waveflow.hw.hw_component import HwComponent, HwConst, HwParam
+from waveflow.hw.hw_testbench import HwTestbench
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
+from waveflow.hw.memif import DirectMMIF, MMIFMaster
+from waveflow.hw.regmap import (
     Bit,
     RegAccess,
     RegField,
     VitisRegMap,
     VitisRegMapMMIFSlave,
 )
-from pysilicon.hw.synth import sim_only, synthesizable
-from pysilicon.simulation.logger import Logger, NullLogger
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.synth import sim_only, synthesizable
+from waveflow.simulation.logger import Logger, NullLogger
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 INCLUDE_DIR = "include"

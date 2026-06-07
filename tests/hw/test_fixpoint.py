@@ -8,11 +8,11 @@ functions on DataArray operands — result-format derivation + exact real result
 import numpy as np
 import pytest
 
-from pysilicon.hw.fixpoint import (
+from waveflow.hw.fixpoint import (
     FixedField, add, fixed_sum, from_real, mult, quantize, shift, sub, to_real,
 )
-from pysilicon.utils import fixputils
-from pysilicon.utils.fixputils import Format, OMode, QMode
+from waveflow.utils import fixputils
+from waveflow.utils.fixputils import Format, OMode, QMode
 
 TRN, RND, WRAP, SAT = QMode.AP_TRN, QMode.AP_RND, OMode.AP_WRAP, OMode.AP_SAT
 
@@ -134,8 +134,8 @@ def test_derived_over_64_raises():
 
 
 def test_import_location():
-    import pysilicon.hw.dataschema as ds
-    assert not hasattr(ds, "FixedField")            # imported from pysilicon.hw.fixpoint
+    import waveflow.hw.dataschema as ds
+    assert not hasattr(ds, "FixedField")            # imported from waveflow.hw.fixpoint
 
 
 # --- Phase 3: codegen (non-Vitis: assert the generated C++ text) --------------
@@ -143,8 +143,8 @@ def test_codegen_array_uses_ap_fixed_bit_helpers():
     import tempfile
     from pathlib import Path
 
-    from pysilicon.build.build import BuildConfig
-    from pysilicon.hw.arrayutils import gen_array_utils
+    from waveflow.build.build import BuildConfig
+    from waveflow.hw.arrayutils import gen_array_utils
     Q = FixedField.specialize(8, 4, include_dir="include")
     with tempfile.TemporaryDirectory() as td:
         hdr = gen_array_utils(Q, [32], cfg=BuildConfig(root_dir=Path(td)), streamutils_dir="include")

@@ -6,7 +6,7 @@ nav_order: 1
 
 # Motivation
 
-AI-assisted hardware generation is useful for local code fragments, but production work still breaks down when architecture, simulation, synthesis, and host integration are managed as separate artifacts. PySilicon is motivated by closing that gap with one Python-defined workflow.
+AI-assisted hardware generation is useful for local code fragments, but production work still breaks down when architecture, simulation, synthesis, and host integration are managed as separate artifacts. Waveflow is motivated by closing that gap with one Python-defined workflow.
 
 ## Why this approach
 

@@ -7,12 +7,12 @@ has_children: false
 
 # Headless Testing Mode
 
-As described earlier, PySilicon is being equipped with an [MCP server](../ai_tooling/mcp_setup.md) to enable agentic assistance in building PySilicon code.  Most users will use this MCP in a **workspace** such as Claude Code or VS Code.  In these environments, the PySilicon MCP tools will be combined with the workspace tools along with the user context.  For example, given a prompt to build a new PySilicon hardware object, VS Code can inspect existing objects and use other context in addition to the PySilicon MCP tools for fetching examples.
+As described earlier, Waveflow is being equipped with an [MCP server](../ai_tooling/mcp_setup.md) to enable agentic assistance in building Waveflow code.  Most users will use this MCP in a **workspace** such as Claude Code or VS Code.  In these environments, the Waveflow MCP tools will be combined with the workspace tools along with the user context.  For example, given a prompt to build a new Waveflow hardware object, VS Code can inspect existing objects and use other context in addition to the Waveflow MCP tools for fetching examples.
 
 In testing the MCP agentic system, it is often useful to evaluate the agent in a **headless mode** to simulate a new user with a specified context.  For this purpose, developers have access to the `headless.run_session` command.  In this command, the user runs:
 
 ```python
-import pysilicon.mcp.headless as headless
+import waveflow.mcp.headless as headless
 
 result = headless.run_session(
     task=task,
@@ -27,7 +27,7 @@ result = headless.run_session(
 
 where
 
-- `task`:  The prompt for the desired PySilicon task
+- `task`:  The prompt for the desired Waveflow task
 - `output_path`:  A path for the output including the response and various meta data
 - `model`:  The model, e.g, `gpt-5.4`
 - `mode`:  Either `workspace` or `headless`
@@ -49,7 +49,7 @@ As an example, the following python code will:
 When executed, LLM will use MCP tools, including the RAG search tools for examples, to build the desired schema.
 
 ```python
-import pysilicon.mcp.headless as headless
+import waveflow.mcp.headless as headless
 
 from pathlib import Path
 import os

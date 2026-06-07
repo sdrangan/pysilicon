@@ -5,9 +5,9 @@ nav_order: 8
 has_children: true
 ---
 
-# PySilicon Timing Analysis Tools
+# Waveflow Timing Analysis Tools
 
-PySilicon provides some basic package for python processing of timing diagrams relevant for hardware workflows:
+Waveflow provides some basic package for python processing of timing diagrams relevant for hardware workflows:
 
 - Creating timing and plotting timing diagrams in matplotlib
 - Running Xilinx RTL simulations to produce VCD outputs

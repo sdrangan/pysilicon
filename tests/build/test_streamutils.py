@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.streamutils import MemMgrStep, StreamUtilsStep
+from waveflow.build.build import BuildConfig
+from waveflow.build.streamutils import MemMgrStep, StreamUtilsStep
 
 
 # ---------------------------------------------------------------------------

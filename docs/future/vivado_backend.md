@@ -9,7 +9,7 @@ parent: Future
 
 ## Concept
 
-A Vivado IPI backend would extend PySilicon outputs beyond HLS kernel code into block-design integration flows. The intended capability is to map component interfaces and generated artifacts into reproducible IPI assembly steps so users can build larger systems without manual block-diagram wiring.
+A Vivado IPI backend would extend Waveflow outputs beyond HLS kernel code into block-design integration flows. The intended capability is to map component interfaces and generated artifacts into reproducible IPI assembly steps so users can build larger systems without manual block-diagram wiring.
 
 ## Status
 
@@ -17,5 +17,5 @@ Current code generation and examples target HLS-centric flows. There is no imple
 
 ## See also
 
-- [plans/vivado_plan.md](https://github.com/sdrangan/pysilicon/blob/main/plans/vivado_plan.md)
+- [plans/vivado_plan.md](https://github.com/sdrangan/waveflow/blob/main/plans/vivado_plan.md)
 - TBD

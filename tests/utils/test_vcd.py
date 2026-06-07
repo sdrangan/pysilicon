@@ -1,5 +1,5 @@
 """
-tests/utils/test_vcd.py – unit tests for pysilicon.utils.vcd.SigInfo numeric_values
+tests/utils/test_vcd.py – unit tests for waveflow.utils.vcd.SigInfo numeric_values
 storage convention.
 
 The convention under test (for numeric_type == 'uint'):
@@ -20,7 +20,7 @@ import pytest
 
 from vcdvcd import VCDVCD
 
-from pysilicon.utils.vcd import AximmBeatType, SigInfo, VcdParser, vcd_trace
+from waveflow.utils.vcd import AximmBeatType, SigInfo, VcdParser, vcd_trace
 
 
 def test_vcd_trace_maps_levels():

@@ -26,34 +26,34 @@ pytest -m "not vitis"
 pytest -m vitis
 
 # Lint / format
-ruff check pysilicon/
-black pysilicon/
-mypy pysilicon/
+ruff check waveflow/
+black waveflow/
+mypy waveflow/
 ```
 
 ## Architecture
 
-PySilicon is a Python-native hardware design platform. The philosophy is that Python is the **single source of truth** for hardware: simulation, synthesis, firmware, documentation, and AI tooling all derive from one Python specification.
+Waveflow is a Python-native hardware design platform. The philosophy is that Python is the **single source of truth** for hardware: simulation, synthesis, firmware, documentation, and AI tooling all derive from one Python specification.
 
 ### Core abstractions
 
-**`DataSchema`** (`pysilicon/hw/dataschema.py`) — The type system. A class-based schema where structure lives on the class and runtime values on the instance. Field subclasses: `IntField`, `FloatField`, `EnumField`, `DataList`, `DataArray`, `MemAddr`. This is the largest module (~3900 lines) and the foundation for code generation, firmware, and documentation.
+**`DataSchema`** (`waveflow/hw/dataschema.py`) — The type system. A class-based schema where structure lives on the class and runtime values on the instance. Field subclasses: `IntField`, `FloatField`, `EnumField`, `DataList`, `DataArray`, `MemAddr`. This is the largest module (~3900 lines) and the foundation for code generation, firmware, and documentation.
 
-**`Component`** (`pysilicon/hw/component.py`) — Base class for hardware objects (HwObj). Declares typed ports with direction (master/slave) using protocol types: FIFO, AXI-Stream, AXI-Lite, AXI-MM. Functional behavior is implemented as Python methods on slave ports or as a PyTorch `forward()` method.
+**`Component`** (`waveflow/hw/component.py`) — Base class for hardware objects (HwObj). Declares typed ports with direction (master/slave) using protocol types: FIFO, AXI-Stream, AXI-Lite, AXI-MM. Functional behavior is implemented as Python methods on slave ports or as a PyTorch `forward()` method.
 
-**`Interface`** (`pysilicon/hw/interface.py`) — Transactional connection between two hardware objects. Explicitly connects a master port on one Component to a slave port on another. Manages transactional semantics during simulation.
+**`Interface`** (`waveflow/hw/interface.py`) — Transactional connection between two hardware objects. Explicitly connects a master port on one Component to a slave port on another. Manages transactional semantics during simulation.
 
-**`SimObj`** (`pysilicon/simulation/simobj.py`) — Base class for anything participating in a simulation: hardware components, software processes, sensors, channels. Implements a three-phase lifecycle: `pre_sim()` → `run_proc()` → `post_sim()`.
+**`SimObj`** (`waveflow/simulation/simobj.py`) — Base class for anything participating in a simulation: hardware components, software processes, sensors, channels. Implements a three-phase lifecycle: `pre_sim()` → `run_proc()` → `post_sim()`.
 
-**`Simulation`** (`pysilicon/simulation/simulation.py`) — Runtime coordinator. Owns the SimPy discrete-event environment, drives the SimObj lifecycle, and connects interfaces between SimObjs.
+**`Simulation`** (`waveflow/simulation/simulation.py`) — Runtime coordinator. Owns the SimPy discrete-event environment, drives the SimObj lifecycle, and connects interfaces between SimObjs.
 
 ### Subsystems
 
-- **`pysilicon/build/`** — Code generation for Vitis HLS (C++ API, stream utilities, TCL scripts).
-- **`pysilicon/toolchain/`** — Vitis HLS / Vivado toolchain detection and integration.
-- **`pysilicon/scripts/`** — CLI entry points (`sv_sim`, `sv_synth`, `sv_impl`, `pysilicon_mcp_server`, etc.).
-- **`pysilicon/utils/`** — VCD waveform parsing, timing analysis, C-synthesis report parsing, fixed-point utilities.
-- **`pysilicon/mcp/`** — MCP server exposing hardware design tools to AI assistants (Claude Code, VS Code). Two modes: *workspace* (uses host file tools) and *headless* (self-contained, for CI/API use). RAG over a pre-built example corpus lives in `mcp/corpus/`.
+- **`waveflow/build/`** — Code generation for Vitis HLS (C++ API, stream utilities, TCL scripts).
+- **`waveflow/toolchain/`** — Vitis HLS / Vivado toolchain detection and integration.
+- **`waveflow/scripts/`** — CLI entry points (`sv_sim`, `sv_synth`, `sv_impl`, `waveflow_mcp_server`, etc.).
+- **`waveflow/utils/`** — VCD waveform parsing, timing analysis, C-synthesis report parsing, fixed-point utilities.
+- **`waveflow/mcp/`** — MCP server exposing hardware design tools to AI assistants (Claude Code, VS Code). Two modes: *workspace* (uses host file tools) and *headless* (self-contained, for CI/API use). RAG over a pre-built example corpus lives in `mcp/corpus/`.
 - **`examples/`** — Reference designs: `poly/` (polynomial), `conv2d/`, `histogram/`, `vecunit/`, `interface/`, `timing/`.
 
 ### Simulation flow
@@ -69,6 +69,6 @@ A Component's Python behavior is translated to Vitis HLS C++ via `BuildConfig` (
 ## Notes
 
 - Python 3.10+ required.
-- Vitis HLS is optional and only needed for synthesis tests (`-m vitis`). The toolchain is auto-detected by `pysilicon/toolchain/toolchain.py`.
+- Vitis HLS is optional and only needed for synthesis tests (`-m vitis`). The toolchain is auto-detected by `waveflow/toolchain/toolchain.py`.
 - The project is early-stage research software; many planned features are not yet built.
-- Non-commercial use only under the PySilicon Research License.
+- Non-commercial use only under the Waveflow Research License.

@@ -69,7 +69,7 @@ A passing `validate_csim` is the functional half of the cycle-approximate-Python
 
 ## C-synthesis and RTL co-simulation
 
-`CSynthStep` runs the same `run.tcl` as `CSimStep` but with `PYSILICON_SIMP_FUN_COSIM=1` set in the environment — that flag tells the TCL script to perform C-synthesis followed by `cosim_design`. Output lands in `pysilicon_simp_fun_proj/solution1/` (a standard Vitis HLS solution directory) with the C-synth XML report, the synthesised RTL, and the cosim report.
+`CSynthStep` runs the same `run.tcl` as `CSimStep` but with `WAVEFLOW_SIMP_FUN_COSIM=1` set in the environment — that flag tells the TCL script to perform C-synthesis followed by `cosim_design`. Output lands in `waveflow_simp_fun_proj/solution1/` (a standard Vitis HLS solution directory) with the C-synth XML report, the synthesised RTL, and the cosim report.
 
 `InspectSynthStep` parses the C-synth XML for two things worth gating on:
 
@@ -106,7 +106,7 @@ dag.add(ExtractCosimTimingStep(
 
 This step reads Vitis's cosim report (typically `<solution>/sim/report/simp_fun_cosim.rpt`), extracts the per-transaction cycle latency, and writes it as a structured `cosim_timing.json` with the same shape as the `py_timing.json` produced by `ExtractPyTimingStep` on the Python side. The matching shape is what makes the next step's comparison trivial.
 
-`ExtractCosimTimingStep` is a generic build step from `pysilicon.build.cosim_steps` — not poly-specific or simp_fun-specific. Any kernel run through this pipeline gets the same JSON shape on the cosim side.
+`ExtractCosimTimingStep` is a generic build step from `waveflow.build.cosim_steps` — not poly-specific or simp_fun-specific. Any kernel run through this pipeline gets the same JSON shape on the cosim side.
 
 ## Validating cycle-approximate Python
 

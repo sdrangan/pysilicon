@@ -5,16 +5,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
-from pysilicon.hw.aximm import DirectMMIF, MMIFMaster
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import IntField
-from pysilicon.hw.hw_component import HwComponent
-from pysilicon.hw.hw_testbench import HwTestbench
-from pysilicon.hw.regmap import RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave
-from pysilicon.hw.synth import sim_only, synthesizable
-from pysilicon.simulation.logger import Logger, NullLogger
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.aximm import DirectMMIF, MMIFMaster
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import IntField
+from waveflow.hw.hw_component import HwComponent
+from waveflow.hw.hw_testbench import HwTestbench
+from waveflow.hw.regmap import RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave
+from waveflow.hw.synth import sim_only, synthesizable
+from waveflow.simulation.logger import Logger, NullLogger
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 Int32 = IntField.specialize(bitwidth=32, signed=True)

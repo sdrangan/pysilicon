@@ -102,7 +102,7 @@ In the polynomial example, the burst in the simulattion are:
 
 Coefficients no longer appear on the stream — they are configured via the AXI-Lite register map before launch. Halt status (`halted` / `error` / `tx_id`) is read from the regmap after the kernel returns, not from a streamed footer.
 
-We can deserialize each burst to the corresponding PySilicon DataSchma:
+We can deserialize each burst to the corresponding Waveflow DataSchma:
 
 ```python
 word_bw = 32

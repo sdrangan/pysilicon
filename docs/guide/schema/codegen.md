@@ -6,7 +6,7 @@ nav_order: 7
 
 # Auto-generating Vitis HLS Files
 
-A key feature of PySilicon data schemas is automatic generation of Vitis-compatible C++ headers from Python schema definitions. For a full build walkthrough, see the [Build System guide](../build/).
+A key feature of Waveflow data schemas is automatic generation of Vitis-compatible C++ headers from Python schema definitions. For a full build walkthrough, see the [Build System guide](../build/).
 
 ## What gets generated
 
@@ -25,10 +25,10 @@ For array element helpers, `ArrayUtilsStep` generates:
 Schema headers and array helpers are generated through `BuildDag` steps:
 
 ```python
-from pysilicon.build.build import BuildConfig, BuildDag
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.dataschema import DataSchemaStep
-from pysilicon.hw.arrayutils import ArrayUtilsStep
+from waveflow.build.build import BuildConfig, BuildDag
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.dataschema import DataSchemaStep
+from waveflow.hw.arrayutils import ArrayUtilsStep
 
 cfg = BuildConfig(root_dir=example_dir)
 dag = BuildDag()

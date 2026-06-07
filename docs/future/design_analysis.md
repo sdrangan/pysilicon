@@ -17,5 +17,5 @@ The build DAG already emits structured artifacts that can serve as inputs to ana
 
 ## See also
 
-- [plans/doc_plan.md](https://github.com/sdrangan/pysilicon/blob/main/plans/doc_plan.md)
+- [plans/doc_plan.md](https://github.com/sdrangan/waveflow/blob/main/plans/doc_plan.md)
 - TBD

@@ -1,4 +1,4 @@
-"""Tests for ``pysilicon.build.cosim_steps``.
+"""Tests for ``waveflow.build.cosim_steps``.
 
 Exercises ``ExtractCosimTimingStep`` end-to-end against the same fixture
 the parser tests use — both fixture formats land at the same
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.cosim_steps import ExtractCosimTimingStep
+from waveflow.build.build import BuildConfig
+from waveflow.build.cosim_steps import ExtractCosimTimingStep
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "utils" / "cosim_fixtures"
@@ -23,7 +23,7 @@ LEGACY_LOG = FIXTURE_DIR / "cosim.log"
 
 def _seed_solution(tmp_path: Path, fixture: Path, target_name: str) -> Path:
     """Copy ``fixture`` into a tmp ``<sol>/sim/report/`` layout and return sol path."""
-    sol = tmp_path / "pysilicon_poly_proj" / "solution1"
+    sol = tmp_path / "waveflow_poly_proj" / "solution1"
     report_dir = sol / "sim" / "report"
     report_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(fixture, report_dir / target_name)
@@ -69,7 +69,7 @@ def test_extract_cosim_timing_legacy_log(tmp_path):
 def test_extract_cosim_timing_missing_report_raises(tmp_path):
     """An empty solution dir yields a FileNotFoundError from the parser
     (the step does not swallow it)."""
-    sol = tmp_path / "pysilicon_poly_proj" / "solution1"
+    sol = tmp_path / "waveflow_poly_proj" / "solution1"
     (sol / "sim" / "report").mkdir(parents=True)
     step = ExtractCosimTimingStep(
         name="extract_cosim_timing", top="poly",
@@ -94,7 +94,7 @@ def test_extract_cosim_timing_consumes_produces():
 # ValidateTimingStep — Phase 4
 # ---------------------------------------------------------------------------
 
-from pysilicon.build.cosim_steps import ValidateTimingStep
+from waveflow.build.cosim_steps import ValidateTimingStep
 
 
 def _write_timing_json(path: Path, cycles: int, source: str) -> None:

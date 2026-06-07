@@ -6,7 +6,7 @@ nav_order: 1
 
 # Core Components
 
-This page is the reference for everything the build framework exports from [pysilicon/build/build.py](https://github.com/sdrangan/pysilicon/tree/main/pysilicon/build/build.py). Read top-to-bottom for the conceptual order: config → artifacts → result → step → DAG → incremental-rebuild model.
+This page is the reference for everything the build framework exports from [waveflow/build/build.py](https://github.com/sdrangan/waveflow/tree/main/waveflow/build/build.py). Read top-to-bottom for the conceptual order: config → artifacts → result → step → DAG → incremental-rebuild model.
 
 | Class / function | Purpose |
 |---|---|
@@ -28,7 +28,7 @@ This page is the reference for everything the build framework exports from [pysi
 Holds per-build configuration that every step can see.
 
 ```python
-from pysilicon.build.build import BuildConfig
+from waveflow.build.build import BuildConfig
 from pathlib import Path
 
 config = BuildConfig(
@@ -92,7 +92,7 @@ The abstract base for every node in the DAG.
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
-from pysilicon.build.build import BuildStep, BuildConfig
+from waveflow.build.build import BuildStep, BuildConfig
 
 @dataclass(kw_only=True)
 class MyStep(BuildStep):
@@ -149,7 +149,7 @@ Must return a `dict[str, Any]` covering every name in `produces`. Raise `Runtime
 
 ### expected_paths(config)
 
-Optional override. Returns a `dict[str, Path]` for any file artifact whose path depends on `config.params` rather than being a static `Path` declared in `produces`. The DAG calls this during pre-build path resolution (used by `--list-artifacts` and `--status`). See `PySimStep` in [examples/stream_inband/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) for the canonical example: its log file path comes from `config.params["log_file"]`.
+Optional override. Returns a `dict[str, Path]` for any file artifact whose path depends on `config.params` rather than being a static `Path` declared in `produces`. The DAG calls this during pre-build path resolution (used by `--list-artifacts` and `--status`). See `PySimStep` in [examples/stream_inband/poly_build.py](https://github.com/sdrangan/waveflow/tree/main/examples/stream_inband/poly_build.py) for the canonical example: its log file path comes from `config.params["log_file"]`.
 
 ---
 
@@ -158,7 +158,7 @@ Optional override. Returns a `dict[str, Path]` for any file artifact whose path 
 The root node for any source file the DAG depends on. Pre-built and ready to use:
 
 ```python
-from pysilicon.build.build import SourceStep
+from waveflow.build.build import SourceStep
 
 dag.add(SourceStep(
     artifact="poly_cpp",
@@ -190,7 +190,7 @@ See [Code Generation Steps](./codegen.md) for the steps that use `Buildable`.
 Owns the set of steps and runs them.
 
 ```python
-from pysilicon.build.build import BuildDag
+from waveflow.build.build import BuildDag
 
 dag = BuildDag()
 dag.add(SourceStep(artifact="src", path="my.py"))
@@ -236,7 +236,7 @@ The DAG offers a few read-only views useful for CLIs, AI tools, and debugging:
 - `dag.describe()` — same data as a Markdown table.
 - `dag.results_status(config)` — pre-build freshness status: per file artifact, `{path, exists, mtime, stale, stale_because}`.
 
-These are the primitives behind `--list-steps`, `--list-artifacts`, `--status`, and the verbose listing in the [poly CLI](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py).
+These are the primitives behind `--list-steps`, `--list-artifacts`, `--status`, and the verbose listing in the [poly CLI](https://github.com/sdrangan/waveflow/tree/main/examples/stream_inband/poly_build.py).
 
 ---
 

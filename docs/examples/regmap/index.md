@@ -6,7 +6,7 @@ has_children: true
 ---
 # Register Map Interface for a Simple Function
 
-This is the first end-to-end example in the interface guide. It walks through one PySilicon kernel from the Python specification all the way to RTL co-simulation, using the simplest of the AXI-* interfaces — an **AXI-Lite register map**.
+This is the first end-to-end example in the interface guide. It walks through one Waveflow kernel from the Python specification all the way to RTL co-simulation, using the simplest of the AXI-* interfaces — an **AXI-Lite register map**.
 
 In going through this example, you will learn to:
 

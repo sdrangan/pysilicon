@@ -5,14 +5,14 @@ nav_order: 1
 has_children: false
 ---
 
-# User Setup — Installing the PySilicon Package
+# User Setup — Installing the Waveflow Package
 
-This page is for **users** who want to *use* PySilicon as a library in their own
-project — `import pysilicon`, declare hardware, run simulations, generate HLS. You do
-**not** need to clone the repository. If you instead want to modify PySilicon itself or
+This page is for **users** who want to *use* Waveflow as a library in their own
+project — `import waveflow`, declare hardware, run simulations, generate HLS. You do
+**not** need to clone the repository. If you instead want to modify Waveflow itself or
 run the bundled examples and tests, see [Developer Setup](./developers.md).
 
-PySilicon requires **Python 3.10 or newer**.
+Waveflow requires **Python 3.10 or newer**.
 
 ## What is a virtual environment (and why use one)?
 
@@ -21,7 +21,7 @@ project. Any packages you install into it are isolated from your system Python a
 your other projects, so one project's dependency versions can never break another's.
 This is standard practice for Python work — it avoids the classic "everything worked
 until I installed something else" problem — and Python ships with the `venv` tool to
-create one. We recommend installing PySilicon into a fresh virtual environment.
+create one. We recommend installing Waveflow into a fresh virtual environment.
 
 ## 1. Create and activate a virtual environment
 
@@ -47,26 +47,26 @@ activation script ("...Activate.ps1 is not digitally signed"), run this first:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-## 2. Install PySilicon from GitHub
+## 2. Install Waveflow from GitHub
 
 With the environment active:
 
 ```bash
-(env) pip install git+https://github.com/sdrangan/pysilicon.git
+(env) pip install git+https://github.com/sdrangan/waveflow.git
 ```
 
-This downloads and installs the `pysilicon` package and its dependencies — no clone
+This downloads and installs the `waveflow` package and its dependencies — no clone
 required. (pip uses `git` under the hood, so Git must be installed.)
 
 ## 3. Verify the install
 
 ```bash
-(env) python -c "import pysilicon; print('PySilicon installed at', pysilicon.__file__)"
+(env) python -c "import waveflow; print('Waveflow installed at', waveflow.__file__)"
 ```
 
 ## What you get — and what needs the repo
 
-`pip install` gives you the **PySilicon package**: the API for building data schemas,
+`pip install` gives you the **Waveflow package**: the API for building data schemas,
 components, interfaces, simulations, and HLS code generation inside your own scripts.
 
 The **example walkthroughs** in this guide (the register-map, polynomial, histogram
@@ -76,4 +76,4 @@ does **not** include. To run those directly, clone the repo via
 
 Optional AI-assistant integrations (the MCP server, semantic search, the VS Code
 extension) are covered separately under [AI Tooling](../ai_tooling/) and are not needed
-to use PySilicon.
+to use Waveflow.

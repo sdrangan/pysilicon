@@ -4,7 +4,7 @@
 
 int main() {
     // Print a unique string that Python can search for in the logs
-    std::cout << "--- PYSILICON SMOKE TEST START ---" << std::endl;
+    std::cout << "--- WAVEFLOW SMOKE TEST START ---" << std::endl;
     
     // Test a basic C++ container to ensure the HLS toolchain is fully indexed
     std::vector<int> test_vec = {1, 2, 3, 4, 5};
@@ -15,7 +15,7 @@ int main() {
 
     if (sum == 15) {
         std::cout << "Logic Check: PASSED" << std::endl;
-        std::cout << "--- PYSILICON SMOKE TEST END ---" << std::endl;
+        std::cout << "--- WAVEFLOW SMOKE TEST END ---" << std::endl;
         return 0; // Success
     } else {
         std::cerr << "Logic Check: FAILED (Sum mismatch)" << std::endl;

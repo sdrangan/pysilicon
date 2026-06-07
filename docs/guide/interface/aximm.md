@@ -7,7 +7,7 @@ has_children: false
 
 # Memory-Mapped (MM) Interfaces
 
-PySilicon provides two memory-mapped interface types that share a common pair of generic endpoints:
+Waveflow provides two memory-mapped interface types that share a common pair of generic endpoints:
 
 | Class | Role |
 |---|---|
@@ -25,7 +25,7 @@ The endpoints are **independent of the interconnect**.  A component declares an 
 ### MMIFSlave
 
 ```python
-from pysilicon.hw.aximm import MMIFSlave
+from waveflow.hw.aximm import MMIFSlave
 
 slave_ep = MMIFSlave(
     sim=sim,
@@ -54,7 +54,7 @@ def on_read(self, nwords: int, local_addr: int) -> ProcessGen[Words]:
 ### MMIFMaster
 
 ```python
-from pysilicon.hw.aximm import MMIFMaster
+from waveflow.hw.aximm import MMIFMaster
 
 master_ep = MMIFMaster(sim=sim, bitwidth=32)
 ```
@@ -128,7 +128,7 @@ All cycle counts are divided by `clk.freq` to produce seconds.
 ### Construction
 
 ```python
-from pysilicon.hw.aximm import AXIMMCrossBarIF
+from waveflow.hw.aximm import AXIMMCrossBarIF
 
 xbar = AXIMMCrossBarIF(
     sim=sim,
@@ -151,7 +151,7 @@ Endpoint names: `master_0` … `master_{n-1}` and `slave_0` … `slave_{m-1}`.
 Point-to-point interconnect: one master, one slave, no address translation.  The master's address is passed directly to the slave callback as `local_addr`.  This models a component wired directly to a BRAM or local register file.
 
 ```python
-from pysilicon.hw.aximm import DirectMMIF
+from waveflow.hw.aximm import DirectMMIF
 
 direct = DirectMMIF(
     sim=sim,
@@ -176,14 +176,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
-from pysilicon.hw.aximm import (
+from waveflow.hw.aximm import (
     AXIMMCrossBarIF, AXIMMProtocol,
     MMIFMaster, MMIFSlave,
     AXIMMAddressRange, assign_address_ranges,
 )
-from pysilicon.hw.clock import Clock
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 @dataclass
@@ -286,7 +286,7 @@ sim.run_sim()
 ## Quick reference
 
 ```python
-from pysilicon.hw.aximm import (
+from waveflow.hw.aximm import (
     MMIFMaster, MMIFSlave,
     AXIMMCrossBarIF, DirectMMIF,
     AXIMMProtocol, AXIMMAddressRange,

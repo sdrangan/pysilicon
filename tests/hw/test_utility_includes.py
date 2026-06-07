@@ -1,7 +1,7 @@
 """Tests for ``DataSchema.get_utility_includes`` and its overrides."""
 from __future__ import annotations
 
-from pysilicon.hw.dataschema import (
+from waveflow.hw.dataschema import (
     DataArray,
     DataList,
     FloatField,

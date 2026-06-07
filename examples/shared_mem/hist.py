@@ -30,17 +30,17 @@ from typing import ClassVar
 import numpy as np
 import numpy.typing as npt
 
-from pysilicon.hw.arrayutils import get_nwords, read_array, write_array
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField, MemAddr
-from pysilicon.hw.hw_component import HwComponent, HwParam
-from pysilicon.hw.hw_testbench import HwTestbench
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
-from pysilicon.hw.memif import DirectMMIF, MMIFMaster
-from pysilicon.hw.memory import AddrUnit, MemComponent, Memory
-from pysilicon.hw.synth import synthesizable
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.arrayutils import get_nwords, read_array, write_array
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataArray, DataList, EnumField, FloatField, IntField, MemAddr
+from waveflow.hw.hw_component import HwComponent, HwParam
+from waveflow.hw.hw_testbench import HwTestbench
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
+from waveflow.hw.memif import DirectMMIF, MMIFMaster
+from waveflow.hw.memory import AddrUnit, MemComponent, Memory
+from waveflow.hw.synth import synthesizable
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 # ---------------------------------------------------------------------------
 # Data model — schemas, type fields, constants, and the numpy golden

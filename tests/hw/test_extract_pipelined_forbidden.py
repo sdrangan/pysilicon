@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from pysilicon.build.hwcodegen import HwStmtExtractor, SynthesisError, extract_kernel
-from pysilicon.hw.hw_component import HwComponent
-from pysilicon.hw.interface import StreamIFMaster, StreamIFSlave
-from pysilicon.hw.synth import synthesizable
-from pysilicon.simulation.simulation import Simulation
+from waveflow.build.hwcodegen import HwStmtExtractor, SynthesisError, extract_kernel
+from waveflow.hw.hw_component import HwComponent
+from waveflow.hw.interface import StreamIFMaster, StreamIFSlave
+from waveflow.hw.synth import synthesizable
+from waveflow.simulation.simulation import Simulation
 
 
 def _make_stream_comp(run_proc_body_cls):

@@ -1,4 +1,4 @@
-open_project -reset pysilicon_dataschema_vitis_proj
+open_project -reset waveflow_dataschema_vitis_proj
 set_top main
 add_files -tb serialize_test.cpp
 
@@ -19,9 +19,9 @@ set out_json_path [file join $script_dir "packet_out.json"]
 
 if {[catch {csim_design -argv "$words_path $out_json_path"} res]} {
     # Keep previous catch semantics for diagnostics.
-    puts "PYSILICON_ERROR: HLS C-Simulation failed."
+    puts "WAVEFLOW_ERROR: HLS C-Simulation failed."
     puts $res
     exit 1
 }
-puts "PYSILICON_SUCCESS: Dataschema Vitis serialization test passed."
+puts "WAVEFLOW_SUCCESS: Dataschema Vitis serialization test passed."
 exit 0

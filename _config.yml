@@ -1,7 +1,7 @@
-title: "PySilicon"
+title: "Waveflow"
 description: "Python-based framework for hardware design and verification"
 remote_theme: just-the-docs/just-the-docs
-baseurl: "/pysilicon" # Only needed if using a project page
+baseurl: "/waveflow" # Only needed if using a project page
 url: "https://sdrangan.github.io"
 
 # Navigation settings
@@ -14,7 +14,7 @@ kramdown:
   input: GFM
 
 # Optional: GitHub repo link
-github_repo_url: "https://github.com/sdrangan/pysilicon"
+github_repo_url: "https://github.com/sdrangan/waveflow"
 
 just_the_docs:
   favicon: "/assets/images/favicon.png"
@@ -25,7 +25,7 @@ just_the_docs:
 # (e.g. examples/some_example/report.html) remain accessible as
 # static files and can be linked from docs pages.
 exclude:
-  - pysilicon/
+  - waveflow/
   - tests/
   - plans/
   - CLAUDE.md

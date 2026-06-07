@@ -4,9 +4,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.dataunion import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.dataunion import (
     DataUnion,
     DataUnionHdr,
     LengthField,
@@ -14,8 +14,8 @@ from pysilicon.hw.dataunion import (
     SchemaRegistry,
     register_schema,
 )
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
-from pysilicon.hw.schema_transfer_interface import (
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
+from waveflow.hw.schema_transfer_interface import (
     ArrayTransferIF,
     ArrayTransferIFMaster,
     ArrayTransferIFSlave,
@@ -25,7 +25,7 @@ from pysilicon.hw.schema_transfer_interface import (
     SchemaTransferIFSlave,
     StreamTransport,
 )
-from pysilicon.simulation.simulation import Simulation
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +666,7 @@ class TestArrayTransferIFBind:
 Float32 = None  # resolved lazily below to avoid import-time side-effects
 
 def _float32_type():
-    from pysilicon.hw.dataschema import FloatField
+    from waveflow.hw.dataschema import FloatField
     return FloatField.specialize(bitwidth=32)
 
 

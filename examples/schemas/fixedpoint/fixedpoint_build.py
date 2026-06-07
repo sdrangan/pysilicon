@@ -27,11 +27,11 @@ from pathlib import Path
 
 import numpy as np
 
-from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
-from pysilicon.build.cli import run_dag_cli
-from pysilicon.hw.fixpoint import FixedField, add, fixed_sum, from_real, mult, quantize
-from pysilicon.toolchain import toolchain
-from pysilicon.utils.fixputils import OMode, QMode, to_bits
+from waveflow.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
+from waveflow.build.cli import run_dag_cli
+from waveflow.hw.fixpoint import FixedField, add, fixed_sum, from_real, mult, quantize
+from waveflow.toolchain import toolchain
+from waveflow.utils.fixputils import OMode, QMode, to_bits
 
 try:
     from examples.schemas.fixedpoint.kernels import (

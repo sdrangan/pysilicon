@@ -6,14 +6,14 @@ from typing import ClassVar
 
 import pytest
 
-from pysilicon.hw.hw_component import (
+from waveflow.hw.hw_component import (
     ControlMode,
     HwComponent,
     HwParam,
     SynthContext,
 )
-from pysilicon.hw.synth import synthesizable
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.synth import synthesizable
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ def test_cpp_param_custom_value():
 # ---------------------------------------------------------------------------
 
 def test_hwcomponent_is_a_component():
-    from pysilicon.hw.component import Component
+    from waveflow.hw.component import Component
     sim = Simulation()
     comp = HwComponent(sim=sim)
     assert isinstance(comp, Component)
@@ -183,7 +183,7 @@ def test_hwcomponent_subclass_with_hwparam_instantiates():
 # ---------------------------------------------------------------------------
 
 def test_hwparam_value_wrapped_after_construction():
-    from pysilicon.hw.hw_component import HwParamValue
+    from waveflow.hw.hw_component import HwParamValue
     comp = ParamComp(sim=Simulation(), in_bw=32, out_bw=64)
     assert isinstance(comp.in_bw, HwParamValue)
     assert comp.in_bw.param_name == 'in_bw'
@@ -201,12 +201,12 @@ def test_hwparam_value_behaves_as_int():
 
 
 def test_hwparam_value_equals_int_literal():
-    from pysilicon.hw.hw_component import HwParamValue
+    from waveflow.hw.hw_component import HwParamValue
     assert HwParamValue(32, 'in_bw') == 32
 
 
 def test_hwparam_value_formats_as_int():
-    from pysilicon.hw.hw_component import HwParamValue
+    from waveflow.hw.hw_component import HwParamValue
     bw = HwParamValue(32, 'in_bw')
     assert f"<{bw}>" == "<32>"
     assert str(bw) == "32"
@@ -270,8 +270,8 @@ def test_construction_still_works():
 def test_subclass_post_init_sees_wrapped_param():
     """Endpoints constructed in subclass __post_init__ must read HwParamValue."""
     from dataclasses import dataclass
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.interface import StreamIFSlave
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.interface import StreamIFSlave
 
     @dataclass
     class _StreamComp(HwComponent):

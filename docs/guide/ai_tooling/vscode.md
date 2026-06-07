@@ -7,7 +7,7 @@ has_children: false
 
 # VS Code Extension Setup
 
-This guide describes how to set up the development environment for the PySilicon VS Code extension. These steps are only required for contributors working on the extension itself. Users of PySilicon do not need Node.js or the extension build environment.
+This guide describes how to set up the development environment for the Waveflow VS Code extension. These steps are only required for contributors working on the extension itself. Users of Waveflow do not need Node.js or the extension build environment.
 
 ---
 
@@ -42,7 +42,7 @@ Set-ExecutionPolicy RemoteSigned
 From the root of the repository:
 
 ```bash
-cd pysilicon-extension
+cd waveflow-extension
 ```
 
 This folder contains the extension's `package.json`, `tsconfig.json`, and TypeScript source files.
@@ -88,10 +88,10 @@ This generates JavaScript output in the `out/` directory.
 
 ## 5. Launch the Extension Development Host
 
-Open the **root** PySilicon repository in VS Code:
+Open the **root** Waveflow repository in VS Code:
 
 ```
-pysilicon/
+waveflow/
 ```
 
 Then press **F5**.
@@ -108,14 +108,14 @@ In the Extension Development Host window:
 2. Select:
 
    ```
-   pysilicon/examples/vscodedemos/
+   waveflow/examples/vscodedemos/
    ```
 
 3. Open `myclass.py`
 4. Run the command:
 
    ```
-   PySilicon: Add Hello Method
+   Waveflow: Add Hello Method
    ```
 
 The file should update in place.
@@ -127,7 +127,7 @@ The file should update in place.
 Edit files in:
 
 ```
-pysilicon-extension/src/
+waveflow-extension/src/
 ```
 
 If you are running `npm run watch`, TypeScript rebuilds automatically.

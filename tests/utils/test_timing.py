@@ -1,5 +1,5 @@
 """
-tests/utils/test_timing.py - unit tests for pysilicon.utils.timing and the
+tests/utils/test_timing.py - unit tests for waveflow.utils.timing and the
 canonical example in examples/timing/basic_timing_diagram.py.
 """
 
@@ -39,19 +39,19 @@ def _load_example_module():
 
 class TestSigTimingInfo:
     def test_two_level_binary(self):
-        from pysilicon.utils.timing import SigTimingInfo
+        from waveflow.utils.timing import SigTimingInfo
 
         sig = SigTimingInfo("clk", [0, 5, 10, 15], ['0', '1', '0', '1'])
         assert sig.two_level is True
 
     def test_two_level_false_when_unknown(self):
-        from pysilicon.utils.timing import SigTimingInfo
+        from waveflow.utils.timing import SigTimingInfo
 
         sig = SigTimingInfo("bus", [0, 5, 10], ['x', '4', 'x'])
         assert sig.two_level is False
 
     def test_attributes_stored(self):
-        from pysilicon.utils.timing import SigTimingInfo
+        from waveflow.utils.timing import SigTimingInfo
 
         sig = SigTimingInfo("a", [0, 10], ['0', '1'], is_clock=True)
         assert sig.name == "a"
@@ -62,7 +62,7 @@ class TestSigTimingInfo:
 
 class TestClkSig:
     def test_period_and_ncycles(self):
-        from pysilicon.utils.timing import ClkSig
+        from waveflow.utils.timing import ClkSig
 
         clk = ClkSig(period=10, ncycles=4)
         # 4 cycles -> 8 transitions
@@ -70,19 +70,19 @@ class TestClkSig:
         assert len(clk.values) == 8
 
     def test_start_rising(self):
-        from pysilicon.utils.timing import ClkSig
+        from waveflow.utils.timing import ClkSig
 
         clk = ClkSig(period=10, ncycles=2, start_rising=True)
         assert clk.values[0] == '1'
 
     def test_start_falling(self):
-        from pysilicon.utils.timing import ClkSig
+        from waveflow.utils.timing import ClkSig
 
         clk = ClkSig(period=10, ncycles=2, start_rising=False)
         assert clk.values[0] == '0'
 
     def test_clk_periods_rising_edges(self):
-        from pysilicon.utils.timing import ClkSig
+        from waveflow.utils.timing import ClkSig
 
         clk = ClkSig(period=10, ncycles=4, start_rising=True)
         edges = clk.clk_periods()
@@ -90,7 +90,7 @@ class TestClkSig:
         assert edges == pytest.approx([0, 10, 20, 30])
 
     def test_is_clock_flag(self):
-        from pysilicon.utils.timing import ClkSig
+        from waveflow.utils.timing import ClkSig
 
         clk = ClkSig()
         assert clk.is_clock is True
@@ -98,7 +98,7 @@ class TestClkSig:
 
 class TestTimingDiagram:
     def _build_diagram(self):
-        from pysilicon.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
+        from waveflow.utils.timing import ClkSig, SigTimingInfo, TimingDiagram
 
         clk = ClkSig(period=10, ncycles=4)
         sig = SigTimingInfo("x", [0, 5, 15, 25], ['x', '1', '0', 'x'])
@@ -113,7 +113,7 @@ class TestTimingDiagram:
         assert 'x' in td.sig_info
 
     def test_add_signals_multiple(self):
-        from pysilicon.utils.timing import SigTimingInfo, TimingDiagram
+        from waveflow.utils.timing import SigTimingInfo, TimingDiagram
 
         td = TimingDiagram()
         sigs = [
@@ -125,7 +125,7 @@ class TestTimingDiagram:
 
     def test_plot_signals_returns_axes(self):
         import matplotlib.pyplot as plt
-        from pysilicon.utils.timing import ClkSig, TimingDiagram
+        from waveflow.utils.timing import ClkSig, TimingDiagram
 
         td = TimingDiagram()
         td.add_signal(ClkSig(period=10, ncycles=4))

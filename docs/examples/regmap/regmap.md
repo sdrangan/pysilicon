@@ -7,7 +7,7 @@ has_children: false
 
 # Understanding Vitis Register Maps
 
-This is the simplest accelerator in PySilicon: a kernel with **no data streams at
+This is the simplest accelerator in Waveflow: a kernel with **no data streams at
 all**, controlled entirely through a register map over AXI-Lite. It exists to
 introduce one idea in isolation — how a host CPU talks to an FPGA kernel through
 named, addressable control registers — before later examples layer on streaming
@@ -83,7 +83,7 @@ slave). The `port=return` pragma is what adds the **control registers**
 (`ap_start` / `ap_done`, below): it tells Vitis the kernel is launched and
 monitored over that same slave.
 
-In PySilicon you declare the matching register map in Python, and `VitisRegMap`
+In Waveflow you declare the matching register map in Python, and `VitisRegMap`
 lays it out to match the generated slave one-for-one:
 
 ```python
@@ -131,7 +131,7 @@ itself automatically. The host uses `ap_done` to know when `y` is ready without
 needing an interrupt line.
 
 > The real Vitis control word packs several more bits — `ap_idle`, `ap_ready`,
-> `auto_restart` — into the `0x00` register; PySilicon's `VitisRegMap` models the
+> `auto_restart` — into the `0x00` register; Waveflow's `VitisRegMap` models the
 > two registers this example needs. See the
 > [Register Maps guide](../../guide/interface/regmap.md) for the full
 > control-register reference.
@@ -180,7 +180,7 @@ firmware.
 
 ---
 
-The rest of this example follows the same accelerator through the full PySilicon
+The rest of this example follows the same accelerator through the full Waveflow
 flow: [the Python model](python.md), [running it in SimPy](pysim.md),
 [generating the Vitis kernel](codegen.md), and
 [validating the RTL](rtlsim.md).

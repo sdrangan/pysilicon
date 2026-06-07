@@ -8,7 +8,7 @@ disagreement.  A failed csim is a real failure — only skip when Vitis is absen
 import pytest
 
 from examples.schemas.fixedpoint.fixedpoint_build import build_cases, conformance_for_case
-from pysilicon.toolchain import toolchain
+from waveflow.toolchain import toolchain
 
 CASES = build_cases()
 

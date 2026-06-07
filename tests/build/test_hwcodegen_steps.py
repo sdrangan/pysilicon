@@ -7,9 +7,9 @@ from typing import Any, ClassVar
 
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.hwcodegen_steps import HlsCodegenStep
-from pysilicon.build.hwgen import kernel_files_to_str
+from waveflow.build.build import BuildConfig
+from waveflow.build.hwcodegen_steps import HlsCodegenStep
+from waveflow.build.hwgen import kernel_files_to_str
 from tests.hw.test_resolve import DemoComponent
 
 
@@ -154,7 +154,7 @@ def test_rerun_does_not_touch_existing_impl_mtime(tmp_path: Path):
 
 def _make_dag_with_source(tmp_path: Path):
     """Build a DAG with a real SourceStep + HlsCodegenStep against ``tmp_path``."""
-    from pysilicon.build.build import BuildDag, SourceStep
+    from waveflow.build.build import BuildDag, SourceStep
 
     src = tmp_path / "demo_source.py"
     src.write_text("# placeholder source\n", encoding="utf-8")
@@ -409,7 +409,7 @@ def test_stale_in_output_dir_ignored_when_impl_dir_differs(tmp_path: Path):
 
 def test_kernel_files_to_str_emits_relative_include():
     """The header emission helper directly returns a header with the relpath include."""
-    from pysilicon.build.hwgen import kernel_files_to_str
+    from waveflow.build.hwgen import kernel_files_to_str
     from tests.hw.test_hwgen import _TmplComp
 
     files = kernel_files_to_str(_TmplComp, output_dir="gen", impl_dir=".")

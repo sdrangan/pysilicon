@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "waveflow": {
+      "type": "stdio",
+      "command": "__WAVEFLOW_PYTHON__",
+      "args": ["-m", "waveflow.mcp.server"]
+    }
+  }
+}

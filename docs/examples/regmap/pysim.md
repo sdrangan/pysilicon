@@ -12,7 +12,7 @@ The interesting part of this page is *not* the SimPy simulation itself — that 
 
 ## Creating a Build DAG
 
-A **build DAG** is PySilicon's pipeline abstraction: a directed acyclic graph of typed steps where each step declares the named artifacts it **consumes** and **produces**, and the DAG handles execution order, incremental rebuilds, and partial-pipeline runs. The same DAG instance carries the design from input generation through Python sim, codegen, Vitis C-sim, C-synth, and RTL cosim — one pipeline, one entry point. See [Build System](../../guide/build/index.md) for the full reference.
+A **build DAG** is Waveflow's pipeline abstraction: a directed acyclic graph of typed steps where each step declares the named artifacts it **consumes** and **produces**, and the DAG handles execution order, incremental rebuilds, and partial-pipeline runs. The same DAG instance carries the design from input generation through Python sim, codegen, Vitis C-sim, C-synth, and RTL cosim — one pipeline, one entry point. See [Build System](../../guide/build/index.md) for the full reference.
 
 For the Python-only portion of the simp_fun flow, the DAG has three steps:
 
@@ -39,7 +39,7 @@ At a high level, running this slice of the DAG performs one test transaction in 
 
 ## Build artifacts
 
-In a PySilicon build, an **artifact** is a named output produced by one step and consumed by zero or more downstream steps. Artifacts can be files on disk (most common — a `.bin` blob, a `.json` report, a generated `.cpp`) or in-memory Python objects (a `numpy` array, a parsed dataclass). The DAG tracks who produces what and wires the consumers automatically; you never write `dep_step.add_dependent(self)` by hand.
+In a Waveflow build, an **artifact** is a named output produced by one step and consumed by zero or more downstream steps. Artifacts can be files on disk (most common — a `.bin` blob, a `.json` report, a generated `.cpp`) or in-memory Python objects (a `numpy` array, a parsed dataclass). The DAG tracks who produces what and wires the consumers automatically; you never write `dep_step.add_dependent(self)` by hand.
 
 A step declares its artifact contract as class attributes:
 

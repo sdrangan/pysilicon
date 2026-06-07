@@ -8,14 +8,14 @@ recursive-include docs *
 # Include example projects (e.g., waveflow)
 recursive-include examples *
 
-# Include non-Python files inside the pysilicon package
-recursive-include pysilicon *.json
-recursive-include pysilicon *.yaml
-recursive-include pysilicon *.yml
-recursive-include pysilicon *.txt
-recursive-include pysilicon *.md
-recursive-include pysilicon/templates *
-recursive-include pysilicon/assets *
+# Include non-Python files inside the waveflow package
+recursive-include waveflow *.json
+recursive-include waveflow *.yaml
+recursive-include waveflow *.yml
+recursive-include waveflow *.txt
+recursive-include waveflow *.md
+recursive-include waveflow/templates *
+recursive-include waveflow/assets *
 
 # Exclude Python cache and build artifacts
 global-exclude __pycache__/

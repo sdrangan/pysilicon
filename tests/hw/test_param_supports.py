@@ -7,8 +7,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from pysilicon.build.hwcodegen import SynthesisError
-from pysilicon.hw.hw_component import (
+from waveflow.build.hwcodegen import SynthesisError
+from waveflow.hw.hw_component import (
     HwComponent,
     HwParam,
     _hw_param_names,

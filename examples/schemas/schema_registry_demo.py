@@ -19,8 +19,8 @@ import math
 
 import numpy as np
 
-from pysilicon.hw.dataschema import DataList, FloatField, IntField
-from pysilicon.hw.dataunion import (
+from waveflow.hw.dataschema import DataList, FloatField, IntField
+from waveflow.hw.dataunion import (
     DataUnionHdr,
     LengthField,
     SchemaIDField,

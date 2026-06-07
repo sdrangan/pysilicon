@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import correlate2d
 
-from pysilicon.build.build import BuildConfig, BuildDag
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.arrayutils import (
+from waveflow.build.build import BuildConfig, BuildDag
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.arrayutils import (
     ArrayUtilsStep,
     get_nwords,
     read_array,
@@ -23,11 +23,11 @@ from pysilicon.hw.arrayutils import (
     write_array,
     write_uint32_file,
 )
-from pysilicon.hw.dataschema import DataList, DataSchemaStep, EnumField, IntField, MemAddr
-from pysilicon.hw.memory import AddrUnit, Memory
-from pysilicon.toolchain import toolchain
-from pysilicon.toolchain.stagetest import StageTest
-from pysilicon.utils.csynthparse import CsynthParser
+from waveflow.hw.dataschema import DataList, DataSchemaStep, EnumField, IntField, MemAddr
+from waveflow.hw.memory import AddrUnit, Memory
+from waveflow.toolchain import toolchain
+from waveflow.toolchain.stagetest import StageTest
+from waveflow.utils.csynthparse import CsynthParser
 
 
 """
@@ -378,7 +378,7 @@ class Conv2DTest(object):
 
     @property
     def project_name(self) -> str:
-        return "pysilicon_conv2d_df_proj" if self.use_df else "pysilicon_conv2d_proj"
+        return "waveflow_conv2d_df_proj" if self.use_df else "waveflow_conv2d_proj"
 
     @property
     def run_script_name(self) -> str:
@@ -653,9 +653,9 @@ class Conv2DTest(object):
                     work_dir=self.example_dir,
                     capture_output=not live_output,
                     env={
-                        "PYSILICON_CONV2D_START_AT": start_at,
-                        "PYSILICON_CONV2D_THROUGH": vitis_through,
-                        "PYSILICON_CONV2D_TRACE_LEVEL": trace_level,
+                        "WAVEFLOW_CONV2D_START_AT": start_at,
+                        "WAVEFLOW_CONV2D_THROUGH": vitis_through,
+                        "WAVEFLOW_CONV2D_TRACE_LEVEL": trace_level,
                     },
                 )
             except subprocess.CalledProcessError as exc:
@@ -699,7 +699,7 @@ class Conv2DTest(object):
         trace_level: str = "*",
     ) -> Path:
         """Generate a VCD file by re-running the Vivado RTL simulation."""
-        from pysilicon.scripts.xsim_vcd import run_xsim_vcd
+        from waveflow.scripts.xsim_vcd import run_xsim_vcd
 
         if output_vcd is None:
             output_vcd = "dump_df.vcd" if self.use_df else "dump.vcd"

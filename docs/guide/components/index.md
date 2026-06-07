@@ -21,9 +21,9 @@ Endpoints are declared in `__post_init__` and attached with `add_endpoint(...)`,
 
 ## API
 
-- [`Component`](../../../pysilicon/hw/component.py)
-- [`HwComponent`](../../../pysilicon/hw/hw_component.py)
-- [`add_endpoint(endpoint)`](../../../pysilicon/hw/component.py)
+- [`Component`](../../../waveflow/hw/component.py)
+- [`HwComponent`](../../../waveflow/hw/hw_component.py)
+- [`add_endpoint(endpoint)`](../../../waveflow/hw/component.py)
 - [`HwParam`](./hwparam.md)
 - [`HwConst`](./hwconst.md)
 - [`HwTestbench`](./hwtestbench.md)

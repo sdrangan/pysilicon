@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from pysilicon.utils.csynthparse import CsynthParser
+from waveflow.utils.csynthparse import CsynthParser
 
 
 def test_get_loop_pipeline_info_extracts_trip_counts_and_latency_range(tmp_path: Path):

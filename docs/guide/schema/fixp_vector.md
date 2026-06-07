@@ -10,7 +10,7 @@ has_children: false
 Fixed-point arrays use [`DataArray[FixedField]`](./dataarrays.md) — the same
 numpy-backed array schema as every other element type, so they get flat storage,
 array access, and codegen for free. Vector operations are **free functions** in
-[`pysilicon/hw/fixpoint.py`](../../../pysilicon/hw/fixpoint.py) (not methods — the
+[`waveflow/hw/fixpoint.py`](../../../waveflow/hw/fixpoint.py) (not methods — the
 container stays a plain container): `mult`, `add`, `sub`, `shift`, `fixed_sum`, and
 `quantize`. They run entirely in the **integer domain** and match the Vitis `ap_fixed`
 datapath bit-for-bit. See the [FixedField type page](./fixpoint.md) for the format
@@ -23,7 +23,7 @@ itself.
 
 ```python
 import numpy as np
-from pysilicon.hw.fixpoint import FixedField, from_real, to_real
+from waveflow.hw.fixpoint import FixedField, from_real, to_real
 
 Q8_4 = FixedField.specialize(8, 4)                 # ap_fixed<8, 4>
 da = from_real([1.5, -2.0, 0.0625, 1.53], Q8_4)
@@ -49,7 +49,7 @@ C++).
 | `quantize(a, target)` | `target` | **the lossy step** — rounding (`QMode`) + overflow (`OMode`) |
 
 ```python
-from pysilicon.hw.fixpoint import mult, add, quantize
+from waveflow.hw.fixpoint import mult, add, quantize
 
 a = from_real([1.5, -2.0, 0.5], Q8_4)
 b = from_real([2.0,  1.5, -1.0], Q8_4)
@@ -76,7 +76,7 @@ mult(from_real([1.0], A), from_real([1.0], A))   # NotImplementedError: derived 
 
 This is deliberate: numpy `int64`/`uint64` *silently wrap* on overflow, which would be
 an invisible bit-exactness violation, so the guard is a compile-time width check, not
-a runtime hope. (Wide > 64-bit support — via PySilicon's `(n, k)` uint64-word
+a runtime hope. (Wide > 64-bit support — via Waveflow's `(n, k)` uint64-word
 convention, not object arrays — is future work.) In practice, real FPGA DSP datapaths
 quantize per stage and stay well under 64 bits.
 
@@ -107,7 +107,7 @@ full-precision accumulator, then one `quantize` back to the working format — t
 canonical DSP pattern, and **bit-exact with Vitis**.
 
 ```python
-from pysilicon.hw.fixpoint import FixedField, from_real, mult, fixed_sum, quantize, to_real
+from waveflow.hw.fixpoint import FixedField, from_real, mult, fixed_sum, quantize, to_real
 
 S16_8 = FixedField.specialize(16, 8)                 # ap_fixed<16, 8>
 taps    = from_real([0.5, 0.25, -0.125, 0.0625], S16_8)

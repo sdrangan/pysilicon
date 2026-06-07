@@ -9,17 +9,17 @@ from pathlib import Path
 
 import numpy as np
 
-from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
-from pysilicon.build.cosim_steps import ExtractCosimTimingStep, ValidateTimingStep
-from pysilicon.build.hwcodegen_steps import HlsCodegenStep
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.build.verify_steps import FunctionalVerifyStep
-from pysilicon.hw.arrayutils import ArrayUtilsStep, read_uint32_file, write_uint32_file
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataSchemaStep
-from pysilicon.simulation.logger import Logger
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.toolchain import toolchain
+from waveflow.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
+from waveflow.build.cosim_steps import ExtractCosimTimingStep, ValidateTimingStep
+from waveflow.build.hwcodegen_steps import HlsCodegenStep
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.build.verify_steps import FunctionalVerifyStep
+from waveflow.hw.arrayutils import ArrayUtilsStep, read_uint32_file, write_uint32_file
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataSchemaStep
+from waveflow.simulation.logger import Logger
+from waveflow.simulation.simulation import Simulation
+from waveflow.toolchain import toolchain
 
 try:
     from examples.stream_inband.poly import (
@@ -249,9 +249,9 @@ class CSimStep(BuildStep):
     params      = {"live_output": False, "clk_freq": 100e6}
 
     def run(self, config: BuildConfig, include_dir, data_dir, live_output, clk_freq, **_) -> dict:
-        vitis_env = {"PYSILICON_POLY_COSIM": "0",
-                     "PYSILICON_POLY_TRACE_LEVEL": "none",
-                     "PYSILICON_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
+        vitis_env = {"WAVEFLOW_POLY_COSIM": "0",
+                     "WAVEFLOW_POLY_TRACE_LEVEL": "none",
+                     "WAVEFLOW_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
         try:
             result = toolchain.run_vitis_hls(
                 config.root_dir / "run.tcl",
@@ -275,13 +275,13 @@ class CSynthStep(BuildStep):
         "poly_cpp", "poly_hpp", "poly_evaluate_impl",
         "include_dir", "csim_data_dir",
     ]
-    produces    = {"report_dir": Path("pysilicon_poly_proj/solution1")}
+    produces    = {"report_dir": Path("waveflow_poly_proj/solution1")}
     params      = {"live_output": False, "clk_freq": 100e6}
 
     def run(self, config: BuildConfig, include_dir, csim_data_dir, live_output, clk_freq, **_) -> dict:
-        vitis_env = {"PYSILICON_POLY_COSIM": "1",
-                     "PYSILICON_POLY_TRACE_LEVEL": "none",
-                     "PYSILICON_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
+        vitis_env = {"WAVEFLOW_POLY_COSIM": "1",
+                     "WAVEFLOW_POLY_TRACE_LEVEL": "none",
+                     "WAVEFLOW_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
         try:
             result = toolchain.run_vitis_hls(
                 config.root_dir / "run.tcl",
@@ -295,7 +295,7 @@ class CSynthStep(BuildStep):
                 print(result.stderr)
         except Exception as exc:
             raise RuntimeError(str(exc))
-        report_dir = config.root_dir / "pysilicon_poly_proj" / "solution1"
+        report_dir = config.root_dir / "waveflow_poly_proj" / "solution1"
         return {"report_dir": report_dir}
 
 
@@ -308,7 +308,7 @@ class InspectSynthStep(BuildStep):
 
     def run(self, config: BuildConfig, report_dir) -> dict:
         try:
-            from pysilicon.utils.csynthparse import CsynthParser
+            from waveflow.utils.csynthparse import CsynthParser
         except ModuleNotFoundError as exc:
             raise RuntimeError(f"csynthparse not available: {exc}")
 

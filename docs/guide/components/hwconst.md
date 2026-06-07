@@ -14,8 +14,8 @@ Use `HwConst` for structural constants that do not vary across instances (for ex
 
 ## API
 
-- [`HwConst`](../../../pysilicon/hw/hw_component.py)
-- [`discover_hw_const(cls)`](../../../pysilicon/hw/hw_component.py)
+- [`HwConst`](../../../waveflow/hw/hw_component.py)
+- [`discover_hw_const(cls)`](../../../waveflow/hw/hw_component.py)
 
 ## Example
 

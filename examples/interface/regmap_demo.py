@@ -32,15 +32,15 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 
-from pysilicon.hw.aximm import (
+from waveflow.hw.aximm import (
     AXIMMCrossBarIF,
     AXIMMProtocol,
     MMIFMaster,
     assign_address_ranges,
 )
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataArray, EnumField, IntField
-from pysilicon.hw.regmap import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataArray, EnumField, IntField
+from waveflow.hw.regmap import (
     Bit,
     RegAccess,
     RegField,
@@ -48,8 +48,8 @@ from pysilicon.hw.regmap import (
     VitisRegMap,
     VitisRegMapMMIFSlave,
 )
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------

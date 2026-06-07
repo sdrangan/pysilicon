@@ -7,14 +7,14 @@ from pathlib import Path
 def test_poly_cpp_kernel_name_is_poly():
     """PolyAccelComponent overrides cpp_kernel_name to 'poly' (not 'poly_accel')."""
     from examples.stream_inband.poly import PolyAccelComponent
-    from pysilicon.build.hwgen import cpp_kernel_name
+    from waveflow.build.hwgen import cpp_kernel_name
     assert cpp_kernel_name(PolyAccelComponent) == "poly"
 
 
 def test_poly_codegen_step_extracts_and_writes(tmp_path: Path):
     """gen_kernel writes .hpp/.cpp into <root>/gen/ and the sticky .tpp at <root>/."""
     from examples.stream_inband.poly_build import build_poly_dag
-    from pysilicon.build.build import BuildConfig
+    from waveflow.build.build import BuildConfig
 
     dag = build_poly_dag()
     results = dag.run(BuildConfig(root_dir=tmp_path), through="gen_kernel")
@@ -30,8 +30,8 @@ def test_poly_codegen_step_extracts_and_writes(tmp_path: Path):
 def test_poly_kernel_signature_has_raw_coeffs_array():
     """CoeffArray uses cpp_storage='raw': signature has 'float coeffs[4]', not 'CoeffArray& coeffs'."""
     from examples.stream_inband.poly import PolyAccelComponent
-    from pysilicon.build.hwgen import kernel_signature
-    from pysilicon.simulation.simulation import Simulation
+    from waveflow.build.hwgen import kernel_signature
+    from waveflow.simulation.simulation import Simulation
 
     comp = PolyAccelComponent(name="poly", sim=Simulation())
     sig = kernel_signature(comp)
@@ -42,7 +42,7 @@ def test_poly_kernel_signature_has_raw_coeffs_array():
 def test_poly_codegen_step_kernel_contains_raw_coeffs(tmp_path: Path):
     """End-to-end: generated poly.hpp contains 'coeffs[4]' in the kernel signature."""
     from examples.stream_inband.poly_build import build_poly_dag
-    from pysilicon.build.build import BuildConfig
+    from waveflow.build.build import BuildConfig
 
     dag = build_poly_dag()
     results = dag.run(BuildConfig(root_dir=tmp_path), through="gen_kernel")
@@ -91,7 +91,7 @@ def test_poly_swap_over_state():
 def test_poly_gen_hpp_uses_relative_impl_include(tmp_path: Path):
     """gen/poly.hpp must reference the .tpp via ``../poly_evaluate_impl.tpp``."""
     from examples.stream_inband.poly_build import build_poly_dag
-    from pysilicon.build.build import BuildConfig
+    from waveflow.build.build import BuildConfig
 
     dag = build_poly_dag()
     results = dag.run(BuildConfig(root_dir=tmp_path), through="gen_kernel")
@@ -111,7 +111,7 @@ def test_poly_gen_hpp_includes_hook_schemas_and_utility_headers(tmp_path: Path):
       ``get_utility_includes`` returns the array-utils header path.
     """
     from examples.stream_inband.poly_build import build_poly_dag
-    from pysilicon.build.build import BuildConfig
+    from waveflow.build.build import BuildConfig
 
     dag = build_poly_dag()
     results = dag.run(BuildConfig(root_dir=tmp_path), through="gen_kernel")

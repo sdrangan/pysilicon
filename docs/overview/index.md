@@ -1,13 +1,13 @@
 ---
 title: Overview
-parent: PySilicon
+parent: Waveflow
 nav_order: 1
 has_children: true
 ---
 
 # Overview
 
-PySilicon is a **Python-native framework for hardware, algorithm, and software co-design**.
+Waveflow is a **Python-native framework for hardware, algorithm, and software co-design**.
 
 It is motivated by a common problem in hardware research and development: the overall system description is usually fragmented across multiple disconnected forms:
 - Python or MATLAB algorithm models
@@ -21,11 +21,11 @@ It is motivated by a common problem in hardware research and development: the ov
 
 As a result, each design change has to be translated manually across layers, and much of the system intent gets lost in the process.
 
-PySilicon explores a different approach: use **structured Python code** to describe the key elements of a hardware system — data schemas, interfaces, components, behavior, and build relationships — so that simulation, downstream implementation artifacts, software integration, and tooling can all stay aligned around one executable model.
+Waveflow explores a different approach: use **structured Python code** to describe the key elements of a hardware system — data schemas, interfaces, components, behavior, and build relationships — so that simulation, downstream implementation artifacts, software integration, and tooling can all stay aligned around one executable model.
 
 ## The core thesis
 
-The core thesis of PySilicon is that for many hardware systems, especially domain-specific accelerators, the most important problem is **not just generating RTL**.
+The core thesis of Waveflow is that for many hardware systems, especially domain-specific accelerators, the most important problem is **not just generating RTL**.
 
 The harder problem is maintaining a coherent and executable specification across:
 - algorithms
@@ -36,7 +36,7 @@ The harder problem is maintaining a coherent and executable specification across
 - implementation flows
 - documentation and tooling
 
-PySilicon is aimed at that broader problem.
+Waveflow is aimed at that broader problem.
 
 ## Why Python
 
@@ -47,9 +47,9 @@ Python is already the working language for a large fraction of algorithm develop
 - scientific computing
 - architecture exploration
 
-PySilicon builds on that reality.
+Waveflow builds on that reality.
 
-Rather than treating Python as a thin scripting wrapper around external hardware tools, PySilicon uses Python as the place where system structure can be represented directly:
+Rather than treating Python as a thin scripting wrapper around external hardware tools, Waveflow uses Python as the place where system structure can be represented directly:
 - types and schemas
 - interfaces and transactions
 - component hierarchies
@@ -60,7 +60,7 @@ This lowers the barrier for domain experts who are fluent in Python but may not 
 
 ## Simulation at the right abstraction level
 
-A major design goal of PySilicon is to support **fast executable architecture models**.
+A major design goal of Waveflow is to support **fast executable architecture models**.
 
 Traditional RTL simulation is essential for implementation-level validation, but it is often too slow for early exploration of architectural alternatives. In many research and pre-implementation workflows, what matters first is not every signal transition, but questions such as:
 
@@ -70,7 +70,7 @@ Traditional RTL simulation is essential for implementation-level validation, but
 - What happens when we change vector widths, batching, or memory organization?
 - How do algorithm and hardware choices interact?
 
-PySilicon supports a higher-level simulation point:
+Waveflow supports a higher-level simulation point:
 - execution at the **event level**
 - explicit component and interface behavior
 - **vectorized NumPy operations** where appropriate
@@ -85,9 +85,9 @@ This is especially important for:
 - queueing, scheduling, and throughput analysis
 - design-space exploration before RTL lock-in
 
-## What PySilicon is not
+## What Waveflow is not
 
-PySilicon should not be understood primarily as:
+Waveflow should not be understood primarily as:
 
 - a generic text-to-RTL system
 - an LLM wrapper for hardware code generation
@@ -96,12 +96,12 @@ PySilicon should not be understood primarily as:
 
 Those areas are either crowded, insufficiently differentiated, or miss the main technical point.
 
-Instead, PySilicon is better viewed as a **structured executable substrate** for hardware design.  
+Instead, Waveflow is better viewed as a **structured executable substrate** for hardware design.  
 That substrate can support many downstream activities — including synthesis and AI-assisted tooling — but its value does not depend on prompt engineering or multi-agent orchestration alone.
 
 ## Current focus
 
-Today, PySilicon is focused on developing the foundations of this substrate, including:
+Today, Waveflow is focused on developing the foundations of this substrate, including:
 
 - typed hardware-facing data schemas
 - explicit interface abstractions
@@ -131,7 +131,7 @@ Instead, AI becomes more useful because it operates on a representation that is 
 
 ## Intended users
 
-PySilicon is especially relevant for:
+Waveflow is especially relevant for:
 
 ### Hardware architects
 who want to explore systems and interfaces before committing to RTL details.

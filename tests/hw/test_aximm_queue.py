@@ -1,5 +1,5 @@
 """
-Unit tests for pysilicon/hw/aximm_queue.py.
+Unit tests for waveflow/hw/aximm_queue.py.
 
 Coverage
 --------
@@ -19,22 +19,22 @@ import pytest
 
 import inspect
 
-from pysilicon.hw.aximm_queue import (
+from waveflow.hw.aximm_queue import (
     AXIMMQueue,
     AXIMMQueueLayout,
     _split,
 )
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.interface import StreamIFSlave
-from pysilicon.hw.memif import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.interface import StreamIFSlave
+from waveflow.hw.memif import (
     AXIMMCrossBarIF,
     DirectMMIF,
     MMIFMaster,
     assign_address_ranges,
 )
-from pysilicon.hw.memory import MemComponent
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.memory import MemComponent
+from waveflow.simulation.simulation import Simulation
 
 
 # A 2-field struct used by the typed-access tests; each field is one 32-bit

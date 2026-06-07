@@ -7,7 +7,7 @@ real failure; only skip when Vitis is absent.
 import pytest
 
 from examples.basic_vec.basic_vec_build import build_cases, conformance_for_case
-from pysilicon.toolchain import toolchain
+from waveflow.toolchain import toolchain
 
 CASES = build_cases()
 

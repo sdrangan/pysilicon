@@ -34,7 +34,7 @@ matplotlib.use("svg")
 matplotlib.rcParams["svg.hashsalt"] = "shared_mem_figures"
 import matplotlib.pyplot as plt  # noqa: E402
 
-from pysilicon.build.build import BuildConfig, BuildStep  # noqa: E402
+from waveflow.build.build import BuildConfig, BuildStep  # noqa: E402
 
 BYTES_PER_WORD = 4  # 32-bit memory words
 

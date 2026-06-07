@@ -14,8 +14,8 @@ has_children: false
 An `Interface` is a named object that connects exactly two or more **endpoints**. It owns the latency model and the routing logic for all data passing over the connection. The interface knows the clock frequency, the data bitwidth, and any protocol-specific parameters (queue depth, protocol type, address ranges, and so on).
 
 ```python
-from pysilicon.hw.interface import StreamIF
-from pysilicon.hw.clock import Clock
+from waveflow.hw.interface import StreamIF
+from waveflow.hw.clock import Clock
 
 clk = Clock(freq=100e6)   # 100 MHz
 iface = StreamIF(sim=sim, clk=clk, bitwidth=32, latency_init=4.0)
@@ -31,7 +31,7 @@ An `InterfaceEndpoint` is the **handle** that a component holds to participate i
 Endpoints are created by the component that owns them, then registered with an interface via `bind()`.
 
 ```python
-from pysilicon.hw.interface import StreamIFMaster, StreamIFSlave
+from waveflow.hw.interface import StreamIFMaster, StreamIFSlave
 
 # Created inside each component's __post_init__
 master_ep = StreamIFMaster(sim=sim, bitwidth=32)
@@ -47,7 +47,7 @@ iface.bind("slave",  slave_ep)
 All interfaces transfer data as **numpy arrays of fixed-width integers**, aliased as `Words`:
 
 ```python
-from pysilicon.hw.interface import Words   # NDArray[uint32] | NDArray[uint64]
+from waveflow.hw.interface import Words   # NDArray[uint32] | NDArray[uint64]
 import numpy as np
 
 words = np.array([0xA0, 0xA1, 0xA2], dtype=np.uint32)
@@ -92,10 +92,10 @@ data = proc.value   # numpy array of shape (4,)
 
 | Interface | Module | Use case |
 |---|---|---|
-| `StreamIF` | `pysilicon.hw.interface` | Unidirectional data stream (AXI4-Stream or HLS stream) |
-| `CrossBarIF` | `pysilicon.hw.interface` | Port-indexed stream crossbar (n inputs × m outputs) |
-| `AXIMMCrossBarIF` | `pysilicon.hw.aximm` | AXI memory-mapped crossbar; endpoints are `MMIFMaster` / `MMIFSlave` |
-| `DirectMMIF` | `pysilicon.hw.aximm` | Point-to-point MM link (BRAM / local scratchpad) |
+| `StreamIF` | `waveflow.hw.interface` | Unidirectional data stream (AXI4-Stream or HLS stream) |
+| `CrossBarIF` | `waveflow.hw.interface` | Port-indexed stream crossbar (n inputs × m outputs) |
+| `AXIMMCrossBarIF` | `waveflow.hw.aximm` | AXI memory-mapped crossbar; endpoints are `MMIFMaster` / `MMIFSlave` |
+| `DirectMMIF` | `waveflow.hw.aximm` | Point-to-point MM link (BRAM / local scratchpad) |
 
 ## Lifecycle
 

@@ -1,6 +1,6 @@
 # smoke_test.tcl
 # Setup the HLS project environment
-open_project -reset pysilicon_smoke_proj
+open_project -reset waveflow_smoke_proj
 
 # The 'main' function in our C++ file is the entry point for the testbench
 set_top main
@@ -14,10 +14,10 @@ create_clock -period 10
 # Execute C-Simulation
 # We wrap this in a catch block so we can exit gracefully on failure
 if {[catch {csim_design} res]} {
-    puts "PYSILICON_ERROR: HLS C-Simulation failed."
+    puts "WAVEFLOW_ERROR: HLS C-Simulation failed."
     puts $res
     exit 1
 }
 
-puts "PYSILICON_SUCCESS: HLS environment is functional."
+puts "WAVEFLOW_SUCCESS: HLS environment is functional."
 exit 0

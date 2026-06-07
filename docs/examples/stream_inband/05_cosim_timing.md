@@ -11,11 +11,11 @@ it reads the cycle count the RTL co-simulator measured for one
 transaction and compares it against the cycle count the Python
 golden predicted in Group 1.  When the two agree within tolerance,
 the SimPy timing model has been *experimentally validated* against
-the RTL — the strongest claim PySilicon can make about its sim.
+the RTL — the strongest claim Waveflow can make about its sim.
 
 | Step | Produces | What it does |
 |------|----------|--------------|
-| `extract_cosim_timing` | `cosim_timing` | Runs `pysilicon.utils.cosimparse.CosimReportParser` on the solution dir; serializes the kernel's measured transaction-cycle count to `results/cosim_timing.json` |
+| `extract_cosim_timing` | `cosim_timing` | Runs `waveflow.utils.cosimparse.CosimReportParser` on the solution dir; serializes the kernel's measured transaction-cycle count to `results/cosim_timing.json` |
 | `validate_timing` | `timing_verdict` | Compares `py_timing.transaction_cycles` (Group 1) against `cosim_timing.transaction_cycles`; raises if the absolute delta exceeds `tolerance_cycles` (default 20) |
 
 ## The structured timing pair

@@ -5,11 +5,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.arrayutils import gen_array_utils, read_array, write_array
-from pysilicon.hw.dataschema import FloatField, IntField
-from pysilicon.toolchain import toolchain
+from waveflow.build.build import BuildConfig
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.arrayutils import gen_array_utils, read_array, write_array
+from waveflow.hw.dataschema import FloatField, IntField
+from waveflow.toolchain import toolchain
 
 
 F32 = FloatField.specialize(bitwidth=32, include_dir="include")

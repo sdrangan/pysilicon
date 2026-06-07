@@ -1,5 +1,5 @@
 [project]
-name = "pysilicon"
+name = "waveflow"
 version = "0.1.0"
 description = "A Python-first hardware modeling and synthesis framework"
 authors = [
@@ -25,24 +25,24 @@ dev = [
 ]
 
 [project.scripts]
-create_doc_assets = "pysilicon.scripts.create_doc_assets:main"
-xsim_vcd = "pysilicon.scripts.xsim_vcd:main"
-collect_overlay = "pysilicon.scripts.collect_overlay:main"
-sv_sim = "pysilicon.scripts.sv_sim:main"
-sv_synth = "pysilicon.scripts.sv_build:run_synth"
-sv_impl  = "pysilicon.scripts.sv_build:run_impl"
-build_lab_autograder = "pysilicon.scripts.build_lab_autograder:main"
-pysilicon_mcp_setup = "pysilicon.scripts.pysilicon_mcp_setup:main"
-pysilicon_mcp_server = "pysilicon.mcp.server:main"
-build_corpus = "pysilicon.mcp.build_corpus:main"
+create_doc_assets = "waveflow.scripts.create_doc_assets:main"
+xsim_vcd = "waveflow.scripts.xsim_vcd:main"
+collect_overlay = "waveflow.scripts.collect_overlay:main"
+sv_sim = "waveflow.scripts.sv_sim:main"
+sv_synth = "waveflow.scripts.sv_build:run_synth"
+sv_impl  = "waveflow.scripts.sv_build:run_impl"
+build_lab_autograder = "waveflow.scripts.build_lab_autograder:main"
+waveflow_mcp_setup = "waveflow.scripts.waveflow_mcp_setup:main"
+waveflow_mcp_server = "waveflow.mcp.server:main"
+build_corpus = "waveflow.mcp.build_corpus:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-# Automatically find the pysilicon package and scripts
+# Automatically find the waveflow package and scripts
 [tool.setuptools.packages.find]
-include = ["pysilicon*", "scripts*"]
+include = ["waveflow*", "scripts*"]
 
 # Include non-Python files (schemas, templates, docs assets)
 [tool.setuptools]

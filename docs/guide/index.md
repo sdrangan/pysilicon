@@ -1,13 +1,13 @@
 ---
 title: Guide
-parent: PySilicon
+parent: Waveflow
 nav_order: 3
 has_children: true
 ---
 
 # Guide
 
-Welcome to PySilicon.  This folder will have guides to use the PySilicon functionality as we develop it.
+Welcome to Waveflow.  This folder will have guides to use the Waveflow functionality as we develop it.
 
 - [Installation](./installation/)
 - [Data Schemas](./schema)

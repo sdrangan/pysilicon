@@ -1,19 +1,19 @@
 ---
 title: Examples
-parent: PySilicon
+parent: Waveflow
 nav_order: 2
 has_children: true
 ---
 
 # Examples
 
-PySilicon's examples are a **teaching progression**: each one introduces a single
+Waveflow's examples are a **teaching progression**: each one introduces a single
 new hardware-interface concept on top of the previous, using a small computation
 as its vehicle. Every directory is named for the **pattern** it teaches; the
 computation keeps its own identity in the files inside (e.g. `stream_inband/`
 holds the polynomial accelerator in `poly.py`).
 
-## The general PySilicon flow
+## The general Waveflow flow
 
 Python is the single source of truth. Every *full* example walks the same five
 stages, each derived from the one before:

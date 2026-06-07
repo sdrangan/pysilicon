@@ -1,7 +1,7 @@
 """Unified BuildDag for the shared_mem (histogram) example.
 
 One declarative :class:`BuildDag` of dataclass :class:`BuildStep`s, driven by the
-shared regmap-style introspection CLI (:func:`pysilicon.build.cli.run_dag_cli`).
+shared regmap-style introspection CLI (:func:`waveflow.build.cli.run_dag_cli`).
 It consolidates the histogram build that previously lived across hist_demo.py
 (the HistTest harness) and shared_mem_build.py (the codegen helper + the
 CSIM_CASES coverage set): codegen -> input vectors -> Python golden -> Vitis
@@ -20,19 +20,19 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
-from pysilicon.build.cli import run_dag_cli
-from pysilicon.build.hwgen import header_to_cpp, kernel_to_cpp, tb_files_to_str
-from pysilicon.build.streamutils import MemMgrStep, StreamUtilsStep
-from pysilicon.hw.arrayutils import (
+from waveflow.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
+from waveflow.build.cli import run_dag_cli
+from waveflow.build.hwgen import header_to_cpp, kernel_to_cpp, tb_files_to_str
+from waveflow.build.streamutils import MemMgrStep, StreamUtilsStep
+from waveflow.hw.arrayutils import (
     ArrayUtilsStep, get_nwords, read_array, read_uint32_file, write_array,
     write_uint32_file,
 )
-from pysilicon.hw.dataschema import DataSchemaStep
-from pysilicon.hw.memory import AddrUnit, Memory
-from pysilicon.toolchain import toolchain
-from pysilicon.utils.jsonutil import hex_word, json_scalar
-from pysilicon.utils.vcd import AximmBeatType, vcd_trace
+from waveflow.hw.dataschema import DataSchemaStep
+from waveflow.hw.memory import AddrUnit, Memory
+from waveflow.toolchain import toolchain
+from waveflow.utils.jsonutil import hex_word, json_scalar
+from waveflow.utils.vcd import AximmBeatType, vcd_trace
 
 try:
     from examples.shared_mem.hist import (
@@ -72,9 +72,9 @@ def _run_tcl(config: BuildConfig, *, start_at: str, through: str,
         config.root_dir / "run.tcl", work_dir=config.root_dir,
         capture_output=not live_output,
         env={
-            "PYSILICON_HIST_START_AT": start_at,
-            "PYSILICON_HIST_THROUGH": through,
-            "PYSILICON_HIST_TRACE_LEVEL": trace_level,
+            "WAVEFLOW_HIST_START_AT": start_at,
+            "WAVEFLOW_HIST_THROUGH": through,
+            "WAVEFLOW_HIST_TRACE_LEVEL": trace_level,
         },
     )
 
@@ -277,8 +277,8 @@ class HistTest(object):
 
     def _detect_axi_max_burst_lengths(self) -> tuple[int, int]:
         candidates = [
-            self.example_dir / "pysilicon_hist_proj" / "solution1" / "impl" / "verilog" / "hist.v",
-            self.example_dir / "pysilicon_hist_proj" / "solution1" / "impl" / "vhdl" / "hist.vhd",
+            self.example_dir / "waveflow_hist_proj" / "solution1" / "impl" / "verilog" / "hist.v",
+            self.example_dir / "waveflow_hist_proj" / "solution1" / "impl" / "vhdl" / "hist.vhd",
         ]
         patterns = {
             "read": [
@@ -384,7 +384,7 @@ class HistTest(object):
             self.simulate()
 
         from vcdvcd import VCDVCD
-        from pysilicon.utils.vcd import VcdParser
+        from waveflow.utils.vcd import VcdParser
 
         if vcd_path is None:
             vcd_path = self.example_dir / "vcd" / "dump.vcd"
@@ -462,7 +462,7 @@ class HistTest(object):
         """
         Generate a VCD file by re-running the Vivado RTL simulation.
 
-        Delegates to :func:`pysilicon.scripts.xsim_vcd.run_xsim_vcd`.
+        Delegates to :func:`waveflow.scripts.xsim_vcd.run_xsim_vcd`.
         Requires Vivado/xsim installed on Windows.
 
         Parameters
@@ -479,10 +479,10 @@ class HistTest(object):
         Path
             Absolute path to the written VCD file.
         """
-        from pysilicon.scripts.xsim_vcd import run_xsim_vcd
+        from waveflow.scripts.xsim_vcd import run_xsim_vcd
         return run_xsim_vcd(
             top="hist",
-            comp="pysilicon_hist_proj",
+            comp="waveflow_hist_proj",
             out=output_vcd,
             soln=soln,
             trace_level=trace_level,
@@ -580,7 +580,7 @@ def generate_vitis_sources(work_dir: str | Path) -> Path:
     ``HistTest.gen_vitis_code`` (the proven path); the kernel + header are
     generated from :class:`HistAccel`.
     """
-    from pysilicon.build.build import BuildConfig, BuildDag
+    from waveflow.build.build import BuildConfig, BuildDag
 
     work_dir = Path(work_dir)
     HistTest(example_dir=work_dir).gen_vitis_code()   # streams + schemas + array-utils
@@ -720,7 +720,7 @@ class CosimStep(BuildStep):
 
     description = "Vitis C-synth + RTL co-simulation of the reference vector."
     consumes = ["kernel_cpp", "tb_cpp", "include_dir", "run_tcl", "csim_verdict"]
-    produces = {"cosim_dir": Path("pysilicon_hist_proj")}
+    produces = {"cosim_dir": Path("waveflow_hist_proj")}
     params = {"ndata": DEFAULT_NDATA, "nbins": DEFAULT_NBINS, "seed": DEFAULT_SEED,
               "trace_level": "port", "live_output": False}
 
@@ -734,7 +734,7 @@ class CosimStep(BuildStep):
         ok, detail = case.check_outputs(data_dir, data, edges)
         if not ok:
             raise RuntimeError(f"Cosim output mismatch (reference vector): {detail}")
-        return {"cosim_dir": config.root_dir / "pysilicon_hist_proj"}
+        return {"cosim_dir": config.root_dir / "waveflow_hist_proj"}
 
 
 @dataclass(kw_only=True)
@@ -780,8 +780,8 @@ class ExtractCosimTimingStep(BuildStep):
     produces = {"cosim_timing": Path("results/cosim_timing.json")}
 
     def run(self, config: BuildConfig, **_) -> dict[str, Any]:
-        from pysilicon.utils.cosimparse import CosimReportParser
-        sol = config.root_dir / "pysilicon_hist_proj" / "solution1"
+        from waveflow.utils.cosimparse import CosimReportParser
+        sol = config.root_dir / "waveflow_hist_proj" / "solution1"
         cycles = CosimReportParser(sol_path=sol, top="hist").get_transaction_cycles()
         out = config.root_dir / "results" / "cosim_timing.json"
         out.parent.mkdir(parents=True, exist_ok=True)

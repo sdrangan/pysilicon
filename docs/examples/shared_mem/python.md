@@ -7,7 +7,7 @@ has_children: false
 
 # Python model
 
-This page builds the histogram accelerator as a PySilicon `HwComponent`. The
+This page builds the histogram accelerator as a Waveflow `HwComponent`. The
 [concept page](aximm.md) covered *why* the data lives in memory and the control
 on a stream; here we write the Python that says *how* — the command/response
 schemas, the kernel's three ports, and the `run_proc` body that validates,

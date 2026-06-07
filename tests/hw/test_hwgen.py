@@ -1,4 +1,4 @@
-"""Tests for the C++ codegen pass (pysilicon/build/hwgen.py)."""
+"""Tests for the C++ codegen pass (waveflow/build/hwgen.py)."""
 from __future__ import annotations
 
 from dataclasses import dataclass as _dataclass
@@ -7,9 +7,9 @@ from typing import ClassVar
 
 import pytest
 
-from pysilicon.build.hwgen import CodegenCtx, to_cpp
-from pysilicon.hw.hw_component import HwComponent, HwParam
-from pysilicon.hw.hwstmt import (
+from waveflow.build.hwgen import CodegenCtx, to_cpp
+from waveflow.hw.hw_component import HwComponent, HwParam
+from waveflow.hw.hwstmt import (
     CaseStmt,
     ContinueStmt,
     HwVar,
@@ -17,20 +17,20 @@ from pysilicon.hw.hwstmt import (
     SeqStmt,
     WhileStmt,
 )
-from pysilicon.hw.dataschema import DataList as _DataList
-from pysilicon.hw.dataschema import IntField as _IntField
-from pysilicon.hw.interface import StreamIFMaster as _StreamIFMaster
-from pysilicon.hw.interface import StreamIFSlave as _StreamIFSlave
-from pysilicon.hw.regmap import (
+from waveflow.hw.dataschema import DataList as _DataList
+from waveflow.hw.dataschema import IntField as _IntField
+from waveflow.hw.interface import StreamIFMaster as _StreamIFMaster
+from waveflow.hw.interface import StreamIFSlave as _StreamIFSlave
+from waveflow.hw.regmap import (
     Bit as _Bit,
     RegAccess as _RegAccess,
     RegField as _RegField,
     VitisRegMap as _VitisRegMap,
     VitisRegMapMMIFSlave as _VitisRegMapMMIFSlave,
 )
-from pysilicon.hw.synth import synthesizable as _synthesizable
-from pysilicon.simulation.simobj import ProcessGen as _ProcessGen
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.synth import synthesizable as _synthesizable
+from waveflow.simulation.simobj import ProcessGen as _ProcessGen
+from waveflow.simulation.simulation import Simulation
 from tests.hw.test_resolve import DemoCmdHdr
 from tests.hw.test_resolve import DemoCmdHdr as _DemoCmdHdr
 from tests.hw.test_resolve import DemoError as _DemoError
@@ -168,7 +168,7 @@ def _comp_with_endpoints(**endpoints):
 
 
 def test_stream_get_emits_decl_and_read():
-    from pysilicon.hw.interface import StreamGetStmt
+    from waveflow.hw.interface import StreamGetStmt
     s_in = _FakeEndpoint()
     comp = _comp_with_endpoints(s_in=s_in)
     ctx = CodegenCtx(comp=comp)
@@ -185,7 +185,7 @@ def test_stream_get_emits_decl_and_read():
 
 
 def test_stream_write_emits_call():
-    from pysilicon.hw.interface import StreamWriteStmt
+    from waveflow.hw.interface import StreamWriteStmt
     m_out = _FakeEndpoint()
     comp = _comp_with_endpoints(m_out=m_out)
     ctx = CodegenCtx(comp=comp)
@@ -198,7 +198,7 @@ def test_stream_write_emits_call():
 
 
 def test_stream_drain_emits_flush():
-    from pysilicon.hw.interface import StreamDrainStmt
+    from waveflow.hw.interface import StreamDrainStmt
     s_in = _FakeEndpoint()
     comp = _comp_with_endpoints(s_in=s_in)
     ctx = CodegenCtx(comp=comp)
@@ -215,14 +215,14 @@ def test_stream_drain_emits_flush():
 class _FakeParamEndpoint:
     """Stand-in endpoint whose bitwidth is a HwParamValue."""
     def __init__(self, param_name: str, value: int = 32) -> None:
-        from pysilicon.hw.hw_component import HwParamValue
+        from waveflow.hw.hw_component import HwParamValue
         self.bitwidth = HwParamValue(value, param_name)
 
 
 def test_stream_get_uses_literal_bitwidth_from_hwparam_endpoint():
     """Top-level kernels are now concrete: stream stmts emit the literal
     bitwidth of the endpoint's ``HwParamValue``, not the param name."""
-    from pysilicon.hw.interface import StreamGetStmt
+    from waveflow.hw.interface import StreamGetStmt
     s_in = _FakeParamEndpoint(param_name="in_bw", value=64)
     comp = _comp_with_endpoints(s_in=s_in)
     ctx = CodegenCtx(comp=comp)
@@ -237,7 +237,7 @@ def test_stream_get_uses_literal_bitwidth_from_hwparam_endpoint():
 
 
 def test_stream_write_uses_literal_bitwidth_from_hwparam_endpoint():
-    from pysilicon.hw.interface import StreamWriteStmt
+    from waveflow.hw.interface import StreamWriteStmt
     m_out = _FakeParamEndpoint(param_name="out_bw", value=64)
     comp = _comp_with_endpoints(m_out=m_out)
     ctx = CodegenCtx(comp=comp)
@@ -252,7 +252,7 @@ def test_stream_write_uses_literal_bitwidth_from_hwparam_endpoint():
 
 
 def test_stream_drain_uses_literal_bitwidth_from_hwparam_endpoint():
-    from pysilicon.hw.interface import StreamDrainStmt
+    from waveflow.hw.interface import StreamDrainStmt
     s_in = _FakeParamEndpoint(param_name="in_bw", value=64)
     comp = _comp_with_endpoints(s_in=s_in)
     ctx = CodegenCtx(comp=comp)
@@ -271,7 +271,7 @@ def test_stream_drain_uses_literal_bitwidth_from_hwparam_endpoint():
 # ---------------------------------------------------------------------------
 
 def test_regmap_set_literal():
-    from pysilicon.hw.regmap import RegMapSetStmt
+    from waveflow.hw.regmap import RegMapSetStmt
     stmt = RegMapSetStmt(
         method=None,
         inputs=['halted', 1],
@@ -281,7 +281,7 @@ def test_regmap_set_literal():
 
 
 def test_regmap_set_hwvar():
-    from pysilicon.hw.regmap import RegMapSetStmt
+    from waveflow.hw.regmap import RegMapSetStmt
     stmt = RegMapSetStmt(
         method=None,
         inputs=['error', HwVar(name='err', typ=DemoError)],
@@ -291,8 +291,8 @@ def test_regmap_set_hwvar():
 
 
 def test_regmap_set_field_ref():
-    from pysilicon.hw.hwstmt import FieldRef
-    from pysilicon.hw.regmap import RegMapSetStmt
+    from waveflow.hw.hwstmt import FieldRef
+    from waveflow.hw.regmap import RegMapSetStmt
     stmt = RegMapSetStmt(
         method=None,
         inputs=['tx_id', FieldRef(var=HwVar(name='cmd', typ=None), field='tx_id')],
@@ -302,7 +302,7 @@ def test_regmap_set_field_ref():
 
 
 def test_regmap_get_with_typed_output():
-    from pysilicon.hw.regmap import RegMapGetStmt
+    from waveflow.hw.regmap import RegMapGetStmt
 
     class _CoeffArray:
         @classmethod
@@ -319,7 +319,7 @@ def test_regmap_get_with_typed_output():
 
 
 def test_regmap_get_with_untyped_output_falls_back_to_auto():
-    from pysilicon.hw.regmap import RegMapGetStmt
+    from waveflow.hw.regmap import RegMapGetStmt
     stmt = RegMapGetStmt(
         method=None,
         inputs=['coeffs'],
@@ -331,7 +331,7 @@ def test_regmap_get_with_untyped_output_falls_back_to_auto():
 def test_regmap_get_same_name_as_field_emits_noop_comment():
     """When the bound HwVar name equals the field name, the kernel signature
     parameter is already in scope — no redundant copy/self-init."""
-    from pysilicon.hw.regmap import RegMapGetStmt
+    from waveflow.hw.regmap import RegMapGetStmt
     stmt = RegMapGetStmt(
         method=None,
         inputs=['coeffs'],
@@ -353,7 +353,7 @@ class _FakeMethod:
 
 
 def test_function_stmt_with_typed_output():
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.hw.hwstmt import FunctionStmt
     stmt = FunctionStmt(
         method=_FakeMethod('process'),
         inputs=[HwVar(name='cmd', typ=None)],
@@ -366,7 +366,7 @@ def test_function_stmt_with_typed_output():
 
 
 def test_function_stmt_no_outputs():
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.hw.hwstmt import FunctionStmt
     stmt = FunctionStmt(
         method=_FakeMethod('process'),
         inputs=[HwVar(name='cmd', typ=None)],
@@ -376,8 +376,8 @@ def test_function_stmt_no_outputs():
 
 
 def test_function_stmt_with_endpoint_arg():
-    from pysilicon.hw.hwstmt import FunctionStmt
-    from pysilicon.hw.interface import StreamIFMaster, StreamIFSlave
+    from waveflow.hw.hwstmt import FunctionStmt
+    from waveflow.hw.interface import StreamIFMaster, StreamIFSlave
     sim = Simulation()
     s_in = StreamIFSlave(name='s_in_ep', sim=sim, bitwidth=32)
     m_out = StreamIFMaster(name='m_out_ep', sim=sim, bitwidth=32)
@@ -394,7 +394,7 @@ def test_function_stmt_with_endpoint_arg():
 
 
 def test_function_stmt_opt_out_no_qualifier():
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.hw.hwstmt import FunctionStmt
 
     class _NoNs(HwComponent):
         cpp_namespace: ClassVar[str | None] = ""
@@ -411,7 +411,7 @@ def test_function_stmt_opt_out_no_qualifier():
 
 
 def test_function_stmt_custom_namespace():
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.hw.hwstmt import FunctionStmt
 
     class _CustomNs(HwComponent):
         cpp_namespace: ClassVar[str | None] = "custom"
@@ -428,7 +428,7 @@ def test_function_stmt_custom_namespace():
 
 
 def test_function_stmt_multi_output_raises():
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.hw.hwstmt import FunctionStmt
     stmt = FunctionStmt(
         method=_FakeMethod('split'),
         inputs=[HwVar(name='x', typ=None)],
@@ -450,44 +450,44 @@ def test_function_stmt_multi_output_raises():
 # ---------------------------------------------------------------------------
 
 def test_cpp_type_intfield_unsigned():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import IntField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import IntField
     assert cpp_type(IntField.specialize(bitwidth=16, signed=False)) == "ap_uint<16>"
 
 
 def test_cpp_type_intfield_signed():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import IntField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import IntField
     assert cpp_type(IntField.specialize(bitwidth=8, signed=True)) == "ap_int<8>"
 
 
 def test_cpp_type_floatfield_32():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import FloatField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import FloatField
     assert cpp_type(FloatField.specialize(bitwidth=32)) == "float"
 
 
 def test_cpp_type_floatfield_64():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import FloatField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import FloatField
     assert cpp_type(FloatField.specialize(bitwidth=64)) == "double"
 
 
 def test_cpp_type_enumfield():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import EnumField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import EnumField
     assert cpp_type(EnumField.specialize(enum_type=DemoError)) == "ap_uint<8>"
 
 
 def test_cpp_type_intenum_direct():
     """IntEnum subclasses (e.g. resolved FunctionStmt return types) map to ap_uint<8>."""
-    from pysilicon.build.hwgen import cpp_type
+    from waveflow.build.hwgen import cpp_type
     assert cpp_type(DemoError) == "ap_uint<8>"
 
 
 def test_cpp_type_dataschema_subclass_uses_cpp_class_name():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import DataList, IntField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import DataList, IntField
 
     class MyMsg(DataList):
         elements = {
@@ -498,13 +498,13 @@ def test_cpp_type_dataschema_subclass_uses_cpp_class_name():
 
 
 def test_cpp_type_none_raises():
-    from pysilicon.build.hwgen import cpp_type
+    from waveflow.build.hwgen import cpp_type
     with pytest.raises(RuntimeError):
         cpp_type(None)
 
 
 def test_snake_case_helper():
-    from pysilicon.build.hwgen import _snake_case
+    from waveflow.build.hwgen import _snake_case
     assert _snake_case("PolyCmdHdr") == "poly_cmd_hdr"
     assert _snake_case("Float32") == "float32"
     assert _snake_case("CoeffArray") == "coeff_array"
@@ -514,14 +514,14 @@ def test_snake_case_helper():
 
 
 def test_cpp_kernel_name_demo():
-    from pysilicon.build.hwgen import cpp_kernel_name
+    from waveflow.build.hwgen import cpp_kernel_name
     from tests.hw.test_resolve import DemoComponent
     assert cpp_kernel_name(DemoComponent) == "demo"
 
 
 def test_cpp_kernel_name_poly_accel_uses_override():
     """``PolyAccelComponent`` overrides ``cpp_kernel_name`` to ``"poly"``."""
-    from pysilicon.build.hwgen import cpp_kernel_name
+    from waveflow.build.hwgen import cpp_kernel_name
     import sys
     from pathlib import Path
     POLY_DIR = Path(__file__).resolve().parents[2] / "examples" / "stream_inband"
@@ -532,7 +532,7 @@ def test_cpp_kernel_name_poly_accel_uses_override():
 
 
 def test_cpp_kernel_name_override():
-    from pysilicon.build.hwgen import cpp_kernel_name
+    from waveflow.build.hwgen import cpp_kernel_name
 
     class _Overridden(HwComponent):
         cpp_kernel_name: ClassVar[str | None] = "my_custom_name"
@@ -545,13 +545,13 @@ def test_cpp_kernel_name_override():
 # ---------------------------------------------------------------------------
 
 def test_resolved_namespace_default_uses_kernel_name():
-    from pysilicon.build.hwgen import resolved_namespace
+    from waveflow.build.hwgen import resolved_namespace
     from tests.hw.test_resolve import DemoComponent
     assert resolved_namespace(DemoComponent) == "demo"
 
 
 def test_resolved_namespace_explicit_string():
-    from pysilicon.build.hwgen import resolved_namespace
+    from waveflow.build.hwgen import resolved_namespace
 
     class _NsCustom(HwComponent):
         cpp_namespace: ClassVar[str | None] = "custom"
@@ -560,7 +560,7 @@ def test_resolved_namespace_explicit_string():
 
 
 def test_resolved_namespace_empty_opts_out():
-    from pysilicon.build.hwgen import resolved_namespace
+    from waveflow.build.hwgen import resolved_namespace
 
     class _NsOptOut(HwComponent):
         cpp_namespace: ClassVar[str | None] = ""
@@ -569,7 +569,7 @@ def test_resolved_namespace_empty_opts_out():
 
 
 def test_resolved_namespace_explicit_none_is_auto():
-    from pysilicon.build.hwgen import resolved_namespace
+    from waveflow.build.hwgen import resolved_namespace
 
     class _NsAuto(HwComponent):
         cpp_namespace: ClassVar[str | None] = None
@@ -579,12 +579,12 @@ def test_resolved_namespace_explicit_none_is_auto():
 
 
 def cpp_kernel_name_for(cls):
-    from pysilicon.build.hwgen import cpp_kernel_name
+    from waveflow.build.hwgen import cpp_kernel_name
     return cpp_kernel_name(cls)
 
 
 def test_resolved_namespace_independent_from_kernel_name_override():
-    from pysilicon.build.hwgen import cpp_kernel_name, resolved_namespace
+    from waveflow.build.hwgen import cpp_kernel_name, resolved_namespace
 
     class _Both(HwComponent):
         cpp_namespace: ClassVar[str | None] = "alpha"
@@ -681,14 +681,14 @@ def _hook_no_return(self, cmd: _DemoCmdHdr):
 
 
 def test_hook_signature_str_simple():
-    from pysilicon.build.hwgen import hook_signature_str
+    from waveflow.build.hwgen import hook_signature_str
     assert hook_signature_str(_hook_evaluate) == (
         "ap_uint<8> _hook_evaluate(DemoCmdHdr cmd)"
     )
 
 
 def test_hook_signature_str_with_stream_endpoint():
-    from pysilicon.build.hwgen import hook_signature_str
+    from waveflow.build.hwgen import hook_signature_str
     sig = hook_signature_str(_hook_with_stream)
     assert "DemoCmdHdr cmd" in sig
     assert "hls::stream<streamutils::axi4s_word<WORD_BW>>& s_in" in sig
@@ -696,13 +696,13 @@ def test_hook_signature_str_with_stream_endpoint():
 
 
 def test_hook_signature_missing_annotation_raises():
-    from pysilicon.build.hwgen import hook_signature
+    from waveflow.build.hwgen import hook_signature
     with pytest.raises(RuntimeError, match="'x'"):
         hook_signature(_hook_bad)
 
 
 def test_hook_signature_no_return_annotation_is_void():
-    from pysilicon.build.hwgen import hook_signature
+    from waveflow.build.hwgen import hook_signature
     ret, _args = hook_signature(_hook_no_return)
     assert ret == "void"
 
@@ -714,7 +714,7 @@ def test_hook_signature_no_return_annotation_is_void():
 def test_kernel_signature_demo_component():
     """Concrete top-level kernel: no ``template <...>`` block, literal
     bitwidths in the stream type expressions."""
-    from pysilicon.build.hwgen import kernel_signature
+    from waveflow.build.hwgen import kernel_signature
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -748,10 +748,10 @@ def test_kernel_signature_raises_on_name_collision():
     """A HwParam that shares a name with a regmap field triggers SynthesisError."""
     from dataclasses import dataclass
 
-    from pysilicon.build.hwcodegen import SynthesisError
-    from pysilicon.build.hwgen import kernel_signature
-    from pysilicon.hw.interface import StreamIFSlave
-    from pysilicon.hw.regmap import (
+    from waveflow.build.hwcodegen import SynthesisError
+    from waveflow.build.hwgen import kernel_signature
+    from waveflow.hw.interface import StreamIFSlave
+    from waveflow.hw.regmap import (
         Bit, RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave,
     )
 
@@ -785,7 +785,7 @@ def test_kernel_signature_raises_on_name_collision():
 # ---------------------------------------------------------------------------
 
 def test_header_to_cpp_demo_component_substrings():
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -811,7 +811,7 @@ def test_header_to_cpp_demo_component_substrings():
 
 
 def test_header_to_cpp_forward_decl_has_no_pragmas():
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -825,7 +825,7 @@ def test_header_to_cpp_forward_decl_has_no_pragmas():
 # ---------------------------------------------------------------------------
 
 def test_kernel_to_cpp_substrings():
-    from pysilicon.build.hwgen import kernel_to_cpp
+    from waveflow.build.hwgen import kernel_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -849,7 +849,7 @@ def test_kernel_to_cpp_emits_one_kernel_per_variant():
     from dataclasses import dataclass
     from typing import Any, ClassVar
 
-    from pysilicon.build.hwgen import kernel_to_cpp
+    from waveflow.build.hwgen import kernel_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     @dataclass
@@ -874,7 +874,7 @@ def test_header_to_cpp_emits_one_forward_decl_per_variant():
     from dataclasses import dataclass
     from typing import Any, ClassVar
 
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     @dataclass
@@ -892,8 +892,8 @@ def test_header_to_cpp_emits_one_forward_decl_per_variant():
 
 
 def test_impl_stub_to_cpp_substrings():
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.build.hwgen import _collect_hooks, impl_stub_to_cpp
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.build.hwgen import _collect_hooks, impl_stub_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -917,7 +917,7 @@ def test_impl_stub_to_cpp_substrings():
 def test_header_to_cpp_opt_out_emits_no_namespace_block():
     from typing import ClassVar
     from dataclasses import dataclass
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     @dataclass
@@ -934,8 +934,8 @@ def test_header_to_cpp_opt_out_emits_no_namespace_block():
 def test_impl_stub_to_cpp_opt_out_emits_no_namespace_block():
     from typing import ClassVar
     from dataclasses import dataclass
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.build.hwgen import _collect_hooks, impl_stub_to_cpp
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.build.hwgen import _collect_hooks, impl_stub_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     @dataclass
@@ -953,7 +953,7 @@ def test_impl_stub_to_cpp_opt_out_emits_no_namespace_block():
 def test_header_to_cpp_custom_namespace():
     from typing import ClassVar
     from dataclasses import dataclass
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     @dataclass
@@ -968,8 +968,8 @@ def test_header_to_cpp_custom_namespace():
 def test_impl_stub_to_cpp_custom_namespace():
     from typing import ClassVar
     from dataclasses import dataclass
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.build.hwgen import _collect_hooks, impl_stub_to_cpp
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.build.hwgen import _collect_hooks, impl_stub_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     @dataclass
@@ -984,7 +984,7 @@ def test_impl_stub_to_cpp_custom_namespace():
 
 
 def test_kernel_files_to_str_keys():
-    from pysilicon.build.hwgen import kernel_files_to_str
+    from waveflow.build.hwgen import kernel_files_to_str
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -997,7 +997,7 @@ def test_kernel_files_to_str_keys():
 
 
 def test_kernel_body_to_cpp_demo_component_contains_expected_substrings():
-    from pysilicon.build.hwgen import kernel_body_to_cpp
+    from waveflow.build.hwgen import kernel_body_to_cpp
     # Reuse the DemoComponent fixture from tests/hw/test_resolve.py.
     from tests.hw.test_resolve import DemoComponent
 
@@ -1027,7 +1027,7 @@ def test_kernel_body_to_cpp_demo_component_contains_expected_substrings():
 
 
 def test_endpoint_name_not_found_raises():
-    from pysilicon.hw.interface import StreamGetStmt
+    from waveflow.hw.interface import StreamGetStmt
     rogue = _FakeEndpoint()
     comp = _comp_with_endpoints()  # no endpoint set
     ctx = CodegenCtx(comp=comp)
@@ -1046,21 +1046,21 @@ def test_endpoint_name_not_found_raises():
 
 def _stream_endpoint(name: str, bitwidth, slave: bool = True):
     """Build a real StreamIF endpoint with the given (possibly-HwParamValue) bitwidth."""
-    from pysilicon.hw.interface import StreamIFMaster, StreamIFSlave
+    from waveflow.hw.interface import StreamIFMaster, StreamIFSlave
     cls = StreamIFSlave if slave else StreamIFMaster
     return cls(name=name, sim=Simulation(), bitwidth=bitwidth)
 
 
 def test_hook_template_params_empty_inputs():
-    from pysilicon.build.hwgen import hook_template_params
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.build.hwgen import hook_template_params
+    from waveflow.hw.hwstmt import FunctionStmt
     stmt = FunctionStmt(method=_FakeMethod("h"), inputs=[], outputs=[])
     assert hook_template_params(stmt) == []
 
 
 def test_hook_template_params_hwvar_only_inputs():
-    from pysilicon.build.hwgen import hook_template_params
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.build.hwgen import hook_template_params
+    from waveflow.hw.hwstmt import FunctionStmt
     stmt = FunctionStmt(
         method=_FakeMethod("h"),
         inputs=[HwVar(name="x", typ=None), HwVar(name="y", typ=None)],
@@ -1070,9 +1070,9 @@ def test_hook_template_params_hwvar_only_inputs():
 
 
 def test_hook_template_params_single_param_endpoint():
-    from pysilicon.build.hwgen import hook_template_params
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.build.hwgen import hook_template_params
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt
     ep = _stream_endpoint("s_in_ep", HwParamValue(32, "in_bw"))
     stmt = FunctionStmt(
         method=_FakeMethod("h"),
@@ -1083,9 +1083,9 @@ def test_hook_template_params_single_param_endpoint():
 
 
 def test_hook_template_params_two_endpoints_same_param_dedupes():
-    from pysilicon.build.hwgen import hook_template_params
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.build.hwgen import hook_template_params
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt
     bw = HwParamValue(32, "in_bw")
     e1 = _stream_endpoint("a", bw)
     e2 = _stream_endpoint("b", bw, slave=False)
@@ -1094,9 +1094,9 @@ def test_hook_template_params_two_endpoints_same_param_dedupes():
 
 
 def test_hook_template_params_two_endpoints_different_params():
-    from pysilicon.build.hwgen import hook_template_params
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.build.hwgen import hook_template_params
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt
     e1 = _stream_endpoint("a", HwParamValue(32, "in_bw"))
     e2 = _stream_endpoint("b", HwParamValue(64, "out_bw"), slave=False)
     stmt = FunctionStmt(method=_FakeMethod("h"), inputs=[e1, e2], outputs=[])
@@ -1104,9 +1104,9 @@ def test_hook_template_params_two_endpoints_different_params():
 
 
 def test_hook_template_params_raw_int_endpoint_skipped():
-    from pysilicon.build.hwgen import hook_template_params
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt
+    from waveflow.build.hwgen import hook_template_params
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt
     raw = _stream_endpoint("raw", 32)
     param = _stream_endpoint("p", HwParamValue(32, "in_bw"))
     stmt = FunctionStmt(method=_FakeMethod("h"), inputs=[raw, param], outputs=[])
@@ -1114,9 +1114,9 @@ def test_hook_template_params_raw_int_endpoint_skipped():
 
 
 def test_validate_single_call_site_single_site_ok():
-    from pysilicon.build.hwgen import _validate_single_call_site
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt, SeqStmt
+    from waveflow.build.hwgen import _validate_single_call_site
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt, SeqStmt
     method = _FakeMethod("h")
     ep = _stream_endpoint("a", HwParamValue(32, "in_bw"))
     tree = SeqStmt(stmts=[
@@ -1126,9 +1126,9 @@ def test_validate_single_call_site_single_site_ok():
 
 
 def test_validate_single_call_site_consistent_ok():
-    from pysilicon.build.hwgen import _validate_single_call_site
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt, SeqStmt
+    from waveflow.build.hwgen import _validate_single_call_site
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt, SeqStmt
     method = _FakeMethod("h")
     ep = _stream_endpoint("a", HwParamValue(32, "in_bw"))
     tree = SeqStmt(stmts=[
@@ -1144,7 +1144,7 @@ def test_validate_single_call_site_consistent_ok():
 
 def test_hook_signature_str_without_template_params_unchanged():
     """Default behaviour (no template_params) still emits symbolic WORD_BW."""
-    from pysilicon.build.hwgen import hook_signature_str
+    from waveflow.build.hwgen import hook_signature_str
     sig = hook_signature_str(_hook_with_stream)
     assert sig.startswith("void _hook_with_stream(")
     assert "axi4s_word<WORD_BW>" in sig
@@ -1152,7 +1152,7 @@ def test_hook_signature_str_without_template_params_unchanged():
 
 
 def test_hook_signature_str_with_one_template_param():
-    from pysilicon.build.hwgen import hook_signature_str
+    from waveflow.build.hwgen import hook_signature_str
     sig = hook_signature_str(_hook_with_stream, template_params=["in_bw"])
     assert sig.startswith("template <int in_bw>\n")
     assert "axi4s_word<in_bw>" in sig
@@ -1161,7 +1161,7 @@ def test_hook_signature_str_with_one_template_param():
 
 def test_hook_signature_str_with_two_template_params():
     """Two stream args, two template params — substituted in order."""
-    from pysilicon.build.hwgen import hook_signature_str
+    from waveflow.build.hwgen import hook_signature_str
     sig = hook_signature_str(
         _hook_two_streams, template_params=["in_bw", "out_bw"],
     )
@@ -1172,10 +1172,10 @@ def test_hook_signature_str_with_two_template_params():
 
 
 def test_validate_single_call_site_inconsistent_raises():
-    from pysilicon.build.hwcodegen import SynthesisError
-    from pysilicon.build.hwgen import _validate_single_call_site
-    from pysilicon.hw.hw_component import HwParamValue
-    from pysilicon.hw.hwstmt import FunctionStmt, SeqStmt
+    from waveflow.build.hwcodegen import SynthesisError
+    from waveflow.build.hwgen import _validate_single_call_site
+    from waveflow.hw.hw_component import HwParamValue
+    from waveflow.hw.hwstmt import FunctionStmt, SeqStmt
     method = _FakeMethod("h")
     e1 = _stream_endpoint("a", HwParamValue(32, "in_bw"))
     e2 = _stream_endpoint("b", HwParamValue(64, "out_bw"))
@@ -1193,7 +1193,7 @@ def test_validate_single_call_site_inconsistent_raises():
 
 def test_header_to_cpp_non_templated_hook_no_tpp_include():
     """DemoComponent's process hook (no stream args) keeps the existing shape."""
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -1207,7 +1207,7 @@ def test_header_to_cpp_non_templated_hook_no_tpp_include():
 
 def test_header_to_cpp_templated_hook_emits_template_and_tpp_include():
     """A hook that takes a HwParam-driven stream endpoint gets templated."""
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
 
     comp = _TmplComp(name="tcomp", sim=Simulation())
     hpp = header_to_cpp(type(comp))
@@ -1225,8 +1225,8 @@ def test_header_to_cpp_templated_hook_emits_template_and_tpp_include():
 # ---------------------------------------------------------------------------
 
 def test_impl_stub_to_tpp_substrings():
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.build.hwgen import (
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.build.hwgen import (
         _collect_hooks_with_params,
         impl_stub_to_tpp,
     )
@@ -1253,8 +1253,8 @@ def test_impl_stub_to_tpp_substrings():
 
 def test_impl_stub_to_tpp_does_not_include_header():
     """The .tpp is included from the .hpp, so it must NOT include the .hpp itself."""
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.build.hwgen import (
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.build.hwgen import (
         _collect_hooks_with_params,
         impl_stub_to_tpp,
     )
@@ -1267,7 +1267,7 @@ def test_impl_stub_to_tpp_does_not_include_header():
 
 
 def test_kernel_files_to_str_uses_tpp_for_templated_hook():
-    from pysilicon.build.hwgen import kernel_files_to_str
+    from waveflow.build.hwgen import kernel_files_to_str
 
     comp = _TmplComp(name="tcomp", sim=Simulation())
     files = kernel_files_to_str(type(comp))
@@ -1280,7 +1280,7 @@ def test_kernel_files_to_str_uses_tpp_for_templated_hook():
 
 def test_kernel_files_to_str_uses_cpp_for_non_templated_hook():
     """DemoComponent's process hook has no stream args, so still .cpp."""
-    from pysilicon.build.hwgen import kernel_files_to_str
+    from waveflow.build.hwgen import kernel_files_to_str
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -1295,8 +1295,8 @@ def test_kernel_files_to_str_uses_cpp_for_non_templated_hook():
 # ---------------------------------------------------------------------------
 
 def test_cpp_type_dataarray_struct_storage_returns_class_name():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     cls = DataArray.specialize(element_type=Float32, max_shape=(4,), static=True, cpp_storage="struct")
     result = cpp_type(cls)
@@ -1305,8 +1305,8 @@ def test_cpp_type_dataarray_struct_storage_returns_class_name():
 
 
 def test_cpp_type_dataarray_raw_storage_returns_c_array():
-    from pysilicon.build.hwgen import cpp_type
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.build.hwgen import cpp_type
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     cls = DataArray.specialize(element_type=Float32, max_shape=(4,), static=True, cpp_storage="raw")
     result = cpp_type(cls)
@@ -1315,11 +1315,11 @@ def test_cpp_type_dataarray_raw_storage_returns_c_array():
 
 def test_kernel_signature_raw_array_regmap_field():
     """A regmap field with cpp_storage='raw' emits '<elem> <name>[<count>]' in signature."""
-    from pysilicon.build.hwgen import kernel_signature
-    from pysilicon.hw.dataschema import DataArray, FloatField
-    from pysilicon.hw.hw_component import HwComponent
-    from pysilicon.hw.regmap import Bit, RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave
-    from pysilicon.simulation.simulation import Simulation
+    from waveflow.build.hwgen import kernel_signature
+    from waveflow.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.hw_component import HwComponent
+    from waveflow.hw.regmap import Bit, RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave
+    from waveflow.simulation.simulation import Simulation
 
     Float32 = FloatField.specialize(bitwidth=32)
     CoeffArrayRaw = DataArray.specialize(
@@ -1389,7 +1389,7 @@ def _hook_mixed_args(
 
 
 def _seq_with_hook(method):
-    from pysilicon.hw.hwstmt import FunctionStmt, SeqStmt
+    from waveflow.hw.hwstmt import FunctionStmt, SeqStmt
     return SeqStmt(stmts=[
         FunctionStmt(method=method, inputs=[], outputs=[]),
     ])
@@ -1400,27 +1400,27 @@ def _bare_comp():
 
 
 def test_collect_schemas_picks_up_hook_arg_schema():
-    from pysilicon.build.hwgen import _collect_schemas
+    from waveflow.build.hwgen import _collect_schemas
     schemas = _collect_schemas(_seq_with_hook(_hook_with_schema_arg), _bare_comp())
     assert _ExtraHdr in schemas
 
 
 def test_collect_schemas_unwraps_processgen_return():
-    from pysilicon.build.hwgen import _collect_schemas
+    from waveflow.build.hwgen import _collect_schemas
     schemas = _collect_schemas(_seq_with_hook(_hook_returning_schema), _bare_comp())
     assert _DemoCmdHdr in schemas
     assert _ExtraHdr in schemas
 
 
 def test_collect_schemas_skips_stream_args():
-    from pysilicon.build.hwgen import _collect_schemas
+    from waveflow.build.hwgen import _collect_schemas
     schemas = _collect_schemas(_seq_with_hook(_hook_stream_only), _bare_comp())
     assert _DemoCmdHdr not in schemas
     assert _ExtraHdr not in schemas
 
 
 def test_collect_schemas_mixed_hook_args():
-    from pysilicon.build.hwgen import _collect_schemas
+    from waveflow.build.hwgen import _collect_schemas
     schemas = _collect_schemas(_seq_with_hook(_hook_mixed_args), _bare_comp())
     assert _DemoCmdHdr in schemas
     assert _ExtraHdr in schemas
@@ -1431,7 +1431,7 @@ def test_collect_schemas_mixed_hook_args():
 # ---------------------------------------------------------------------------
 
 def test_header_no_array_schemas_emits_no_utility_includes():
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -1444,12 +1444,12 @@ def test_header_data_array_field_emits_utility_include():
     """A component with a DataArray[Float32] regmap field gets the include line."""
     from dataclasses import dataclass
 
-    from pysilicon.build.hwgen import header_to_cpp
-    from pysilicon.hw.dataschema import DataArray, FloatField
-    from pysilicon.hw.regmap import (
+    from waveflow.build.hwgen import header_to_cpp
+    from waveflow.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.regmap import (
         Bit, RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave,
     )
-    from pysilicon.simulation.simobj import ProcessGen
+    from waveflow.simulation.simobj import ProcessGen
 
     Float32 = FloatField.specialize(bitwidth=32, include_dir="include")
 
@@ -1490,8 +1490,8 @@ def test_header_data_array_field_emits_utility_include():
 
 def test_header_utility_include_deduped():
     """Same array referenced from regmap and a hook arg: include appears once."""
-    from pysilicon.build.hwgen import _collect_utility_includes
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.build.hwgen import _collect_utility_includes
+    from waveflow.hw.dataschema import DataArray, FloatField
 
     Float32 = FloatField.specialize(bitwidth=32, include_dir="include")
 
@@ -1514,7 +1514,7 @@ def test_header_omits_streamutils_for_regmap_only_component():
     streamutils_hls.h. The user shouldn't have to register a step to produce
     a header their kernel doesn't use.
     """
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
 
     Int32 = _IntField.specialize(bitwidth=32, signed=True)
 
@@ -1549,7 +1549,7 @@ def test_header_includes_streamutils_for_stream_using_component():
     """A component with StreamIF endpoints (poly's shape) still gets the
     streamutils_hls.h include — guards against regressing the fix.
     """
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     from tests.hw.test_resolve import DemoComponent
 
     comp = DemoComponent(name="demo", sim=Simulation())
@@ -1561,7 +1561,7 @@ def test_header_includes_streamutils_for_stream_using_component():
 # Inline regmap.get(...) + local-shadows-regmap-field fix
 # ---------------------------------------------------------------------------
 
-from pysilicon.hw.synth import synthesizable as _synth2
+from waveflow.hw.synth import synthesizable as _synth2
 
 _S32_PH3 = _IntField.specialize(bitwidth=32, signed=True)
 
@@ -1606,7 +1606,7 @@ def test_inline_regmap_get_lowers_to_kernel_param_name():
     """``self.regmap.get("x")`` as a call argument lowers to the kernel
     parameter ``x``, not raw AST repr text.
     """
-    from pysilicon.build.hwgen import kernel_to_cpp
+    from waveflow.build.hwgen import kernel_to_cpp
 
     cpp = kernel_to_cpp(_InlineGetComp)
     # The compute call should reference the kernel parameter names.
@@ -1625,8 +1625,8 @@ def test_local_shadowing_regmap_field_does_not_self_assign():
     either renamed at codegen time (option a) or extraction raises a
     clear error (option b).
     """
-    from pysilicon.build.hwcodegen import SynthesisError
-    from pysilicon.build.hwgen import kernel_to_cpp
+    from waveflow.build.hwcodegen import SynthesisError
+    from waveflow.build.hwgen import kernel_to_cpp
 
     try:
         cpp = kernel_to_cpp(_InlineGetComp)

@@ -14,9 +14,9 @@ The v1 model is sequential: blocking file I/O, stream push/pop operations, and `
 
 ## API
 
-- [`HwTestbench`](../../../pysilicon/hw/hw_testbench.py)
-- [`main(self)`](../../../pysilicon/hw/hw_testbench.py)
-- [`HlsCodegenStep(is_testbench=True)`](../../../pysilicon/build/hwcodegen_steps.py)
+- [`HwTestbench`](../../../waveflow/hw/hw_testbench.py)
+- [`main(self)`](../../../waveflow/hw/hw_testbench.py)
+- [`HlsCodegenStep(is_testbench=True)`](../../../waveflow/build/hwcodegen_steps.py)
 
 ## Example
 

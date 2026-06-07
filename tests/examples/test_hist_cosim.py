@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from examples.shared_mem.hist_build import HistCase, generate_vitis_sources
-from pysilicon.toolchain import toolchain
+from waveflow.toolchain import toolchain
 
 SHARED_DIR = Path(__file__).resolve().parents[2] / "examples" / "shared_mem"
 _RESOURCES = (
@@ -49,9 +49,9 @@ def test_generated_hist_cosim_and_bursts(tmp_path):
         toolchain.run_vitis_hls(
             tmp_path / "run.tcl", work_dir=tmp_path, capture_output=True,
             env={
-                "PYSILICON_HIST_START_AT": "csim",
-                "PYSILICON_HIST_THROUGH": "cosim",
-                "PYSILICON_HIST_TRACE_LEVEL": "port",
+                "WAVEFLOW_HIST_START_AT": "csim",
+                "WAVEFLOW_HIST_THROUGH": "cosim",
+                "WAVEFLOW_HIST_TRACE_LEVEL": "port",
             },
         )
     except subprocess.CalledProcessError as exc:
@@ -92,8 +92,8 @@ def test_generated_hist_cosim_and_bursts(tmp_path):
     assert report["validated"]
 
     # Timing: the cosim per-transaction latency (existing machinery).
-    from pysilicon.utils.cosimparse import CosimReportParser
-    sol = tmp_path / "pysilicon_hist_proj" / "solution1"
+    from waveflow.utils.cosimparse import CosimReportParser
+    sol = tmp_path / "waveflow_hist_proj" / "solution1"
     cycles = CosimReportParser(sol_path=sol, top="hist").get_transaction_cycles()
     print(f"  cosim latency: {cycles} cycles @ {report['clk_period_ns']} ns")
     assert cycles is None or cycles > 0

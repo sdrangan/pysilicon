@@ -155,7 +155,7 @@ In pull mode, `pre_sim()` is a no-op and the physical slave's `run_proc` exits i
 `ArrayTransferIF` is an optional `Interface` container that enforces consistency when binding endpoints:
 
 ```python
-from pysilicon.hw.schema_transfer_interface import ArrayTransferIF
+from waveflow.hw.schema_transfer_interface import ArrayTransferIF
 
 iface = ArrayTransferIF(sim=sim)
 iface.bind("master", master_ep)
@@ -174,14 +174,14 @@ The master sends a burst; the slave infers element count from burst length.
 
 ```python
 import numpy as np
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import FloatField
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
-from pysilicon.hw.schema_transfer_interface import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import FloatField
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
+from waveflow.hw.schema_transfer_interface import (
     ArrayTransferIFMaster, ArrayTransferIFSlave, StreamTransport,
 )
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
+from waveflow.simulation.simobj import ProcessGen, SimObj
 
 Float32 = FloatField.specialize(bitwidth=32)
 
@@ -284,7 +284,7 @@ Elements are packed tightly; no padding is inserted between elements.
 ## Quick reference
 
 ```python
-from pysilicon.hw.schema_transfer_interface import (
+from waveflow.hw.schema_transfer_interface import (
     ArrayTransferIFMaster,
     ArrayTransferIFSlave,
     ArrayTransferIF,

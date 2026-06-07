@@ -6,7 +6,7 @@ nav_order: 4
 
 # Vitis Pattern
 
-> **Status: pattern only.** PySilicon does not yet ship framework-level steps for Vitis C-sim, C-synth, or report inspection. The steps below live in [examples/stream_inband/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) and serve as the canonical recipe to copy. Once a second design uses them, the genuinely-common pieces (toolchain invocation, report parsing) will be extracted into `pysilicon/build/`.
+> **Status: pattern only.** Waveflow does not yet ship framework-level steps for Vitis C-sim, C-synth, or report inspection. The steps below live in [examples/stream_inband/poly_build.py](https://github.com/sdrangan/waveflow/tree/main/examples/stream_inband/poly_build.py) and serve as the canonical recipe to copy. Once a second design uses them, the genuinely-common pieces (toolchain invocation, report parsing) will be extracted into `waveflow/build/`.
 
 A typical Vitis pipeline has four steps:
 
@@ -19,8 +19,8 @@ The framework primitives all four steps lean on:
 
 | Primitive | Location | What it does |
 |---|---|---|
-| `toolchain.run_vitis_hls(tcl, work_dir, env, capture_output)` | `pysilicon.toolchain.toolchain` | Invokes Vitis HLS with the given TCL script and environment; returns a `subprocess.CompletedProcess`. |
-| `CsynthParser(sol_path)` | `pysilicon.utils.csynthparse` | Parses `csynth.xml` from a Vitis solution directory; exposes `loop_df` and `res_df` as pandas DataFrames. |
+| `toolchain.run_vitis_hls(tcl, work_dir, env, capture_output)` | `waveflow.toolchain.toolchain` | Invokes Vitis HLS with the given TCL script and environment; returns a `subprocess.CompletedProcess`. |
+| `CsynthParser(sol_path)` | `waveflow.utils.csynthparse` | Parses `csynth.xml` from a Vitis solution directory; exposes `loop_df` and `res_df` as pandas DataFrames. |
 
 These are the things you can reuse today. The build-step *shape* is what varies per example, which is why we're documenting it as a pattern rather than a class.
 
@@ -37,9 +37,9 @@ class CSimStep(BuildStep):
     params      = {"live_output": False, "clk_freq": 100e6}
 
     def run(self, config: BuildConfig, include_dir, data_dir, live_output, clk_freq, **_) -> dict:
-        vitis_env = {"PYSILICON_POLY_COSIM": "0",
-                     "PYSILICON_POLY_TRACE_LEVEL": "none",
-                     "PYSILICON_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
+        vitis_env = {"WAVEFLOW_POLY_COSIM": "0",
+                     "WAVEFLOW_POLY_TRACE_LEVEL": "none",
+                     "WAVEFLOW_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
         try:
             result = toolchain.run_vitis_hls(
                 config.root_dir / "run.tcl",
@@ -58,7 +58,7 @@ Things to notice:
 
 - **`consumes` lists every source file Vitis will touch.** `poly_cpp` / `poly_hpp` / `poly_tb` are codegen artifacts from `HlsCodegenStep` instances. Touching any of them invalidates the C-sim results — exactly what you want. `include_dir` is the generated headers directory from `HlsGenIncludeStep`. `data_dir` is the input binaries directory from `BuildInputsStep`.
 - **`produces = {"csim_data_dir": "data_dir"}`** uses string aliasing. Vitis writes its output binaries back into the same `data_dir` that `BuildInputsStep` created (the testbench writes alongside the inputs), so this step doesn't produce a *new* path — it re-publishes the same path under a new name so downstream steps can express "I depend on Vitis having run here." String aliasing is the right tool for this; declaring `Path("data")` again would conflict with the existing producer.
-- **The `PYSILICON_POLY_*` env vars are a contract** between the build step and the C++ testbench. The testbench reads `PYSILICON_POLY_COSIM` to decide whether to skip the cosim flow; reads `PYSILICON_POLY_CLK_PERIOD_NS` to set timing. This is per-example — every design defines its own env-var schema. There is no framework-level convention (yet).
+- **The `WAVEFLOW_POLY_*` env vars are a contract** between the build step and the C++ testbench. The testbench reads `WAVEFLOW_POLY_COSIM` to decide whether to skip the cosim flow; reads `WAVEFLOW_POLY_CLK_PERIOD_NS` to set timing. This is per-example — every design defines its own env-var schema. There is no framework-level convention (yet).
 - **`run.tcl` is hard-coded** as living at `config.root_dir / "run.tcl"`. Most Vitis flows have one canonical TCL script per project; this convention matches that. If you need multiple solutions, parameterize via the env dict or write a second step.
 - **`live_output: False`** captures stdout/stderr by default. Pass `--live-output` on the CLI to stream Vitis output in real time when debugging.
 - **`try/except` around the toolchain call** converts subprocess failures into `RuntimeError` so the DAG records a clean `BuildResult.success=False` rather than crashing.
@@ -135,13 +135,13 @@ The "copy to `results/vitis/`" step is a small piece of UX — the consumed dire
 class CSynthStep(BuildStep):
     description = "Run Vitis HLS C-synthesis and RTL co-simulation."
     consumes    = ["poly_cpp", "poly_hpp", "include_dir", "csim_data_dir"]
-    produces    = {"report_dir": Path("pysilicon_poly_proj/solution1")}
+    produces    = {"report_dir": Path("waveflow_poly_proj/solution1")}
     params      = {"live_output": False, "clk_freq": 100e6}
 
     def run(self, config: BuildConfig, include_dir, csim_data_dir, live_output, clk_freq, **_) -> dict:
-        vitis_env = {"PYSILICON_POLY_COSIM": "1",
-                     "PYSILICON_POLY_TRACE_LEVEL": "none",
-                     "PYSILICON_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
+        vitis_env = {"WAVEFLOW_POLY_COSIM": "1",
+                     "WAVEFLOW_POLY_TRACE_LEVEL": "none",
+                     "WAVEFLOW_POLY_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}"}
         try:
             result = toolchain.run_vitis_hls(
                 config.root_dir / "run.tcl",
@@ -153,14 +153,14 @@ class CSynthStep(BuildStep):
             if result.stderr: print(result.stderr)
         except Exception as exc:
             raise RuntimeError(str(exc))
-        report_dir = config.root_dir / "pysilicon_poly_proj" / "solution1"
+        report_dir = config.root_dir / "waveflow_poly_proj" / "solution1"
         return {"report_dir": report_dir}
 ```
 
 Mostly identical to `CSimStep` — same TCL, same toolchain wrapper, different env (`COSIM=1` triggers the synthesis branch in `run.tcl`). Differences worth noting:
 
 - **`consumes` includes `csim_data_dir`** — C-synth depends on C-sim having validated first. This is policy: you could write a `CSynthStep` that consumes only the source files, but in practice you don't want to spend 5 minutes on synth when C-sim would have caught a 5-second bug.
-- **`produces = {"report_dir": Path("pysilicon_poly_proj/solution1")}`** is hard-coded to the project / solution names defined in `run.tcl`. If your TCL uses different names, edit the path. If you have multiple solutions, you need either multiple `CSynthStep` instances with different `produces`, or to parameterize via `expected_paths(config)` as the [`PySimStep` log_file pattern](./python.md#params-and-expected_paths-together-handle-a-config-driven-log-path) does.
+- **`produces = {"report_dir": Path("waveflow_poly_proj/solution1")}`** is hard-coded to the project / solution names defined in `run.tcl`. If your TCL uses different names, edit the path. If you have multiple solutions, you need either multiple `CSynthStep` instances with different `produces`, or to parameterize via `expected_paths(config)` as the [`PySimStep` log_file pattern](./python.md#params-and-expected_paths-together-handle-a-config-driven-log-path) does.
 
 ---
 
@@ -175,7 +175,7 @@ class InspectSynthStep(BuildStep):
     params      = {}
 
     def run(self, config: BuildConfig, report_dir) -> dict:
-        from pysilicon.utils.csynthparse import CsynthParser
+        from waveflow.utils.csynthparse import CsynthParser
 
         if not report_dir.exists():
             raise RuntimeError(f"Solution directory not found: {report_dir}")
@@ -256,6 +256,6 @@ When the second design lands and we have something to triangulate against, my be
 
 1. **A small `VitisRunStep` base class** — takes a TCL path, env dict, and named output directory, calls `toolchain.run_vitis_hls`, returns `{output_name: dir}`. `CSimStep` and `CSynthStep` reduce to a `VitisRunStep` subclass plus per-design env construction.
 2. **`CsynthParseStep`** — the policy-free version of `InspectSynthStep`. Emits the loop and resource DataFrames as in-memory artifacts (or CSV).
-3. **Env-var-prefix convention** — almost certainly something like `PYSILICON_<DESIGN>_*` formalized as a helper that builds the env dict from `config.params`.
+3. **Env-var-prefix convention** — almost certainly something like `WAVEFLOW_<DESIGN>_*` formalized as a helper that builds the env dict from `config.params`.
 
 `ValidateCSimStep` will probably never be extracted — too design-specific. The recipe stays as a copy-and-modify template.

@@ -7,7 +7,7 @@ has_children: true
 
 # Build System
 
-PySilicon's build system models the full path from a Python design to its Vitis HLS outputs as a directed acyclic graph of typed steps. Each step declares the named artifacts it **consumes** and **produces** — files on disk *or* in-memory Python objects — and the DAG wires dependencies automatically, runs steps in topological order, propagates failures, and skips steps whose outputs are already fresh. The result is a single Python pipeline that can carry a design from schema declaration through code generation, Python simulation, Vitis C-sim, C-synth, and report inspection, with incremental rebuilds and one source of truth for what gets built and why.
+Waveflow's build system models the full path from a Python design to its Vitis HLS outputs as a directed acyclic graph of typed steps. Each step declares the named artifacts it **consumes** and **produces** — files on disk *or* in-memory Python objects — and the DAG wires dependencies automatically, runs steps in topological order, propagates failures, and skips steps whose outputs are already fresh. The result is a single Python pipeline that can carry a design from schema declaration through code generation, Python simulation, Vitis C-sim, C-synth, and report inspection, with incremental rebuilds and one source of truth for what gets built and why.
 
 ## Why it's useful
 
@@ -22,7 +22,7 @@ PySilicon's build system models the full path from a Python design to its Vitis 
 ## Topics
 
 - [Core Components](./corecomp.md) — `BuildConfig`, `BuildArtifact`, `BuildStep`, `SourceStep`, `Buildable`, `BuildDag`, plus the incremental-rebuild model.
-- [Code Generation Steps](./codegen.md) — built-in steps that ship with PySilicon for generating C++ headers from Python schemas.
+- [Code Generation Steps](./codegen.md) — built-in steps that ship with Waveflow for generating C++ headers from Python schemas.
 - [Python Simulation Pattern](./python.md) — recipe for writing a step that runs a SimPy simulation and produces in-memory or file artifacts.
 - [Vitis Pattern](./vitis.md) — recipe for invoking Vitis HLS C-sim / C-synth and parsing the resulting reports.
 
@@ -31,7 +31,7 @@ PySilicon's build system models the full path from a Python design to its Vitis 
 A complete poly accelerator build, from schema to synthesis report, declared as one DAG:
 
 ```python
-from pysilicon.build.build import BuildConfig, BuildDag, SourceStep
+from waveflow.build.build import BuildConfig, BuildDag, SourceStep
 
 dag = BuildDag()
 dag.add(SourceStep(artifact="poly_source", path="poly.py"))
@@ -55,4 +55,4 @@ dag.run(config, through="extract_py_timing")          # stop before Vitis
 dag.run(config)                                       # full build through validate_timing
 ```
 
-See [examples/stream_inband/poly_build.py](https://github.com/sdrangan/pysilicon/tree/main/examples/stream_inband/poly_build.py) for the full working pipeline this snippet is drawn from.
+See [examples/stream_inband/poly_build.py](https://github.com/sdrangan/waveflow/tree/main/examples/stream_inband/poly_build.py) for the full working pipeline this snippet is drawn from.

@@ -1,5 +1,5 @@
 """
-Tests for pysilicon MCP tools: schema_examples, registry, server, and mode-aware tool exposure.
+Tests for waveflow MCP tools: schema_examples, registry, server, and mode-aware tool exposure.
 """
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from pysilicon.mcp.components import get_components
-from pysilicon.mcp.example_rag import search_schema_examples
-from pysilicon.mcp.schema_examples import get_schema_example, list_schema_examples
-from pysilicon.mcp.registry import REGISTRY, ToolRegistry
-from pysilicon.mcp.schema_tools import get_schema_draft_plan, validate_schema, validate_schema_from_file
+from waveflow.mcp.components import get_components
+from waveflow.mcp.example_rag import search_schema_examples
+from waveflow.mcp.schema_examples import get_schema_example, list_schema_examples
+from waveflow.mcp.registry import REGISTRY, ToolRegistry
+from waveflow.mcp.schema_tools import get_schema_draft_plan, validate_schema, validate_schema_from_file
 
 
 # ---------------------------------------------------------------------------
@@ -119,17 +119,17 @@ def test_get_schema_example_poly_resp_ftr_includes_enum_support():
 def test_registry_has_expected_tools():
     all_names = {s["function"]["name"] for s in REGISTRY.tool_schemas()}
     # Curated example tools were removed
-    assert "pysilicon_list_schema_examples" not in all_names
-    assert "pysilicon_get_schema_example" not in all_names
+    assert "waveflow_list_schema_examples" not in all_names
+    assert "waveflow_get_schema_example" not in all_names
     # Old search aliases were removed
-    assert "pysilicon_search_examples" not in all_names
-    assert "pysilicon_search_schema_examples" not in all_names
+    assert "waveflow_search_examples" not in all_names
+    assert "waveflow_search_schema_examples" not in all_names
     # Domain tools present in all profiles
-    assert "pysilicon_get_schema_draft_plan" in all_names
-    assert "pysilicon_validate_schema" in all_names
-    assert "pysilicon_get_components" in all_names
+    assert "waveflow_get_schema_draft_plan" in all_names
+    assert "waveflow_validate_schema" in all_names
+    assert "waveflow_get_components" in all_names
     # RAG search tool present (headless-only; visible when not filtering)
-    assert "pysilicon_rag_search_examples" in all_names
+    assert "waveflow_rag_search_examples" in all_names
     # File tools not in the registry (they are added dynamically by build_mcp)
     assert "list_files" not in all_names
     assert "read_file" not in all_names
@@ -139,19 +139,19 @@ def test_registry_has_expected_tools():
 
 def test_registry_workspace_profile_has_only_domain_tools():
     workspace_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="workspace")}
-    assert "pysilicon_get_schema_draft_plan" in workspace_names
-    assert "pysilicon_validate_schema" in workspace_names
-    assert "pysilicon_get_components" in workspace_names
-    assert "pysilicon_rag_search_examples" in workspace_names
+    assert "waveflow_get_schema_draft_plan" in workspace_names
+    assert "waveflow_validate_schema" in workspace_names
+    assert "waveflow_get_components" in workspace_names
+    assert "waveflow_rag_search_examples" in workspace_names
     assert "list_files" not in workspace_names
 
 
 def test_registry_headless_profile_has_rag_and_domain_tools():
     headless_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="headless")}
-    assert "pysilicon_get_schema_draft_plan" in headless_names
-    assert "pysilicon_validate_schema" in headless_names
-    assert "pysilicon_get_components" in headless_names
-    assert "pysilicon_rag_search_examples" in headless_names
+    assert "waveflow_get_schema_draft_plan" in headless_names
+    assert "waveflow_validate_schema" in headless_names
+    assert "waveflow_get_components" in headless_names
+    assert "waveflow_rag_search_examples" in headless_names
 
 
 def test_registry_tool_schemas_are_openai_style():
@@ -166,13 +166,13 @@ def test_registry_tool_schemas_are_openai_style():
 
 def test_registry_dispatch_disabled_list_schema_examples_raises_value_error():
     with pytest.raises(ValueError, match="Unknown tool name"):
-        REGISTRY.dispatch("pysilicon_list_schema_examples", {})
+        REGISTRY.dispatch("waveflow_list_schema_examples", {})
 
 
 def test_registry_dispatch_disabled_get_schema_example_raises_value_error():
     with pytest.raises(ValueError, match="Unknown tool name"):
         REGISTRY.dispatch(
-            "pysilicon_get_schema_example", {"example_id": "hist_cmd"}
+            "waveflow_get_schema_example", {"example_id": "hist_cmd"}
         )
 
 
@@ -180,7 +180,7 @@ def test_get_schema_draft_plan_final_step_recommends_validation():
     result = get_schema_draft_plan(task="Need a DMA command schema")
 
     assert result["steps"][-1]["goal"] == "Validate the schema and record assumptions"
-    assert result["steps"][-1]["recommended_tools"] == ["pysilicon_validate_schema"]
+    assert result["steps"][-1]["recommended_tools"] == ["waveflow_validate_schema"]
     assert "structural or typing issues" in result["steps"][-1]["instructions"]
 
 
@@ -188,8 +188,8 @@ def test_get_schema_draft_plan_first_step_uses_registered_tool_names():
     result = get_schema_draft_plan()
 
     assert result["steps"][0]["recommended_tools"] == [
-        "pysilicon_get_components",
-        "pysilicon_rag_search_examples",
+        "waveflow_get_components",
+        "waveflow_rag_search_examples",
     ]
 
 
@@ -197,24 +197,24 @@ def test_get_schema_draft_plan_first_step_uses_workspace_root_when_provided():
     result = get_schema_draft_plan(workspace_root="c:/demo/workspace")
 
     assert "Check the workspace at c:/demo/workspace" in result["steps"][0]["instructions"]
-    assert "pysilicon_get_components" in result["steps"][0]["instructions"]
-    assert "pysilicon_rag_search_examples" in result["steps"][0]["instructions"]
+    assert "waveflow_get_components" in result["steps"][0]["instructions"]
+    assert "waveflow_rag_search_examples" in result["steps"][0]["instructions"]
 
 
 def test_get_schema_draft_plan_first_step_uses_only_example_tools_without_workspace_root():
     result = get_schema_draft_plan()
 
     instructions = result["steps"][0]["instructions"]
-    assert "pysilicon_get_components" in instructions
-    assert "pysilicon_rag_search_examples" in instructions
-    assert "pysilicon_get_example_file" not in instructions
+    assert "waveflow_get_components" in instructions
+    assert "waveflow_rag_search_examples" in instructions
+    assert "waveflow_get_example_file" not in instructions
 
 
 def test_validate_schema_accepts_valid_datalist_source():
     result = validate_schema(
         "\n".join(
             [
-                "from pysilicon.hw import DataList, IntField",
+                "from waveflow.hw import DataList, IntField",
                 "U16 = IntField.specialize(bitwidth=16, signed=False)",
                 "class DemoPacket(DataList):",
                 "    elements = {",
@@ -251,7 +251,7 @@ def test_validate_schema_reports_invalid_elements_definition():
     result = validate_schema(
         "\n".join(
             [
-                "from pysilicon.hw import DataList, IntField",
+                "from waveflow.hw import DataList, IntField",
                 "U16 = IntField.specialize(bitwidth=16, signed=False)",
                 "class Broken(DataList):",
                 "    elements = {",
@@ -272,7 +272,7 @@ def test_registry_dispatch_validate_schema(tmp_path):
     schema_file.write_text(
         "\n".join(
             [
-                "from pysilicon.hw import DataArray, IntField",
+                "from waveflow.hw import DataArray, IntField",
                 "U8 = IntField.specialize(bitwidth=8, signed=False)",
                 "class Payload(DataArray):",
                 "    element_type = U8",
@@ -285,7 +285,7 @@ def test_registry_dispatch_validate_schema(tmp_path):
     report_path = tmp_path / "report.json"
 
     result = REGISTRY.dispatch(
-        "pysilicon_validate_schema",
+        "waveflow_validate_schema",
         {
             "schema_name": "Payload",
             "input_path": str(schema_file),
@@ -361,8 +361,8 @@ def test_registry_register_all_respects_profile():
 
 
 def test_server_imports_and_has_mcp_instance():
-    from pysilicon.mcp.server import mcp
-    assert mcp.name == "pysilicon"
+    from waveflow.mcp.server import mcp
+    assert mcp.name == "waveflow"
 
 
 # ---------------------------------------------------------------------------
@@ -371,48 +371,48 @@ def test_server_imports_and_has_mcp_instance():
 
 
 def test_build_mcp_invalid_mode_raises():
-    from pysilicon.mcp.server import build_mcp
+    from waveflow.mcp.server import build_mcp
 
     with pytest.raises(ValueError, match="mode must be"):
         build_mcp(mode="unknown")
 
 
 def test_build_mcp_headless_without_work_dir_raises():
-    from pysilicon.mcp.server import build_mcp
+    from waveflow.mcp.server import build_mcp
 
     with pytest.raises(ValueError, match="work_dir is required"):
         build_mcp(mode="headless")
 
 
 def test_build_mcp_workspace_returns_fastmcp(tmp_path):
-    from pysilicon.mcp.server import build_mcp
+    from waveflow.mcp.server import build_mcp
 
     mcp_inst = build_mcp(mode="workspace")
-    assert mcp_inst.name == "pysilicon"
+    assert mcp_inst.name == "waveflow"
 
 
 def test_build_mcp_headless_returns_fastmcp(tmp_path):
-    from pysilicon.mcp.server import build_mcp
+    from waveflow.mcp.server import build_mcp
 
     mcp_inst = build_mcp(mode="headless", work_dir=tmp_path)
-    assert mcp_inst.name == "pysilicon"
+    assert mcp_inst.name == "waveflow"
 
 
 def test_build_mcp_workspace_exposes_rag_but_not_file_tools(tmp_path):
-    from pysilicon.mcp.server import build_mcp
+    from waveflow.mcp.server import build_mcp
 
     mcp_inst = build_mcp(mode="workspace")
     # We check via the registry profile filter (the MCP instance doesn't have a
     # public tool-list API, but registry.tool_schemas gives us the profile view).
     ws_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="workspace")}
-    assert "pysilicon_rag_search_examples" in ws_names
+    assert "waveflow_rag_search_examples" in ws_names
     assert "list_files" not in ws_names
     assert "read_file" not in ws_names
 
 
 def test_build_mcp_headless_registry_exposes_rag_tool(tmp_path):
     hl_names = {s["function"]["name"] for s in REGISTRY.tool_schemas(profile="headless")}
-    assert "pysilicon_rag_search_examples" in hl_names
+    assert "waveflow_rag_search_examples" in hl_names
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +421,7 @@ def test_build_mcp_headless_registry_exposes_rag_tool(tmp_path):
 
 
 def test_file_tools_write_and_read(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     list_files_fn, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
 
@@ -434,7 +434,7 @@ def test_file_tools_write_and_read(tmp_path):
 
 
 def test_file_tools_list_files(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     list_files_fn, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
     write_file_fn("a.txt", "a")
@@ -447,7 +447,7 @@ def test_file_tools_list_files(tmp_path):
 
 
 def test_file_tools_edit_file(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     list_files_fn, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
     write_file_fn("edit_me.txt", "foo bar baz")
@@ -460,7 +460,7 @@ def test_file_tools_edit_file(tmp_path):
 
 
 def test_file_tools_edit_file_not_unique_fails(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     _, read_file_fn, write_file_fn, edit_file_fn = make_file_tools(tmp_path)
     write_file_fn("dup.txt", "x x x")
@@ -471,7 +471,7 @@ def test_file_tools_edit_file_not_unique_fails(tmp_path):
 
 
 def test_file_tools_path_escape_rejected(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     _, read_file_fn, _, _ = make_file_tools(tmp_path)
 
@@ -481,7 +481,7 @@ def test_file_tools_path_escape_rejected(tmp_path):
 
 
 def test_file_tools_absolute_path_outside_root_rejected(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     _, read_file_fn, _, _ = make_file_tools(tmp_path)
 
@@ -491,7 +491,7 @@ def test_file_tools_absolute_path_outside_root_rejected(tmp_path):
 
 
 def test_file_tools_empty_path_rejected(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     _, read_file_fn, _, _ = make_file_tools(tmp_path)
 
@@ -500,7 +500,7 @@ def test_file_tools_empty_path_rejected(tmp_path):
 
 
 def test_file_tools_write_creates_subdirectories(tmp_path):
-    from pysilicon.mcp.file_tools import make_file_tools
+    from waveflow.mcp.file_tools import make_file_tools
 
     _, _, write_file_fn, _ = make_file_tools(tmp_path)
 
@@ -519,7 +519,7 @@ def test_validate_schema_from_file_valid(tmp_path):
     schema_file.write_text(
         "\n".join(
             [
-                "from pysilicon.hw import DataList, IntField",
+                "from waveflow.hw import DataList, IntField",
                 "U16 = IntField.specialize(bitwidth=16, signed=False)",
                 "class DemoPacket(DataList):",
                 "    elements = {",
@@ -555,7 +555,7 @@ def test_validate_schema_from_file_invalid(tmp_path):
     schema_file.write_text(
         "\n".join(
             [
-                "from pysilicon.hw import DataList, IntField",
+                "from waveflow.hw import DataList, IntField",
                 "class Broken(DataList):",
                 "    elements = {",
                 "        'count': {'description': 'missing schema key'},",
@@ -597,7 +597,7 @@ def test_validate_schema_from_file_creates_report_parent_dirs(tmp_path):
     schema_file.write_text(
         "\n".join(
             [
-                "from pysilicon.hw import DataList, IntField",
+                "from waveflow.hw import DataList, IntField",
                 "U8 = IntField.specialize(bitwidth=8, signed=False)",
                 "class Simple(DataList):",
                 "    elements = {'val': U8}",
@@ -618,7 +618,7 @@ def test_validate_schema_from_file_creates_report_parent_dirs(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# pysilicon_get_components
+# waveflow_get_components
 # ---------------------------------------------------------------------------
 
 
@@ -667,20 +667,20 @@ def test_get_components_is_deterministic():
 
 
 def test_registry_dispatch_get_components():
-    result = REGISTRY.dispatch("pysilicon_get_components", {})
+    result = REGISTRY.dispatch("waveflow_get_components", {})
     assert "components" in result
     assert "summary" in result
 
 
 # ---------------------------------------------------------------------------
-# pysilicon_search_schema_examples
+# waveflow_search_schema_examples
 # ---------------------------------------------------------------------------
 
 
 def test_search_schema_examples_missing_env_var_returns_error_dict(monkeypatch):
-    """When PYSILICON_EXAMPLES_VECTOR_STORE_ID is unset, a structured error
+    """When WAVEFLOW_EXAMPLES_VECTOR_STORE_ID is unset, a structured error
     dict is returned (no exception raised)."""
-    monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
+    monkeypatch.delenv("WAVEFLOW_EXAMPLES_VECTOR_STORE_ID", raising=False)
 
     result = search_schema_examples(task="histogram command schema", keywords=["DataList"])
 
@@ -690,11 +690,11 @@ def test_search_schema_examples_missing_env_var_returns_error_dict(monkeypatch):
     assert isinstance(result["matches"], list)
     assert len(result["matches"]) == 0
     assert "error" in result
-    assert "PYSILICON_EXAMPLES_VECTOR_STORE_ID" in result["error"]
+    assert "WAVEFLOW_EXAMPLES_VECTOR_STORE_ID" in result["error"]
 
 
 def test_search_schema_examples_normalized_query_includes_keywords(monkeypatch):
-    monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
+    monkeypatch.delenv("WAVEFLOW_EXAMPLES_VECTOR_STORE_ID", raising=False)
 
     result = search_schema_examples(
         task="DMA command", keywords=["MemAddr", "DataList"]
@@ -705,7 +705,7 @@ def test_search_schema_examples_normalized_query_includes_keywords(monkeypatch):
 
 
 def test_search_schema_examples_normalized_query_no_keywords(monkeypatch):
-    monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
+    monkeypatch.delenv("WAVEFLOW_EXAMPLES_VECTOR_STORE_ID", raising=False)
 
     result = search_schema_examples(task="simple integer field")
 
@@ -719,7 +719,7 @@ def test_search_schema_examples_decodes_uploaded_filename(monkeypatch):
                 "FakeItem",
                 (),
                 {
-                    "filename": "examples__pysilicon_path__conv2d__pysilicon_path__conv2d.py",
+                    "filename": "examples__waveflow_path__conv2d__waveflow_path__conv2d.py",
                     "attributes": {},
                     "content": [type("Block", (), {"text": "snippet text"})()],
                     "score": 0.75,
@@ -734,7 +734,7 @@ def test_search_schema_examples_decodes_uploaded_filename(monkeypatch):
         def __init__(self):
             self.vector_stores = FakeVectorStores()
 
-    monkeypatch.setenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", "vs_test")
+    monkeypatch.setenv("WAVEFLOW_EXAMPLES_VECTOR_STORE_ID", "vs_test")
     monkeypatch.setitem(__import__("sys").modules, "openai", type("FakeOpenAI", (), {"OpenAI": FakeClient}))
 
     result = search_schema_examples(task="conv2d command")
@@ -743,10 +743,10 @@ def test_search_schema_examples_decodes_uploaded_filename(monkeypatch):
 
 
 def test_registry_dispatch_rag_search_examples_missing_env(monkeypatch):
-    monkeypatch.delenv("PYSILICON_EXAMPLES_VECTOR_STORE_ID", raising=False)
+    monkeypatch.delenv("WAVEFLOW_EXAMPLES_VECTOR_STORE_ID", raising=False)
 
     result = REGISTRY.dispatch(
-        "pysilicon_rag_search_examples",
+        "waveflow_rag_search_examples",
         {"task": "conv2d accelerator command", "keywords": ["DataList"], "k": 3},
     )
     assert "error" in result

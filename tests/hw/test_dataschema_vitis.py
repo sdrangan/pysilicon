@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.dataschema import DataArray, DataList, FloatField, IntField
-from pysilicon.toolchain import toolchain
+from waveflow.build.build import BuildConfig
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.dataschema import DataArray, DataList, FloatField, IntField
+from waveflow.toolchain import toolchain
 
 
 S16 = IntField.specialize(bitwidth=16, signed=True)

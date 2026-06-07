@@ -13,14 +13,14 @@ We first describe how to build a python model for a hardware component with a Vi
 
 
 
-PySilicon's [`VitisRegMap`](../../guide/interface/regmap.md) class mirrors this layout exactly: the user declares each register as a Python `RegField` with its data schema and access mode (`R`, `W`, `RW`, `W1C`, `W1S`), and PySilicon prepends the same Vitis control registers automatically. The same declaration drives the Python simulation, the generated HLS pragmas, and the host-side offset map.
+Waveflow's [`VitisRegMap`](../../guide/interface/regmap.md) class mirrors this layout exactly: the user declares each register as a Python `RegField` with its data schema and access mode (`R`, `W`, `RW`, `W1C`, `W1S`), and Waveflow prepends the same Vitis control registers automatically. The same declaration drives the Python simulation, the generated HLS pragmas, and the host-side offset map.
 
 Vitis HLS automatically generates this AXI-Lite slave whenever a kernel function has `#pragma HLS interface s_axilite` on its scalar arguments and on `return`. The Vitis-generated slave includes:
 
 - A user-defined region with one register per scalar argument (allocated by Vitis in declaration order).
 - A reserved control region that Vitis adds at offsets `0x00–0x10`: `ap_start`, `ap_done`, `ap_idle`, `ap_ready`, and interrupt enables. The host writes `ap_start` to launch the kernel; the kernel writes `ap_done` when it returns.
 
-PySilicon's [`VitisRegMap`](../../guide/interface/regmap.md) class mirrors this layout. The user declares only the application registers; the framework auto-prepends `ap_start` (W1S, offset `0x00`) and `ap_done` (R, offset `0x04`), and the [`VitisRegMapMMIFSlave`](../../guide/interface/regmap.md) that wraps the regmap manages their values automatically.
+Waveflow's [`VitisRegMap`](../../guide/interface/regmap.md) class mirrors this layout. The user declares only the application registers; the framework auto-prepends `ap_start` (W1S, offset `0x00`) and `ap_done` (R, offset `0x04`), and the [`VitisRegMapMMIFSlave`](../../guide/interface/regmap.md) that wraps the regmap manages their values automatically.
 
 ## Describing the Register Map in Python
 
@@ -119,7 +119,7 @@ Three things are doing real work here:
 
 The `latency_cycles` initial wait is an optimization: the host knows the kernel cannot possibly be done before that many cycles, so the early reads would just be wasted bus traffic. `poll_interval_cycles` then controls how aggressively the host hits the bus while waiting. Polling every clock cycle would saturate the AXI-Lite link in a real system — `poll_end` makes the cadence an explicit, tunable parameter.
 
-> **In production**, the host wouldn't poll at all — it would wait on an AXI-Lite interrupt line. The polling path here is a pedagogical and debugging convenience. PySilicon's interrupt-based wait API will land in a future release.
+> **In production**, the host wouldn't poll at all — it would wait on an AXI-Lite interrupt line. The polling path here is a pedagogical and debugging convenience. Waveflow's interrupt-based wait API will land in a future release.
 
 ## Using the interface
 

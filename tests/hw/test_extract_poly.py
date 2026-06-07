@@ -3,17 +3,17 @@ from __future__ import annotations
 
 import pytest
 
-from pysilicon.build.hwcodegen import HwStmtExtractor, SynthesisError
-from pysilicon.hw.hw_component import HwComponent
-from pysilicon.hw.hwstmt import (
+from waveflow.build.hwcodegen import HwStmtExtractor, SynthesisError
+from waveflow.hw.hw_component import HwComponent
+from waveflow.hw.hwstmt import (
     CaseStmt,
     FunctionStmt,
     ReturnStmt,
     SeqStmt,
     WhileStmt,
 )
-from pysilicon.hw.synth import sim_only, synthesizable
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.synth import sim_only, synthesizable
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ def test_case_stmt_eq_op_default():
 # ---------------------------------------------------------------------------
 
 def test_extract_kernel_no_regmap_uses_run_proc():
-    from pysilicon.build.hwcodegen import extract_kernel
+    from waveflow.build.hwcodegen import extract_kernel
     comp = _make_comp(_EqIfComp)
     tree = extract_kernel(comp)
     assert isinstance(tree, WhileStmt)
@@ -187,8 +187,8 @@ def test_synth_endpoint_call_does_not_raise():
 # ---------------------------------------------------------------------------
 
 def test_regmap_set_produces_regmap_set_stmt():
-    from pysilicon.hw.dataschema import IntField
-    from pysilicon.hw.regmap import (
+    from waveflow.hw.dataschema import IntField
+    from waveflow.hw.regmap import (
         RegAccess, RegField, RegMapSetStmt, VitisRegMap,
     )
 
@@ -214,7 +214,7 @@ def test_regmap_set_produces_regmap_set_stmt():
     assert isinstance(set_stmt, RegMapSetStmt)
     # First input is the "error" field name (as ast.Constant); second is the HwVar `v`.
     import ast as _ast
-    from pysilicon.hw.hwstmt import HwVar
+    from waveflow.hw.hwstmt import HwVar
     assert isinstance(set_stmt.inputs[0], _ast.Constant)
     assert set_stmt.inputs[0].value == "error"
     assert isinstance(set_stmt.inputs[1], HwVar)
@@ -222,8 +222,8 @@ def test_regmap_set_produces_regmap_set_stmt():
 
 
 def test_regmap_get_produces_regmap_get_stmt():
-    from pysilicon.hw.dataschema import IntField
-    from pysilicon.hw.regmap import (
+    from waveflow.hw.dataschema import IntField
+    from waveflow.hw.regmap import (
         RegAccess, RegField, RegMapGetStmt, VitisRegMap,
     )
 
@@ -300,7 +300,7 @@ def test_user_method_impl_file_propagates():
 
 
 def test_user_method_inputs_resolve_endpoint_reference():
-    from pysilicon.hw.interface import StreamIFSlave
+    from waveflow.hw.interface import StreamIFSlave
 
     class _UserMethodWithEndpointComp(HwComponent):
         def __post_init__(self):
@@ -326,7 +326,7 @@ def test_user_method_inputs_resolve_endpoint_reference():
     eval_stmt = tree.body.stmts[1]
     assert isinstance(eval_stmt, FunctionStmt)
     # First arg is the HwVar `x`; second is the resolved endpoint object.
-    from pysilicon.hw.hwstmt import HwVar
+    from waveflow.hw.hwstmt import HwVar
     assert isinstance(eval_stmt.inputs[0], HwVar)
     assert eval_stmt.inputs[0].name == 'x'
     assert eval_stmt.inputs[1] is comp.s_in
@@ -334,9 +334,9 @@ def test_user_method_inputs_resolve_endpoint_reference():
 
 def test_extract_kernel_with_regmap_uses_on_start():
     """A component with a VitisRegMapMMIFSlave endpoint extracts on_start."""
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.hw.interface import StreamIFSlave
-    from pysilicon.hw.regmap import (
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.hw.interface import StreamIFSlave
+    from waveflow.hw.regmap import (
         Bit, RegAccess, RegField, VitisRegMap, VitisRegMapMMIFSlave,
     )
 
@@ -389,9 +389,9 @@ def _ensure_poly_on_path():
 def test_extract_poly_accel_on_start():
     _ensure_poly_on_path()
     from poly import PolyAccelComponent
-    from pysilicon.build.hwcodegen import extract_kernel
-    from pysilicon.hw.interface import StreamGetStmt
-    from pysilicon.hw.regmap import RegMapGetStmt, RegMapSetStmt
+    from waveflow.build.hwcodegen import extract_kernel
+    from waveflow.hw.interface import StreamGetStmt
+    from waveflow.hw.regmap import RegMapGetStmt, RegMapSetStmt
 
     comp = PolyAccelComponent(name='p', sim=Simulation())
     tree = extract_kernel(comp)
@@ -431,7 +431,7 @@ def test_extract_poly_accel_no_implicit_capture_violation():
     from poly import (
         PolyAccelComponent, PolyCmdHdr, PolyCmdType, PolyError,
     )
-    from pysilicon.build.hwcodegen import extract_kernel
+    from waveflow.build.hwcodegen import extract_kernel
 
     class _BadPolyAccel(PolyAccelComponent):
         def on_start(self):

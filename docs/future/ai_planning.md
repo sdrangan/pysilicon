@@ -17,5 +17,5 @@ The repository already uses plan-driven workflows in `plans/`, but there is no d
 
 ## See also
 
-- [plans/poly_regmap_migration.md](https://github.com/sdrangan/pysilicon/blob/main/plans/poly_regmap_migration.md)
-- [plans/doc_plan.md](https://github.com/sdrangan/pysilicon/blob/main/plans/doc_plan.md)
+- [plans/poly_regmap_migration.md](https://github.com/sdrangan/waveflow/blob/main/plans/poly_regmap_migration.md)
+- [plans/doc_plan.md](https://github.com/sdrangan/waveflow/blob/main/plans/doc_plan.md)

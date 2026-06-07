@@ -1,4 +1,4 @@
-"""Tests for ``pysilicon.utils.cosimparse.CosimReportParser``.
+"""Tests for ``waveflow.utils.cosimparse.CosimReportParser``.
 
 Two fixture flavours under ``tests/utils/cosim_fixtures/``:
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from pysilicon.utils.cosimparse import CosimReportParser
+from waveflow.utils.cosimparse import CosimReportParser
 
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "cosim_fixtures"

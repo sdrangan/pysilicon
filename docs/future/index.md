@@ -1,6 +1,6 @@
 ---
 title: Future
-parent: PySilicon
+parent: Waveflow
 nav_order: 4
 has_children: true
 ---
@@ -10,7 +10,7 @@ has_children: true
 This section describes planned features that are not yet
 implemented. Each page describes one area of forward-looking work;
 for details on what is currently being designed or built, see the
-corresponding plan file under [plans/](https://github.com/sdrangan/pysilicon/tree/main/plans).
+corresponding plan file under [plans/](https://github.com/sdrangan/waveflow/tree/main/plans).
 
 - [AI-Assisted Hook Completion](./ai_hook_completion.md)
 - [AI-Assisted Planning](./ai_planning.md)

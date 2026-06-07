@@ -22,10 +22,10 @@ from poly import (
     Float32, PolyAccelComponent, PolyCmdHdr, PolyCmdType, PolyError, PolyTB, connect,
 )
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.hw_component import HwComponent, HwParam, SynthContext
-from pysilicon.hw.interface import StreamDrainStmt
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.hw.hw_component import HwComponent, HwParam, SynthContext
+from waveflow.hw.interface import StreamDrainStmt
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +119,7 @@ def test_sim_timing_is_nonzero():
 # ---------------------------------------------------------------------------
 
 def test_stream_drain_stmt_is_synth_call_stmt():
-    from pysilicon.hw.hwstmt import SynthCallStmt
+    from waveflow.hw.hwstmt import SynthCallStmt
     assert issubclass(StreamDrainStmt, SynthCallStmt)
 
 

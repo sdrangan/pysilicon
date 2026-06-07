@@ -11,17 +11,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.dataunion import (
+from waveflow.build.build import BuildConfig
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.dataunion import (
     DataUnion,
     DataUnionHdr,
     SchemaIDField,
     SchemaRegistry,
     register_schema,
 )
-from pysilicon.toolchain import toolchain
+from waveflow.toolchain import toolchain
 
 
 TEST_DIR = Path(__file__).parent

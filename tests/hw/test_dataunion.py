@@ -1,4 +1,4 @@
-"""Unit tests for pysilicon/hw/dataunion.py.
+"""Unit tests for waveflow/hw/dataunion.py.
 
 Coverage
 --------
@@ -16,9 +16,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.dataunion import (
+from waveflow.build.build import BuildConfig
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.dataunion import (
     DataUnion,
     DataUnionHdr,
     LengthField,
@@ -709,7 +709,7 @@ class TestDataUnionHdrSpecialize:
         H = DataUnionHdr.specialize(sid, ln)
         assert isinstance(H, type)
         assert issubclass(H, DataUnionHdr)
-        from pysilicon.hw.dataschema import DataList
+        from waveflow.hw.dataschema import DataList
         assert issubclass(H, DataList)
 
     def test_specialize_cache_hit(self):

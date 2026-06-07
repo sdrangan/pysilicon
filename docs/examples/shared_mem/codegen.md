@@ -8,7 +8,7 @@ has_children: false
 # Vitis HLS Code Generation
 
 The same `HistAccel` Python class that ran in SimPy is the source the Vitis HLS
-kernel is generated from. PySilicon emits everything mechanical — the `m_axi`
+kernel is generated from. Waveflow emits everything mechanical — the `m_axi`
 function signature, the interface pragmas, the multi-buffer burst calls, the
 validation-status plumbing — and leaves only the datapath hooks as hand-written
 C++. This page walks the generated kernel, the generated testbench, and the seam

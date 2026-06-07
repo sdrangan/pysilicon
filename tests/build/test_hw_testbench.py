@@ -12,14 +12,14 @@ from dataclasses import dataclass
 
 import pytest
 
-from pysilicon.build.hwcodegen import (
+from waveflow.build.hwcodegen import (
     HwStmtExtractor,
     extract_kernel,
     extract_testbench,
 )
-from pysilicon.hw.hw_testbench import HwTestbench
-from pysilicon.hw.hwstmt import SeqStmt
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.hw_testbench import HwTestbench
+from waveflow.hw.hwstmt import SeqStmt
+from waveflow.simulation.simulation import Simulation
 
 
 pytestmark = pytest.mark.phase1
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.phase1
 def test_hw_testbench_is_a_hwcomponent():
     """``HwTestbench`` inherits from ``HwComponent`` so it picks up the
     ``HwParam`` / ``HwConst`` machinery and the simulation lifecycle."""
-    from pysilicon.hw.hw_component import HwComponent
+    from waveflow.hw.hw_component import HwComponent
     assert issubclass(HwTestbench, HwComponent)
 
 
@@ -40,7 +40,7 @@ def test_hw_testbench_marker_is_set():
     """The codegen routing dispatches on the ``_is_testbench`` class
     marker.  Subclasses inherit ``True``; ``HwComponent`` proper does not
     have the marker set."""
-    from pysilicon.hw.hw_component import HwComponent
+    from waveflow.hw.hw_component import HwComponent
     assert getattr(HwTestbench, '_is_testbench', False) is True
     assert getattr(HwComponent, '_is_testbench', False) is False
 
@@ -114,7 +114,7 @@ class _PolyTbStub(HwTestbench):
 
 @pytest.mark.phase2
 def test_hls_codegen_step_auto_detects_testbench_mode():
-    from pysilicon.build.hwcodegen_steps import HlsCodegenStep
+    from waveflow.build.hwcodegen_steps import HlsCodegenStep
     step = HlsCodegenStep(
         comp_class=_PolyTbStub,
         source_artifact="poly_source",
@@ -134,7 +134,7 @@ def test_hls_codegen_step_auto_detects_testbench_mode():
 @pytest.mark.phase2
 def test_hls_codegen_step_explicit_is_testbench_override():
     """``is_testbench=True`` forces TB mode even on a non-marker class."""
-    from pysilicon.build.hwcodegen_steps import HlsCodegenStep
+    from waveflow.build.hwcodegen_steps import HlsCodegenStep
     from tests.hw.test_resolve import DemoComponent
     step = HlsCodegenStep(
         comp_class=DemoComponent,
@@ -149,7 +149,7 @@ def test_hls_codegen_step_explicit_is_testbench_override():
 def test_hls_codegen_step_testbench_produces_single_tb_file():
     """In TB mode, ``produces`` is just ``{<kernel>_tb: <kernel>_tb.cpp}``."""
     from pathlib import Path
-    from pysilicon.build.hwcodegen_steps import HlsCodegenStep
+    from waveflow.build.hwcodegen_steps import HlsCodegenStep
     step = HlsCodegenStep(
         comp_class=_PolyTbStub,
         source_artifact="poly_source",
@@ -161,8 +161,8 @@ def test_hls_codegen_step_testbench_produces_single_tb_file():
 @pytest.mark.phase2
 def test_hls_codegen_step_run_emits_skeleton_tb_cpp(tmp_path):
     """``run()`` writes a compilable skeleton file in TB mode."""
-    from pysilicon.build.build import BuildConfig
-    from pysilicon.build.hwcodegen_steps import HlsCodegenStep
+    from waveflow.build.build import BuildConfig
+    from waveflow.build.hwcodegen_steps import HlsCodegenStep
     step = HlsCodegenStep(
         comp_class=_PolyTbStub,
         source_artifact="poly_source",
@@ -180,7 +180,7 @@ def test_hls_codegen_step_run_emits_skeleton_tb_cpp(tmp_path):
 
 @pytest.mark.phase2
 def test_tb_files_to_str_returns_single_file():
-    from pysilicon.build.hwgen import tb_files_to_str
+    from waveflow.build.hwgen import tb_files_to_str
     files = tb_files_to_str(_PolyTbStub, output_dir="gen")
     assert set(files) == {"poly_tb.cpp"}
     assert "int main(" in files["poly_tb.cpp"]
@@ -214,8 +214,8 @@ class _PolyTBPhase3(HwTestbench):
 def test_phase3_extractor_produces_dut_bind_and_kernel_call():
     """The TB-mode extractor turns ``dut = PolyAccelComponent()`` + ``dut.run()``
     into a SeqStmt of [DutBindStmt, KernelCallStmt]."""
-    from pysilicon.build.hwcodegen import extract_testbench
-    from pysilicon.hw.hwstmt import DutBindStmt, KernelCallStmt
+    from waveflow.build.hwcodegen import extract_testbench
+    from waveflow.hw.hwstmt import DutBindStmt, KernelCallStmt
     tb = _PolyTBPhase3(name='tb', sim=Simulation())
     tree = extract_testbench(tb)
     assert isinstance(tree, SeqStmt)
@@ -233,7 +233,7 @@ def test_phase3_extractor_produces_dut_bind_and_kernel_call():
 def test_phase3_emits_stream_and_regmap_locals_and_kernel_call():
     """The TB emitter produces stream local decls, regmap field decls
     (scalars and the raw-array ``coeffs``), and the kernel-call line."""
-    from pysilicon.build.hwgen import tb_files_to_str
+    from waveflow.build.hwgen import tb_files_to_str
     files = tb_files_to_str(_PolyTBPhase3, output_dir="gen")
     body = files["poly_tb.cpp"]
     # Stream endpoints
@@ -254,7 +254,7 @@ def test_phase3_rejects_positional_dut_args():
     """DUT construction must use keyword arguments only — positional
     args are rejected at extraction time so the failure is surfaced
     before downstream emitter logic runs."""
-    from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
+    from waveflow.build.hwcodegen import SynthesisError, extract_testbench
 
     @dataclass
     class _BadPositionalTB(HwTestbench):
@@ -274,7 +274,7 @@ def test_phase3_dut_run_with_args_is_rejected():
     """``dut.run(...)`` with positional args is rejected.  (The only accepted
     keyword is ``mem=<MemComponent local>`` for m_axi kernels — see the AXI-MM
     codegen plan decision 9.)"""
-    from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
+    from waveflow.build.hwcodegen import SynthesisError, extract_testbench
 
     @dataclass
     class _BadRunArgsTB(HwTestbench):
@@ -294,7 +294,7 @@ def test_phase3_dut_run_with_args_is_rejected():
 # ---------------------------------------------------------------------------
 
 from examples.stream_inband.poly import CoeffArray, PolyCmdHdr, PolyRespHdr, Float32
-from pysilicon.hw.dataschema import DataArray
+from waveflow.hw.dataschema import DataArray
 
 
 class SampArray(DataArray):
@@ -354,7 +354,7 @@ def test_phase4_emits_full_poly_testbench_body():
     """The Phase-4 emitter produces every pattern the hand-written
     poly_tb.cpp uses: schema locals, file I/O, stream push/pop,
     regmap file-read, kernel call, regmap status JSON."""
-    from pysilicon.build.hwgen import tb_files_to_str
+    from waveflow.build.hwgen import tb_files_to_str
     files = tb_files_to_str(_PolyTBPhase4, output_dir="gen")
     body = files["poly_tb.cpp"]
 
@@ -421,7 +421,7 @@ def test_phase4_emits_full_poly_testbench_body():
 @pytest.mark.phase4
 def test_phase4_extractor_unknown_method_raises():
     """A TB method call that doesn't match any known pattern raises."""
-    from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
+    from waveflow.build.hwcodegen import SynthesisError, extract_testbench
 
     @dataclass
     class _UnknownMethodTB(HwTestbench):
@@ -441,7 +441,7 @@ def test_phase4_extractor_unknown_method_raises():
 @pytest.mark.phase4
 def test_phase4_count_kwarg_required_for_array_ops():
     """Array-mode TB calls require count=...; omitting it is a hard error."""
-    from pysilicon.build.hwcodegen import SynthesisError, extract_testbench
+    from waveflow.build.hwcodegen import SynthesisError, extract_testbench
 
     @dataclass
     class _MissingCountTB(HwTestbench):
@@ -481,15 +481,15 @@ def _make_regmap_auto_dut_class():
 from dataclasses import dataclass as _dc
 from typing import ClassVar as _CV
 
-from pysilicon.hw.dataschema import IntField as _IntField
-from pysilicon.hw.hw_component import HwComponent as _HwComp
-from pysilicon.hw.regmap import (
+from waveflow.hw.dataschema import IntField as _IntField
+from waveflow.hw.hw_component import HwComponent as _HwComp
+from waveflow.hw.regmap import (
     RegAccess as _RA,
     RegField as _RF,
     VitisRegMap as _VRM,
     VitisRegMapMMIFSlave as _VRMS,
 )
-from pysilicon.simulation.simobj import ProcessGen as _PG
+from waveflow.simulation.simobj import ProcessGen as _PG
 
 _S32_TB = _IntField.specialize(bitwidth=32, signed=True)
 
@@ -520,7 +520,7 @@ def test_write_status_json_drops_is_vitis_auto_fields():
     C++ locals on the Vitis side, so listing them in the symmetric
     Python/C++ shape is fine — the parse pass silently filters them.
     """
-    from pysilicon.build.hwgen import tb_files_to_str
+    from waveflow.build.hwgen import tb_files_to_str
 
     @dataclass
     class _AutoFilterTB(HwTestbench):
@@ -552,7 +552,7 @@ def test_write_status_json_filter_emits_debug_log():
     """
     import logging
 
-    from pysilicon.build.hwgen import tb_files_to_str
+    from waveflow.build.hwgen import tb_files_to_str
 
     @dataclass
     class _LogFilterTB(HwTestbench):
@@ -572,7 +572,7 @@ def test_write_status_json_filter_emits_debug_log():
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record)
 
-    logger = logging.getLogger("pysilicon.build.hwcodegen")
+    logger = logging.getLogger("waveflow.build.hwcodegen")
     handler = _Capture(level=logging.DEBUG)
     prev_level = logger.level
     logger.addHandler(handler)

@@ -14,10 +14,10 @@ The emitter handles C++ type lowering, top-level function signatures, namespace-
 
 ## API
 
-- [`kernel_files_to_str(comp_class, output_dir=".", impl_dir=None)`](../../../pysilicon/build/hwgen.py) returns generated file contents.
-- [`HlsCodegenStep`](../../../pysilicon/build/hwcodegen_steps.py) writes generated files into the build output.
-- [`cpp_kernel_name(comp_class)`](../../../pysilicon/build/hwgen.py) derives kernel names.
-- [`resolved_namespace(comp_class)`](../../../pysilicon/build/hwgen.py) resolves hook namespace behavior.
+- [`kernel_files_to_str(comp_class, output_dir=".", impl_dir=None)`](../../../waveflow/build/hwgen.py) returns generated file contents.
+- [`HlsCodegenStep`](../../../waveflow/build/hwcodegen_steps.py) writes generated files into the build output.
+- [`cpp_kernel_name(comp_class)`](../../../waveflow/build/hwgen.py) derives kernel names.
+- [`resolved_namespace(comp_class)`](../../../waveflow/build/hwgen.py) resolves hook namespace behavior.
 
 ## Example
 

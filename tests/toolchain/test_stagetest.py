@@ -1,6 +1,6 @@
 import pytest
 
-from pysilicon.toolchain import StageTest, TestStage
+from waveflow.toolchain import StageTest, TestStage
 
 
 def test_stage_flow_from_names_returns_ordered_range_names() -> None:

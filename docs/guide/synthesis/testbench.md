@@ -14,10 +14,10 @@ nav_order: 5
 
 ## API
 
-- [`HwTestbench`](../../../pysilicon/hw/hw_testbench.py) base class.
-- [`HwTestbench.main(self)`](../../../pysilicon/hw/hw_testbench.py) sequential entry point.
-- [`HlsCodegenStep(is_testbench=True)`](../../../pysilicon/build/hwcodegen_steps.py) enables TB emission.
-- [`tb_files_to_str(...)`](../../../pysilicon/build/hwgen.py) returns generated testbench source.
+- [`HwTestbench`](../../../waveflow/hw/hw_testbench.py) base class.
+- [`HwTestbench.main(self)`](../../../waveflow/hw/hw_testbench.py) sequential entry point.
+- [`HlsCodegenStep(is_testbench=True)`](../../../waveflow/build/hwcodegen_steps.py) enables TB emission.
+- [`tb_files_to_str(...)`](../../../waveflow/build/hwgen.py) returns generated testbench source.
 
 ## Example
 

@@ -1,4 +1,4 @@
-"""Tests for the IR resolution pass (pysilicon/build/hwresolve.py)."""
+"""Tests for the IR resolution pass (waveflow/build/hwresolve.py)."""
 from __future__ import annotations
 
 import ast
@@ -7,27 +7,27 @@ from enum import IntEnum
 
 import pytest
 
-from pysilicon.build.hwcodegen import HwStmtExtractor
-from pysilicon.hw.dataschema import DataList, EnumField, IntField
-from pysilicon.hw.hw_component import HwComponent, HwParam
-from pysilicon.hw.hwstmt import (
+from waveflow.build.hwcodegen import HwStmtExtractor
+from waveflow.hw.dataschema import DataList, EnumField, IntField
+from waveflow.hw.hw_component import HwComponent, HwParam
+from waveflow.hw.hwstmt import (
     CaseStmt,
     FieldRef,
     HwVar,
     SeqStmt,
     WhileStmt,
 )
-from pysilicon.hw.interface import StreamIFMaster, StreamIFSlave
-from pysilicon.hw.regmap import (
+from waveflow.hw.interface import StreamIFMaster, StreamIFSlave
+from waveflow.hw.regmap import (
     Bit,
     RegAccess,
     RegField,
     VitisRegMap,
     VitisRegMapMMIFSlave,
 )
-from pysilicon.hw.synth import sim_only, synthesizable
-from pysilicon.simulation.simobj import ProcessGen
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.synth import sim_only, synthesizable
+from waveflow.simulation.simobj import ProcessGen
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ def test_field_case_stmt_has_field_name():
 # ---------------------------------------------------------------------------
 
 def _extract_and_resolve(comp: HwComponent, method_name: str = 'on_start'):
-    from pysilicon.build.hwresolve import resolve_kernel
+    from waveflow.build.hwresolve import resolve_kernel
     tree = HwStmtExtractor(comp, method_name=method_name).extract()
     return resolve_kernel(tree, comp)
 
@@ -202,7 +202,7 @@ def test_resolve_case_stmt_field_value_is_enum_member():
 
 def test_resolve_unresolved_name_raises():
     """Reference to a name that doesn't exist anywhere triggers ResolutionError."""
-    from pysilicon.build.hwresolve import ResolutionError, resolve_kernel
+    from waveflow.build.hwresolve import ResolutionError, resolve_kernel
 
     @dataclass
     class _BadDemo(HwComponent):
@@ -245,7 +245,7 @@ def test_function_stmt_output_typ_unwraps_process_gen():
 
 def test_regmap_get_output_typ_is_field_schema():
     """A component that reads a regmap field gets a typed HwVar."""
-    from pysilicon.hw.dataschema import FloatField
+    from waveflow.hw.dataschema import FloatField
 
     Float32 = FloatField.specialize(bitwidth=32)
 
@@ -334,7 +334,7 @@ def test_resolve_no_ast_nodes_in_inputs():
 
 def test_extract_kernel_returns_resolved_tree():
     """extract_kernel(comp) returns a tree with no ast.AST nodes in inputs."""
-    from pysilicon.build.hwcodegen import extract_kernel
+    from waveflow.build.hwcodegen import extract_kernel
     comp = _make_demo()
     tree = extract_kernel(comp)
 
@@ -358,7 +358,7 @@ def test_extract_kernel_returns_resolved_tree():
 
 def test_extract_kernel_populates_hwvar_types():
     """Every HwVar emitted by a recognised statement has a non-None typ."""
-    from pysilicon.build.hwcodegen import extract_kernel
+    from waveflow.build.hwcodegen import extract_kernel
     comp = _make_demo()
     tree = extract_kernel(comp)
 

@@ -60,7 +60,7 @@ The only concrete implementation shipped today is `StreamTransport`.
 `StreamTransport` wraps a `StreamIFMaster` / `StreamIFSlave` pair:
 
 ```python
-from pysilicon.hw.schema_transfer_interface import StreamTransport
+from waveflow.hw.schema_transfer_interface import StreamTransport
 
 transport = StreamTransport(
     master_ep=stream_master,   # StreamIFMaster
@@ -139,7 +139,7 @@ def run_proc(self) -> ProcessGen:
 `SchemaTransferIF` is an optional `Interface` container that enforces type and bitwidth consistency when binding endpoints:
 
 ```python
-from pysilicon.hw.schema_transfer_interface import SchemaTransferIF
+from waveflow.hw.schema_transfer_interface import SchemaTransferIF
 
 iface = SchemaTransferIF(sim=sim)
 iface.bind("master", master_ep)
@@ -157,14 +157,14 @@ Binding raises `TypeError` if the wrong endpoint class is used for a side, and `
 Every transfer carries one known schema; no header is needed.
 
 ```python
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
-from pysilicon.hw.schema_transfer_interface import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.interface import StreamIF, StreamIFMaster, StreamIFSlave
+from waveflow.hw.schema_transfer_interface import (
     SchemaTransferIFMaster, SchemaTransferIFSlave, StreamTransport,
 )
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
+from waveflow.simulation.simobj import ProcessGen, SimObj
 
 U8  = IntField.specialize(bitwidth=8,  signed=False)
 S16 = IntField.specialize(bitwidth=16, signed=True)
@@ -229,7 +229,7 @@ sim.run_sim()
 Multiple payload types share one interface.  The `DataUnion` header carries `schema_id` so the slave can dispatch; `SchemaTransferIF` itself sees only words.
 
 ```python
-from pysilicon.hw.dataunion import (
+from waveflow.hw.dataunion import (
     DataUnion, DataUnionHdr, SchemaIDField, SchemaRegistry, register_schema,
 )
 
@@ -324,7 +324,7 @@ Both `rx_proc` and the queue are always active simultaneously — the object is 
 ## Quick reference
 
 ```python
-from pysilicon.hw.schema_transfer_interface import (
+from waveflow.hw.schema_transfer_interface import (
     PhysicalTransport,
     StreamTransport,
     SchemaTransferIFMaster,

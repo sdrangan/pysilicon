@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pysilicon.hw.memory import AddrUnit, Memory
+from waveflow.hw.memory import AddrUnit, Memory
 
 
 def test_alloc_returns_byte_address_and_reuses_freed_gap() -> None:

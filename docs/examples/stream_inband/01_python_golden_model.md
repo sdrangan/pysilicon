@@ -20,7 +20,7 @@ produces.
 ## Schemas: the single source of truth
 
 The same `DataSchema` definitions in
-[`examples/stream_inband/poly.py`](https://github.com/sdrangan/pysilicon/blob/main/examples/stream_inband/poly.py)
+[`examples/stream_inband/poly.py`](https://github.com/sdrangan/waveflow/blob/main/examples/stream_inband/poly.py)
 drive Python serialization, generated C++ headers, and runtime
 sample-buffer sizing:
 

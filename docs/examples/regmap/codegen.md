@@ -6,9 +6,9 @@ has_children: false
 ---
 # Vitis HLS Code Generation
 
-A key feature of PySilicon is that the Vitis HLS code can be partially generated from the Python description. The framework auto-generates everything that is mechanical — the kernel's AXI-Lite slave wrapper, the regmap struct, the testbench harness, the `#pragma HLS interface` directives — and leaves the user only the compute body to write. In future versions, an AI assistant will fill in the compute body too; for now it is a small hand-written `.cpp` file that lives next to the Python source.
+A key feature of Waveflow is that the Vitis HLS code can be partially generated from the Python description. The framework auto-generates everything that is mechanical — the kernel's AXI-Lite slave wrapper, the regmap struct, the testbench harness, the `#pragma HLS interface` directives — and leaves the user only the compute body to write. In future versions, an AI assistant will fill in the compute body too; for now it is a small hand-written `.cpp` file that lives next to the Python source.
 
-The codegen pipeline reuses the same `HlsCodegenStep` build step used by every PySilicon example. The simp_fun example wires it twice — once for the kernel, once for the testbench.
+The codegen pipeline reuses the same `HlsCodegenStep` build step used by every Waveflow example. The simp_fun example wires it twice — once for the kernel, once for the testbench.
 
 ## Build Step
 
@@ -54,7 +54,7 @@ After `gen_kernel` and `gen_tb` run, the source tree contains:
 
 The auto-generated kernel files declare the AXI-Lite slave, the regmap struct, every `#pragma HLS interface` directive, and the top-level function signature that Vitis sees. They include `simp_fun_compute_impl.cpp` so the hand-written compute body is reachable from the kernel entry. The testbench file mirrors the structure of `SimpFunTBHls.main()`: open input files, write registers via the slave, assert `ap_start`, poll until done, read `y`, write output files.
 
-`gen/` is `.gitignored` everywhere a PySilicon project sets it up — generated files are never committed. The sticky `simp_fun_compute_impl.cpp` IS committed because it contains the real compute logic that no codegen pass will reproduce.
+`gen/` is `.gitignored` everywhere a Waveflow project sets it up — generated files are never committed. The sticky `simp_fun_compute_impl.cpp` IS committed because it contains the real compute logic that no codegen pass will reproduce.
 
 ## Writing the compute
 

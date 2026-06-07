@@ -7,7 +7,7 @@ has_children: true
 
 # Synthesis
 
-PySilicon synthesis converts a Python `HwComponent` into concrete Vitis-ready C++ by walking a fixed build pipeline. The flow starts from a Python class definition and resolves it into a typed intermediate representation (`HwStmt`) that can be emitted deterministically.
+Waveflow synthesis converts a Python `HwComponent` into concrete Vitis-ready C++ by walking a fixed build pipeline. The flow starts from a Python class definition and resolves it into a typed intermediate representation (`HwStmt`) that can be emitted deterministically.
 
 The pipeline is organized around five stages: extractor, IR resolution, emitter, build-step orchestration, and timing validation around cosim outputs. The result is a consistent file set (`.hpp`, `.cpp`, and hook impl files) plus structured artifacts for downstream checks.
 

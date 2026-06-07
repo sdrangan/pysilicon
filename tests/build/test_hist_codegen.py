@@ -9,14 +9,14 @@ the correct ``<elem>_array_utils::{read,write}_array`` call.
 from __future__ import annotations
 
 from examples.shared_mem.hist import HistAccel
-from pysilicon.build.hwcodegen import extract_kernel
-from pysilicon.build.hwgen import (
+from waveflow.build.hwcodegen import extract_kernel
+from waveflow.build.hwgen import (
     CodegenCtx,
     _emit_mm_array_read,
     _emit_mm_array_write,
 )
-from pysilicon.hw.hwstmt import MMArrayReadStmt, MMArrayWriteStmt
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.hwstmt import MMArrayReadStmt, MMArrayWriteStmt
+from waveflow.simulation.simulation import Simulation
 
 
 def _collect_mm_stmts(tree):
@@ -96,7 +96,7 @@ def test_counts_write_lowers_to_uint32_array_utils():
 
 def test_kernel_signature_and_pragmas():
     """Full kernel signature: stream + m_axi ports, ap_ctrl_hs, depth constant."""
-    from pysilicon.build.hwgen import kernel_to_cpp
+    from waveflow.build.hwgen import kernel_to_cpp
     cpp = kernel_to_cpp(HistAccel)
     assert "ap_uint<32>* m_mem" in cpp
     assert ("#pragma HLS INTERFACE m_axi port=m_mem offset=slave "
@@ -107,7 +107,7 @@ def test_kernel_signature_and_pragmas():
 def test_kernel_lowers_hooks_and_three_array_ops():
     """The body factors the datapath into validate/compute/respond hooks and
     lowers the three array ops to the right typed array_utils bursts."""
-    from pysilicon.build.hwgen import kernel_to_cpp
+    from waveflow.build.hwgen import kernel_to_cpp
     cpp = kernel_to_cpp(HistAccel)
     assert "ap_uint<8> status = hist_impl::validate(cmd);" in cpp
     assert "static float data[max_ndata];" in cpp
@@ -123,7 +123,7 @@ def test_kernel_lowers_hooks_and_three_array_ops():
 def test_header_constants_and_hook_decls():
     """Header emits the HwParam buffer bounds, the per-port depth, and the hook
     forward declarations (compute's array return becomes a void out-param)."""
-    from pysilicon.build.hwgen import header_to_cpp
+    from waveflow.build.hwgen import header_to_cpp
     hpp = header_to_cpp(HistAccel)
     assert "static const int max_ndata = 1024;" in hpp
     assert "static const int max_nbins = 32;" in hpp
@@ -142,7 +142,7 @@ def test_missing_max_count_fails_loudly():
     rather than emit an unsized array (no global max_n fallback)."""
     import pytest
 
-    from pysilicon.build.hwcodegen import SynthesisError
+    from waveflow.build.hwcodegen import SynthesisError
 
     comp, mm = _extract()
     ctx = CodegenCtx(comp=comp)
@@ -158,7 +158,7 @@ def test_missing_max_count_fails_loudly():
 
 def _gen_tb() -> str:
     from examples.shared_mem.hist import HistTBHls
-    from pysilicon.build.hwgen import tb_files_to_str
+    from waveflow.build.hwgen import tb_files_to_str
     files = tb_files_to_str(HistTBHls)
     assert len(files) == 1
     return next(iter(files.values()))
@@ -169,7 +169,7 @@ def test_tb_int_expr_reuses_kernel_lowerer():
     count like ``nbins - 1`` lowers identically on both sides (single source of
     truth — they must never diverge)."""
     import ast
-    from pysilicon.build.hwgen import _emit_ast_expr, _emit_int_expr
+    from waveflow.build.hwgen import _emit_ast_expr, _emit_int_expr
     for src in ("cmd.nbins - 1", "cmd.ndata", "cmd.nbins", "5"):
         node = ast.parse(src, mode="eval").body
         assert _emit_int_expr(node, None) == _emit_ast_expr(node, None)

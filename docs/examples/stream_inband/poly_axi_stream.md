@@ -15,7 +15,7 @@ co-simulation.
 
 The source code for everything on this page lives in
 `examples/stream_inband/timing_analysis.py`. The demo uses
-PySilicon's [AXI4-stream VCD analysis tools](../../guide/timing/axistream.md). 
+Waveflow's [AXI4-stream VCD analysis tools](../../guide/timing/axistream.md). 
 
 ## Overview
 

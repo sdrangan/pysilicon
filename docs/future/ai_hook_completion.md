@@ -17,5 +17,5 @@ The sticky impl-file workflow is in place, which provides stable files for futur
 
 ## See also
 
-- [plans/hook_templating_plan.md](https://github.com/sdrangan/pysilicon/blob/main/plans/hook_templating_plan.md)
-- [plans/component_codegen_plan.md](https://github.com/sdrangan/pysilicon/blob/main/plans/component_codegen_plan.md)
+- [plans/hook_templating_plan.md](https://github.com/sdrangan/waveflow/blob/main/plans/hook_templating_plan.md)
+- [plans/component_codegen_plan.md](https://github.com/sdrangan/waveflow/blob/main/plans/component_codegen_plan.md)

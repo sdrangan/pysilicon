@@ -1,7 +1,7 @@
 import pytest
 
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.simulation.simobj import SimObj
+from waveflow.simulation.simulation import Simulation
+from waveflow.simulation.simobj import SimObj
 
 
 # ---------------------------------------------------------------------------

@@ -8,17 +8,17 @@ nav_order: 5
 
 ## Concept
 
-PySilicon simulation objects follow a standard lifecycle: `pre_sim`, `run_proc`, and `post_sim`. `HwComponent` participates in the same lifecycle through inheritance from `Component`/`SimObj`, while synthesis extraction targets selected methods (`run_proc` or `on_start`) depending on component structure.
+Waveflow simulation objects follow a standard lifecycle: `pre_sim`, `run_proc`, and `post_sim`. `HwComponent` participates in the same lifecycle through inheritance from `Component`/`SimObj`, while synthesis extraction targets selected methods (`run_proc` or `on_start`) depending on component structure.
 
 For regmap-driven kernels, `on_start` is used as the invocation-style body triggered by host `ap_start`. Free-running simulation components usually implement `run_proc` as the long-running process body.
 
 ## API
 
-- [`SimObj.pre_sim`](../../../pysilicon/simulation/simobj.py)
-- [`SimObj.run_proc`](../../../pysilicon/simulation/simobj.py)
-- [`SimObj.post_sim`](../../../pysilicon/simulation/simobj.py)
-- [`extract_kernel`](../../../pysilicon/build/hwcodegen.py) method-selection policy
-- [`@sim_only`](../../../pysilicon/hw/synth.py)
+- [`SimObj.pre_sim`](../../../waveflow/simulation/simobj.py)
+- [`SimObj.run_proc`](../../../waveflow/simulation/simobj.py)
+- [`SimObj.post_sim`](../../../waveflow/simulation/simobj.py)
+- [`extract_kernel`](../../../waveflow/build/hwcodegen.py) method-selection policy
+- [`@sim_only`](../../../waveflow/hw/synth.py)
 
 ## Example
 

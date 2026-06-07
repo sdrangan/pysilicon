@@ -1,6 +1,6 @@
 gen/
 results/
-pysilicon_*_proj/
+waveflow_*_proj/
 *.log
 in_a.txt
 in_b.txt

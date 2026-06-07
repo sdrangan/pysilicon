@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pysilicon.toolchain import toolchain
+from waveflow.toolchain import toolchain
 import shutil
 import pytest
 import subprocess
@@ -12,7 +12,7 @@ def test_find_vitis_path_prefers_env_direct_binary(tmp_path, monkeypatch):
     exe = tmp_path / "vitis-run.bat"
     exe.write_text("@echo off\n", encoding="utf-8")
 
-    monkeypatch.setenv("PYSILICON_VITIS_PATH", str(exe))
+    monkeypatch.setenv("WAVEFLOW_VITIS_PATH", str(exe))
     out = toolchain.find_vitis_path()
 
     assert out == str(exe.resolve())
@@ -20,7 +20,7 @@ def test_find_vitis_path_prefers_env_direct_binary(tmp_path, monkeypatch):
 
 def test_find_vitis_path_selects_highest_version_under_root(tmp_path, monkeypatch):
     monkeypatch.setattr(toolchain.platform, "system", lambda: "Windows")
-    monkeypatch.delenv("PYSILICON_VITIS_PATH", raising=False)
+    monkeypatch.delenv("WAVEFLOW_VITIS_PATH", raising=False)
 
     older = tmp_path / "2024.2" / "bin" / "vitis-run.bat"
     newer = tmp_path / "2025.1" / "bin" / "vitis-run.bat"
@@ -36,7 +36,7 @@ def test_find_vitis_path_selects_highest_version_under_root(tmp_path, monkeypatc
 
 def test_find_vitis_path_windows_nested_vitis_layout(tmp_path, monkeypatch):
     monkeypatch.setattr(toolchain.platform, "system", lambda: "Windows")
-    monkeypatch.delenv("PYSILICON_VITIS_PATH", raising=False)
+    monkeypatch.delenv("WAVEFLOW_VITIS_PATH", raising=False)
 
     older = tmp_path / "2024.2" / "Vitis" / "bin" / "vitis-run.bat"
     newer = tmp_path / "2025.2" / "Vitis" / "bin" / "vitis-run.bat"
@@ -62,7 +62,7 @@ def test_find_vitis_path_linux_uses_env_root(tmp_path, monkeypatch):
     v1.chmod(0o755)
     v2.chmod(0o755)
 
-    monkeypatch.setenv("PYSILICON_VITIS_PATH", str(tmp_path))
+    monkeypatch.setenv("WAVEFLOW_VITIS_PATH", str(tmp_path))
     out = toolchain.find_vitis_path()
 
     assert out == str(v2.resolve())
@@ -128,7 +128,7 @@ def test_run_vitis_hls_result_runtime_error(monkeypatch, tmp_path):
         "status": "runtime_error",
         "stdout": None,
         "stderr": None,
-        "message": "Vitis installation not found. Please set PYSILICON_VITIS_PATH.",
+        "message": "Vitis installation not found. Please set WAVEFLOW_VITIS_PATH.",
     }
 
 

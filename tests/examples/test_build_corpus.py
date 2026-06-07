@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pysilicon.mcp.build_corpus as build_corpus_mod
+import waveflow.mcp.build_corpus as build_corpus_mod
 
 
 def test_build_corpus_converts_unsupported_extensions(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
-    corpus = repo / "pysilicon" / "mcp" / "corpus"
+    corpus = repo / "waveflow" / "mcp" / "corpus"
     examples = repo / "examples" / "demo"
     tests_examples = repo / "tests" / "examples"
     docs_examples = repo / "docs" / "examples"

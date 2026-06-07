@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from examples.shared_mem.hist_build import CSIM_CASES, generate_vitis_sources
-from pysilicon.toolchain import toolchain
+from waveflow.toolchain import toolchain
 
 SHARED_DIR = Path(__file__).resolve().parents[2] / "examples" / "shared_mem"
 _RESOURCES = (

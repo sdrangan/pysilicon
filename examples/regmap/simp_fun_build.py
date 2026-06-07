@@ -8,12 +8,12 @@ from pathlib import Path
 
 import numpy as np
 
-from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
-from pysilicon.build.cli import run_dag_cli
-from pysilicon.build.cosim_steps import ExtractCosimTimingStep, ValidateTimingStep
-from pysilicon.build.hwcodegen_steps import HlsCodegenStep
-from pysilicon.build.verify_steps import FunctionalVerifyStep
-from pysilicon.toolchain import toolchain
+from waveflow.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
+from waveflow.build.cli import run_dag_cli
+from waveflow.build.cosim_steps import ExtractCosimTimingStep, ValidateTimingStep
+from waveflow.build.hwcodegen_steps import HlsCodegenStep
+from waveflow.build.verify_steps import FunctionalVerifyStep
+from waveflow.toolchain import toolchain
 
 try:
     from examples.regmap.simp_fun import (
@@ -149,9 +149,9 @@ class CSimStep(BuildStep):
 
     def run(self, config: BuildConfig, data_dir, live_output, clk_freq, **_) -> dict:
         vitis_env = {
-            "PYSILICON_SIMP_FUN_COSIM": "0",
-            "PYSILICON_SIMP_FUN_TRACE_LEVEL": "none",
-            "PYSILICON_SIMP_FUN_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}",
+            "WAVEFLOW_SIMP_FUN_COSIM": "0",
+            "WAVEFLOW_SIMP_FUN_TRACE_LEVEL": "none",
+            "WAVEFLOW_SIMP_FUN_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}",
         }
         try:
             result = toolchain.run_vitis_hls(
@@ -174,14 +174,14 @@ class CSynthStep(BuildStep):
     description = "Run Vitis HLS C-synthesis and RTL co-simulation."
     consumes = ["simp_fun_cpp", "simp_fun_compute_impl", "simp_fun_tb", "run_tcl",
                 "csim_data_dir"]
-    produces = {"report_dir": Path("pysilicon_simp_fun_proj/solution1")}
+    produces = {"report_dir": Path("waveflow_simp_fun_proj/solution1")}
     params = {"live_output": False, "clk_freq": 100e6}
 
     def run(self, config: BuildConfig, live_output, clk_freq, **_) -> dict:
         vitis_env = {
-            "PYSILICON_SIMP_FUN_COSIM": "1",
-            "PYSILICON_SIMP_FUN_TRACE_LEVEL": "none",
-            "PYSILICON_SIMP_FUN_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}",
+            "WAVEFLOW_SIMP_FUN_COSIM": "1",
+            "WAVEFLOW_SIMP_FUN_TRACE_LEVEL": "none",
+            "WAVEFLOW_SIMP_FUN_CLK_PERIOD_NS": f"{1e9 / clk_freq:g}",
         }
         try:
             result = toolchain.run_vitis_hls(
@@ -196,7 +196,7 @@ class CSynthStep(BuildStep):
                 print(result.stderr)
         except Exception as exc:
             raise RuntimeError(str(exc))
-        return {"report_dir": config.root_dir / "pysilicon_simp_fun_proj" / "solution1"}
+        return {"report_dir": config.root_dir / "waveflow_simp_fun_proj" / "solution1"}
 
 
 @dataclass(kw_only=True)
@@ -207,7 +207,7 @@ class InspectSynthStep(BuildStep):
     params = {}
 
     def run(self, config: BuildConfig, report_dir, **_) -> dict:
-        from pysilicon.utils.csynthparse import CsynthParser
+        from waveflow.utils.csynthparse import CsynthParser
 
         if not report_dir.exists():
             raise RuntimeError(f"Solution directory not found: {report_dir}")

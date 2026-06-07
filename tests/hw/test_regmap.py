@@ -1,4 +1,4 @@
-"""Tests for pysilicon/hw/regmap.py — Phases 1–4."""
+"""Tests for waveflow/hw/regmap.py — Phases 1–4."""
 from __future__ import annotations
 
 from enum import IntEnum
@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
-from pysilicon.hw.aximm import (
+from waveflow.hw.aximm import (
     DirectMMIF,
     MMIFMaster,
 )
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataArray, EnumField, FloatField, IntField
-from pysilicon.hw.regmap import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataArray, EnumField, FloatField, IntField
+from waveflow.hw.regmap import (
     Bit,
     RegAccess,
     RegField,
@@ -22,8 +22,8 @@ from pysilicon.hw.regmap import (
     VitisRegMap,
     VitisRegMapMMIFSlave,
 )
-from pysilicon.simulation.simobj import ProcessGen
-from pysilicon.simulation.simulation import Simulation
+from waveflow.simulation.simobj import ProcessGen
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -905,7 +905,7 @@ class TestBoundRegMapPollEnd:
 
 class TestPublicAPI:
     def test_all_public_symbols_importable(self) -> None:
-        from pysilicon.hw.regmap import (  # noqa: F401
+        from waveflow.hw.regmap import (  # noqa: F401
             Bit,
             RegAccess,
             RegField,
@@ -921,7 +921,7 @@ class TestPublicAPI:
         assert members == {"R", "W", "RW", "W1C", "W1S"}
 
     def test_bit_is_intfield_subclass(self) -> None:
-        from pysilicon.hw.dataschema import IntField as _IntField
+        from waveflow.hw.dataschema import IntField as _IntField
         assert issubclass(Bit, _IntField)
         assert Bit.bitwidth == 1
         assert not Bit.signed

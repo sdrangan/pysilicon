@@ -14,10 +14,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.interface import CrossBarIF, CrossBarIFInput, CrossBarIFOutput, Words
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.hw.interface import CrossBarIF, CrossBarIFInput, CrossBarIFOutput, Words
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 def route_by_first_word(words: Words, port_in: int) -> int:

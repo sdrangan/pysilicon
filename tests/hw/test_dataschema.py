@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.streamutils import MemMgrStep, StreamUtilsStep
-from pysilicon.hw import (
+from waveflow.build.build import BuildConfig
+from waveflow.build.streamutils import MemMgrStep, StreamUtilsStep
+from waveflow.hw import (
     DataArray as PublicDataArray,
     DataField as PublicDataField,
     DataList as PublicDataList,
@@ -16,7 +16,7 @@ from pysilicon.hw import (
     IntField as PublicIntField,
     MemAddr as PublicMemAddr,
 )
-from pysilicon.hw.dataschema import (
+from waveflow.hw.dataschema import (
     DataArray,
     DataField,
     DataList,
@@ -772,7 +772,7 @@ def test_dataarray_oversized_whole_object_pack_is_suppressed(tmp_path: Path):
     """A DataArray whose packed width exceeds the HLS ap_uint limit must not emit
     whole-object pack_to_uint/unpack_from_uint — that would be a non-synthesizable
     ap_uint<N> (N > 8191).  Element-wise / burst access is still emitted."""
-    from pysilicon.hw.dataschema import HLS_AP_UINT_MAX_BITWIDTH
+    from waveflow.hw.dataschema import HLS_AP_UINT_MAX_BITWIDTH
 
     # 512 x 16 = 8192 bits, one bit over the 8191-bit ap_uint limit.
     Big = DataArray.specialize(element_type=U16, max_shape=(512,), member_name="buf")
@@ -1014,14 +1014,14 @@ def test_primitive_field_gen_include_raises(field_type):
 # ---------------------------------------------------------------------------
 
 def test_dataarray_cpp_storage_default_is_struct():
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     cls = DataArray.specialize(element_type=Float32, max_shape=(4,), static=True)
     assert cls.cpp_storage == "struct"
 
 
 def test_dataarray_specialize_raw_storage():
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     cls = DataArray.specialize(element_type=Float32, max_shape=(4,), static=True, cpp_storage="raw")
     assert cls.cpp_storage == "raw"
@@ -1029,28 +1029,28 @@ def test_dataarray_specialize_raw_storage():
 
 
 def test_dataarray_specialize_invalid_cpp_storage_raises():
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     with pytest.raises(ValueError, match="invalid"):
         DataArray.specialize(element_type=Float32, max_shape=(4,), static=True, cpp_storage="hybrid")
 
 
 def test_dataarray_specialize_raw_nonstatic_raises():
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     with pytest.raises(ValueError, match="static=True"):
         DataArray.specialize(element_type=Float32, max_shape=(4,), static=False, cpp_storage="raw")
 
 
 def test_dataarray_specialize_raw_multidim_raises():
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     with pytest.raises(ValueError, match="max_shape"):
         DataArray.specialize(element_type=Float32, max_shape=(4, 4), static=True, cpp_storage="raw")
 
 
 def test_dataarray_subclass_invalid_cpp_storage_raises():
-    from pysilicon.hw.dataschema import DataArray, FloatField
+    from waveflow.hw.dataschema import DataArray, FloatField
     Float32 = FloatField.specialize(bitwidth=32)
     with pytest.raises(ValueError, match="invalid"):
         class BadArray(DataArray):

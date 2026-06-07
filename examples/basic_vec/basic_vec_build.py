@@ -25,12 +25,12 @@ from pathlib import Path
 
 import numpy as np
 
-from pysilicon.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
-from pysilicon.build.cli import run_dag_cli
-from pysilicon.hw.dataschema import DataArray, FloatField, IntField
-from pysilicon.hw.fixpoint import FixedField, from_real, quantize
-from pysilicon.toolchain import toolchain
-from pysilicon.utils.fixputils import to_bits
+from waveflow.build.build import BuildConfig, BuildDag, BuildStep, SourceStep
+from waveflow.build.cli import run_dag_cli
+from waveflow.hw.dataschema import DataArray, FloatField, IntField
+from waveflow.hw.fixpoint import FixedField, from_real, quantize
+from waveflow.toolchain import toolchain
+from waveflow.utils.fixputils import to_bits
 
 try:
     from examples.basic_vec.kernels import render_fixed_mac, render_float_mac, render_int_mac

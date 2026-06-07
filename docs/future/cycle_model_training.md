@@ -17,5 +17,5 @@ Ground-truth measurement infrastructure is available via `ExtractPyTimingStep`, 
 
 ## See also
 
-- [plans/project_cycle_model_training.md](https://github.com/sdrangan/pysilicon/blob/main/plans/project_cycle_model_training.md)
-- [PR #31](https://github.com/sdrangan/pysilicon/pull/31)
+- [plans/project_cycle_model_training.md](https://github.com/sdrangan/waveflow/blob/main/plans/project_cycle_model_training.md)
+- [PR #31](https://github.com/sdrangan/waveflow/pull/31)

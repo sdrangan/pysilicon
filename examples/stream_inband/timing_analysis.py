@@ -22,9 +22,9 @@ import numpy as np
 
 from vcdvcd import VCDVCD
 
-from pysilicon.hw.arrayutils import read_array
-from pysilicon.utils.vcd import VcdParser
-from pysilicon.utils.timing import TimingDiagram
+from waveflow.hw.arrayutils import read_array
+from waveflow.utils.vcd import VcdParser
+from waveflow.utils.timing import TimingDiagram
 
 # Import poly schemas (sibling module)
 from poly import Float32, PolyCmdHdr, PolyRespHdr

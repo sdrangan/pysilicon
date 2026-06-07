@@ -1,1 +1,0 @@
-# pysilicon/mcp package

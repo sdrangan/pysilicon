@@ -1,4 +1,4 @@
-"""Tests for ``pysilicon/build/verify_steps.py``.
+"""Tests for ``waveflow/build/verify_steps.py``.
 
 Phase 5 of the HwTestbench codegen project introduces a generic
 ``FunctionalVerifyStep`` that replaces the poly-specific
@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pysilicon.build.build import BuildConfig
-from pysilicon.build.verify_steps import FunctionalVerifyStep
+from waveflow.build.build import BuildConfig
+from waveflow.build.verify_steps import FunctionalVerifyStep
 from examples.stream_inband.poly import Float32, PolyCmdHdr, PolyRespHdr
 
 

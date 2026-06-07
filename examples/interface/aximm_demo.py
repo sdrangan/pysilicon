@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pysilicon.hw.aximm import (
+from waveflow.hw.aximm import (
     AXIMMCrossBarIF,
     AXIMMProtocol,
     MMIFMaster,
@@ -29,9 +29,9 @@ from pysilicon.hw.aximm import (
     assign_address_ranges,
     Words,
 )
-from pysilicon.hw.clock import Clock
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------

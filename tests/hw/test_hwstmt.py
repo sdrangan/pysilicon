@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from pysilicon.build.hwcodegen import HwStmtExtractor, SynthesisError
-from pysilicon.hw.hw_component import HwComponent
-from pysilicon.hw.hwstmt import (
+from waveflow.build.hwcodegen import HwStmtExtractor, SynthesisError
+from waveflow.hw.hw_component import HwComponent
+from waveflow.hw.hwstmt import (
     ContinueStmt,
     FunctionStmt,
     HwVar,
@@ -12,8 +12,8 @@ from pysilicon.hw.hwstmt import (
     SynthCallStmt,
     WhileStmt,
 )
-from pysilicon.hw.synth import synthesizable
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.synth import synthesizable
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------

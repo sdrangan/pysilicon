@@ -32,7 +32,7 @@ nwords = hdr.nwords_per_inst(word_bw) + max(payload.nwords_per_inst(word_bw)
 `SchemaRegistry` is a named container that maps integer IDs to `DataList` classes.  There is no global singleton; each design creates its own.
 
 ```python
-from pysilicon.hw.dataunion import SchemaRegistry
+from waveflow.hw.dataunion import SchemaRegistry
 
 sensor_reg = SchemaRegistry("Sensor")
 ```
@@ -46,8 +46,8 @@ The name (`"Sensor"`) is used as a prefix for generated C++ types.
 Use the `@register_schema` decorator to associate an ID with a `DataList` class.  IDs must be positive integers; omitting `schema_id` auto-assigns the next available value.
 
 ```python
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.dataunion import register_schema
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.dataunion import register_schema
 
 U8  = IntField.specialize(bitwidth=8,  signed=False)
 S16 = IntField.specialize(bitwidth=16, signed=True)
@@ -84,7 +84,7 @@ for sid, cls in sensor_reg.items():
 `SchemaIDField` is a validated integer field whose legal values are exactly the IDs in a registry.  Assigning an unregistered ID raises `ValueError` immediately.
 
 ```python
-from pysilicon.hw.dataunion import SchemaIDField, DataUnionHdr
+from waveflow.hw.dataunion import SchemaIDField, DataUnionHdr
 
 SensorSchemaID = SchemaIDField.specialize(registry=sensor_reg, bitwidth=16)
 SensorHdr      = DataUnionHdr.specialize(schema_id_type=SensorSchemaID)
@@ -102,7 +102,7 @@ SensorHdr.nwords_per_inst(32)       # → 1
 For protocols that carry variable-length payloads you can add a word-count field to the header:
 
 ```python
-from pysilicon.hw.dataunion import LengthField
+from waveflow.hw.dataunion import LengthField
 
 Length16  = LengthField.specialize(bitwidth=16)
 SensorHdr = DataUnionHdr.specialize(
@@ -120,7 +120,7 @@ SensorHdr = DataUnionHdr.specialize(
 `DataUnion.specialize(hdr_type)` produces a cached subclass tied to a specific header (and therefore a specific registry).
 
 ```python
-from pysilicon.hw.dataunion import DataUnion
+from waveflow.hw.dataunion import DataUnion
 
 SensorDU = DataUnion.specialize(hdr_type=SensorHdr)
 ```
@@ -247,7 +247,7 @@ struct SensorDataUnion {
 ## Quick reference
 
 ```python
-from pysilicon.hw.dataunion import (
+from waveflow.hw.dataunion import (
     SchemaRegistry,
     register_schema,
     SchemaIDField,

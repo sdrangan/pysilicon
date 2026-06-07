@@ -12,14 +12,14 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.interface import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.interface import (
     CrossBarIF,
     CrossBarIFInput,
     CrossBarIFOutput,
     Words,
 )
-from pysilicon.simulation.simulation import Simulation
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------

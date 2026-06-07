@@ -6,14 +6,14 @@ nav_order: 2
 
 # Code Generation Steps
 
-PySilicon ships four built-in build steps that generate the C++ headers and helpers a Vitis HLS kernel needs from Python schema definitions. All four are `Buildable` subclasses — the convenience base class for steps that write text-file outputs — and are imported from their respective modules:
+Waveflow ships four built-in build steps that generate the C++ headers and helpers a Vitis HLS kernel needs from Python schema definitions. All four are `Buildable` subclasses — the convenience base class for steps that write text-file outputs — and are imported from their respective modules:
 
 | Step | Purpose | Module |
 |---|---|---|
-| `StreamUtilsStep` | Copy synthesizable + testbench stream helpers into the include directory | `pysilicon.build.streamutils` |
-| `MemMgrStep` | Copy memory-manager headers into the include directory | `pysilicon.build.streamutils` |
-| `DataSchemaStep` | Generate the C++ header pair for one `DataSchema` class | `pysilicon.hw.dataschema` |
-| `ArrayUtilsStep` | Generate packed-array helpers for one scalar element type | `pysilicon.hw.arrayutils` |
+| `StreamUtilsStep` | Copy synthesizable + testbench stream helpers into the include directory | `waveflow.build.streamutils` |
+| `MemMgrStep` | Copy memory-manager headers into the include directory | `waveflow.build.streamutils` |
+| `DataSchemaStep` | Generate the C++ header pair for one `DataSchema` class | `waveflow.hw.dataschema` |
+| `ArrayUtilsStep` | Generate packed-array helpers for one scalar element type | `waveflow.hw.arrayutils` |
 
 Each step is typically added once per design (or once per schema, in the case of `DataSchemaStep`), and the dependency wiring among them is automatic.
 
@@ -24,7 +24,7 @@ Each step is typically added once per design (or once per schema, in the case of
 Copies the stream-helper C++ files into a chosen include directory. Every `DataSchemaStep` and `ArrayUtilsStep` depends on these headers, so `StreamUtilsStep` must be added to the DAG first.
 
 ```python
-from pysilicon.build.streamutils import StreamUtilsStep
+from waveflow.build.streamutils import StreamUtilsStep
 
 dag.add(StreamUtilsStep(output_dir="include"))
 ```
@@ -45,7 +45,7 @@ Outputs:
 Copies the memory-manager helper headers. Use when a design needs the `memmgr` primitives. Independent of `StreamUtilsStep` — no auto-wiring between them.
 
 ```python
-from pysilicon.build.streamutils import MemMgrStep
+from waveflow.build.streamutils import MemMgrStep
 
 dag.add(MemMgrStep(output_dir="include"))
 ```
@@ -68,7 +68,7 @@ Generates a pair of C++ headers for one `DataSchema` class:
 - `<include_dir>/<schema_name>_tb.h` — testbench file I/O and JSON helpers.
 
 ```python
-from pysilicon.hw.dataschema import DataSchemaStep
+from waveflow.hw.dataschema import DataSchemaStep
 
 dag.add(DataSchemaStep(
     PolyCmdHdr,
@@ -138,7 +138,7 @@ dag.add(DataSchemaStep(PolyCmdHdr, word_bw_supported=[32, 64], include_dir="incl
 Generates packed-array helper headers for a scalar element type. The output provides C++ functions for reading and writing arrays of that type across AXI streams and arrays at every supported word width.
 
 ```python
-from pysilicon.hw.arrayutils import ArrayUtilsStep
+from waveflow.hw.arrayutils import ArrayUtilsStep
 
 dag.add(ArrayUtilsStep(Float32, [32, 64]))
 ```
@@ -183,10 +183,10 @@ When to subclass `Buildable` vs `BuildStep`:
 The full codegen sub-DAG for the poly accelerator:
 
 ```python
-from pysilicon.build.build import BuildConfig, BuildDag
-from pysilicon.build.streamutils import StreamUtilsStep
-from pysilicon.hw.arrayutils import ArrayUtilsStep
-from pysilicon.hw.dataschema import DataSchemaStep
+from waveflow.build.build import BuildConfig, BuildDag
+from waveflow.build.streamutils import StreamUtilsStep
+from waveflow.hw.arrayutils import ArrayUtilsStep
+from waveflow.hw.dataschema import DataSchemaStep
 
 def gen_vitis_code(example_dir, include_dir="include"):
     config = BuildConfig(root_dir=example_dir)

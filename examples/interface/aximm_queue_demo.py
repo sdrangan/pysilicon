@@ -2,7 +2,7 @@
 aximm_queue_demo.py — SPSC ring buffer over an AXI-MM crossbar.
 
 A producer and a consumer, each its own master on a crossbar, share a single
-memory-backed FIFO (:class:`~pysilicon.hw.aximm_queue.AXIMMQueue`).  The ring's
+memory-backed FIFO (:class:`~waveflow.hw.aximm_queue.AXIMMQueue`).  The ring's
 storage and its head/tail pointers all live in one ``MemComponent`` region; the
 two sides coordinate purely through memory (decision 1), with no shared Python
 object.  The queue capacity is deliberately small, so the producer blocks on a
@@ -40,16 +40,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from pysilicon.hw.aximm_queue import AXIMMQueue, AXIMMQueueLayout
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.memif import (
+from waveflow.hw.aximm_queue import AXIMMQueue, AXIMMQueueLayout
+from waveflow.hw.clock import Clock
+from waveflow.hw.memif import (
     AXIMMCrossBarIF,
     MMIFMaster,
     assign_address_ranges,
 )
-from pysilicon.hw.memory import MemComponent
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.memory import MemComponent
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ This page shows how to create and use a `Memory` object in Python. The [histogra
 ## Creating a `Memory` object
 
 ```python
-from pysilicon.hw.memory import AddrUnit, Memory
+from waveflow.hw.memory import AddrUnit, Memory
 
 mem = Memory(
     word_size=32,       # width of one memory word in bits
@@ -79,7 +79,7 @@ Data is written to memory in two steps:
 2. **Write** the packed words into the allocated region using `mem.write`.
 
 ```python
-from pysilicon.hw.arrayutils import write_array
+from waveflow.hw.arrayutils import write_array
 
 packed = write_array(data, elem_type=Float32, word_bw=mem.word_size)
 mem.write(data_addr, packed)
@@ -122,7 +122,7 @@ count_words = mem.read(
 After reading the raw words, use `read_array` to unpack them back into a typed NumPy array:
 
 ```python
-from pysilicon.hw.arrayutils import read_array
+from waveflow.hw.arrayutils import read_array
 
 counts = read_array(
     count_words,

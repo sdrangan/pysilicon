@@ -30,22 +30,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.dataschema import DataList, IntField
-from pysilicon.hw.dataunion import (
+from waveflow.hw.clock import Clock
+from waveflow.hw.dataschema import DataList, IntField
+from waveflow.hw.dataunion import (
     DataUnion,
     DataUnionHdr,
     SchemaIDField,
     SchemaRegistry,
     register_schema,
 )
-from pysilicon.hw.interface import StreamIF
-from pysilicon.hw.schema_transfer_interface import (
+from waveflow.hw.interface import StreamIF
+from waveflow.hw.schema_transfer_interface import (
     SchemaTransferIFMaster,
     SchemaTransferIFSlave,
 )
-from pysilicon.simulation.simulation import Simulation
-from pysilicon.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
+from waveflow.simulation.simobj import ProcessGen, SimObj
 
 
 # ---------------------------------------------------------------------------

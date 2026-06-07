@@ -7,7 +7,7 @@ has_children: false
 
 # Understanding AXI Memory-Mapped
 
-This is the first PySilicon example whose **data lives in memory** rather than on
+This is the first Waveflow example whose **data lives in memory** rather than on
 the control bus or a stream. The accelerator is handed *pointers* — byte
 addresses into a shared DRAM — reads its inputs from there over an AXI4
 memory-mapped (`m_axi`) master, and writes its outputs back the same way. It
@@ -162,7 +162,7 @@ the hardware.
 
 ---
 
-The rest of this example follows the same accelerator through the full PySilicon
+The rest of this example follows the same accelerator through the full Waveflow
 flow: [the Python model](python.md), [running it in SimPy](pysim.md),
 [generating the Vitis kernel](codegen.md),
 [validating the RTL](rtlsim.md), and

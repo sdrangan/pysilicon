@@ -14,10 +14,10 @@ This keeps timing checks reproducible and machine-readable: build runs always pr
 
 ## API
 
-- [`ExtractPyTimingStep`](../../../pysilicon/build/verify_steps.py) produces Python timing JSON.
-- [`ExtractCosimTimingStep`](../../../pysilicon/build/cosim_steps.py) parses cosim report data.
-- [`ValidateTimingStep`](../../../pysilicon/build/cosim_steps.py) emits `timing_verdict` and enforces tolerance.
-- [`CosimReportParser`](../../../pysilicon/utils/cosimparse.py) handles 2025.1+ `*_cosim.rpt` and legacy `cosim.log`.
+- [`ExtractPyTimingStep`](../../../waveflow/build/verify_steps.py) produces Python timing JSON.
+- [`ExtractCosimTimingStep`](../../../waveflow/build/cosim_steps.py) parses cosim report data.
+- [`ValidateTimingStep`](../../../waveflow/build/cosim_steps.py) emits `timing_verdict` and enforces tolerance.
+- [`CosimReportParser`](../../../waveflow/utils/cosimparse.py) handles 2025.1+ `*_cosim.rpt` and legacy `cosim.log`.
 
 ## Example
 

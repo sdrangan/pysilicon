@@ -7,14 +7,14 @@ has_children: false
 
 # Developer Setup — Cloning and Installing for Development
 
-This page is for **developers** who want to modify PySilicon, contribute changes, or run
-the bundled examples and tests. If you only want to *use* PySilicon as a library in your
+This page is for **developers** who want to modify Waveflow, contribute changes, or run
+the bundled examples and tests. If you only want to *use* Waveflow as a library in your
 own project, see [User Setup](./users.md) — you don't need to clone the repository.
 
 ## 1. Clone the repository
 
 ```bash
-git clone https://github.com/sdrangan/pysilicon.git
+git clone https://github.com/sdrangan/waveflow.git
 ```
 
 The repository is updated frequently. To fetch the latest and discard any local changes:
@@ -28,7 +28,7 @@ git reset --hard origin/main
 
 Use a virtual environment to isolate the project's dependencies (see
 [User Setup](./users.md) for what a virtual environment is and why). From the directory
-just outside `pysilicon`:
+just outside `waveflow`:
 
 ```bash
 python -m venv env
@@ -46,14 +46,14 @@ From the repository root, with the environment active:
 (env) pip install -e ".[dev]"
 ```
 
-This installs `pysilicon` **editable** — your source edits take effect immediately, no
+This installs `waveflow` **editable** — your source edits take effect immediately, no
 reinstall — plus the development extras (`pytest`, `ruff`, `black`, `mypy`). You only
 need to do this once per environment.
 
 Verify, then run the tests:
 
 ```bash
-(env) python -c "import pysilicon; print(pysilicon.__file__)"
+(env) python -c "import waveflow; print(waveflow.__file__)"
 (env) pytest -m "not vitis"      # the fast suite (skips the Vitis HLS integration tests)
 ```
 
@@ -81,5 +81,5 @@ PowerShell equivalent for the loose file:
 When editing `requirements.txt`, drop these lines if present:
 
 - `pywin32==...` — Windows-only; remove it for cross-platform installs.
-- `-e git+https://github.com/sdrangan/pysilicon.git@...#egg=...` — not needed; you've
-  already installed PySilicon editable.
+- `-e git+https://github.com/sdrangan/waveflow.git@...#egg=...` — not needed; you've
+  already installed Waveflow editable.

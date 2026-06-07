@@ -1,5 +1,5 @@
 """
-Tests for MemComponent as a latency-modeling SimObj (pysilicon/hw/memory.py).
+Tests for MemComponent as a latency-modeling SimObj (waveflow/hw/memory.py).
 
 These are the first tests that drive a ``Memory`` through a real
 ``Simulation`` (``run_sim()``) over an actual interconnect, rather than calling
@@ -20,11 +20,11 @@ from typing import Any, Callable
 import numpy as np
 import numpy.testing as npt
 
-from pysilicon.hw.clock import Clock
-from pysilicon.hw.memory import MemComponent
-from pysilicon.hw.memif import DirectMMIF, MMIFMaster
-from pysilicon.simulation.simobj import ProcessGen, SimObj
-from pysilicon.simulation.simulation import Simulation
+from waveflow.hw.clock import Clock
+from waveflow.hw.memory import MemComponent
+from waveflow.hw.memif import DirectMMIF, MMIFMaster
+from waveflow.simulation.simobj import ProcessGen, SimObj
+from waveflow.simulation.simulation import Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ def test_zero_latency_default():
 # ---------------------------------------------------------------------------
 
 def test_write_array_read_array_round_trip():
-    from pysilicon.hw.dataschema import FloatField
+    from waveflow.hw.dataschema import FloatField
     F32 = FloatField.specialize(bitwidth=32)
 
     sim = Simulation()

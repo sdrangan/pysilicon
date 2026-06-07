@@ -14,10 +14,10 @@ Hook stubs become `.tpp` when parameterized template arguments are needed. This 
 
 ## API
 
-- [`HwParam[T]`](../../../pysilicon/hw/hw_component.py) marks template-driven fields.
-- [`HwParamValue`](../../../pysilicon/hw/hw_component.py) stores the bound param name.
-- [`HwComponent.__post_init__`](../../../pysilicon/hw/hw_component.py) auto-wraps parameter values.
-- [`HlsCodegenStep`](../../../pysilicon/build/hwcodegen_steps.py) selects `.cpp` vs `.tpp` per hook.
+- [`HwParam[T]`](../../../waveflow/hw/hw_component.py) marks template-driven fields.
+- [`HwParamValue`](../../../waveflow/hw/hw_component.py) stores the bound param name.
+- [`HwComponent.__post_init__`](../../../waveflow/hw/hw_component.py) auto-wraps parameter values.
+- [`HlsCodegenStep`](../../../waveflow/build/hwcodegen_steps.py) selects `.cpp` vs `.tpp` per hook.
 
 ## Example
 
