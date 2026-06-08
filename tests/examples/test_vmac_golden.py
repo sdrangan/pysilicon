@@ -116,7 +116,7 @@ def _flat(pair_or_arr, complex_mode):
 
 def _accel(cfg):
     """The accelerator carrying the structural widths for this config."""
-    return VmacAccel.specialize(
+    return VmacAccel(
         mem_dwidth=512, mem_awidth=32,
         data_bw=cfg["in_bw"], acc_bw=cfg.get("acc_bw", 48), out_bw=cfg["out_bw"],
     )

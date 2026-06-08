@@ -13,24 +13,23 @@ regions (addr + strides; the matrix shape is global), the ``alpha`` / ``beta`` s
 (``b_one`` / ``c_zero`` / ``b_conj`` / ``reduce_rows``), the ``real`` | ``complex`` mode,
 the fractional split ``int_bits``, the output ``shift``, and the round / saturate flags.
 
-Because the command's field widths are set by the accelerator that produces/consumes it
-(``addr`` is ``mem_awidth`` bits; the immediate ``re`` / ``im`` are ``data_bw`` bits), the
-accelerator **specializes** the schema — the ``specialize`` parameterization pattern: params
-on the class, values on the instance.  ``VmacCmd`` stays a plain :class:`DataList`, so it
-serializes / deserializes and code-generates like any schema.
+The width-bearing fields are set by the accelerator that produces/consumes the command
+(``addr`` is ``mem_awidth`` bits; the immediate ``re`` / ``im`` are ``data_bw`` bits).
+These schemas are **Level-2 declarative** (:class:`~waveflow.hw.dataschema.ParamSchema`):
+each declares :class:`~waveflow.hw.param.Param` attributes and a dict-literal ``elements``
+that references them directly — the core ``IntField.specialize`` / ``Region.specialize``
+calls defer on the symbolic params, and ``specialize(**vals)`` resolves + caches (with the
+``Region`` / ``Scalar`` cascade sharing params).  ``VmacCmd`` is still a plain ``DataList``,
+so it serializes / deserializes and code-generates like any schema.
 """
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any
 
-from examples.vmac.param_schema import ParamSchema
-from waveflow.hw.dataschema import BooleanField, EnumField, IntField
+from waveflow.hw import BooleanField, EnumField, IntField, Param, ParamSchema
 from waveflow.utils.fixputils import OMode, QMode
 
 # --- field aliases (names match the auto-generated IntField subclass __name__) ----
-UInt32 = IntField.specialize(32, signed=False)
-Int32 = IntField.specialize(32, signed=True)
 UInt16 = IntField.specialize(16, signed=False)
 UInt8 = IntField.specialize(8, signed=False)
 
@@ -44,80 +43,68 @@ class VmacMode(IntEnum):
 ModeField = EnumField.specialize(VmacMode)
 
 
-# Region / Scalar / VmacCmd are width-parameterized schemas: each declares its parameter
-# defaults + an ``elements_for`` builder, and inherits the cached ``specialize`` from
-# :class:`ParamSchema` (Phase 3.5, Level-1 stopgap).
 class Region(ParamSchema):
     """A strided operand region: ``M[i, j] = mem[addr + i·row_stride + j·col_stride]``."""
-    _param_defaults = {"mem_awidth": 32}
 
-    @classmethod
-    def elements_for(cls, mem_awidth: int) -> dict[str, Any]:
-        addr = IntField.specialize(mem_awidth, signed=False)
-        offset = IntField.specialize(mem_awidth, signed=True)
-        return {
-            "addr": {"schema": addr, "description": "base offset into shared memory"},
-            "row_stride": offset,
-            "col_stride": offset,
-        }
+    mem_awidth = Param(32)
+    elements = {
+        "addr": {"schema": IntField.specialize(mem_awidth, signed=False),
+                 "description": "base offset into shared memory"},
+        "row_stride": IntField.specialize(mem_awidth, signed=True),
+        "col_stride": IntField.specialize(mem_awidth, signed=True),
+    }
 
 
 class Scalar(ParamSchema):
     """An ``alpha`` / ``beta`` operand: direct immediate (``re`` / ``im`` stored ints) or
     indirect (per-column pointer ``addr`` + ``stride``; ``stride 0`` broadcasts)."""
-    _param_defaults = {"mem_awidth": 32, "data_bw": 32}
 
-    @classmethod
-    def elements_for(cls, mem_awidth: int, data_bw: int) -> dict[str, Any]:
-        addr = IntField.specialize(mem_awidth, signed=False)
-        offset = IntField.specialize(mem_awidth, signed=True)
-        imm = IntField.specialize(data_bw, signed=True)
-        return {
-            "direct": {"schema": BooleanField,
-                       "description": "True = immediate re/im; False = indirect addr/stride"},
-            "re": imm,                # immediate stored integer (real part), data_bw bits
-            "im": imm,                # immediate stored integer (imag part; complex mode)
-            "addr": addr,
-            "stride": offset,
-        }
+    mem_awidth = Param(32)
+    data_bw = Param(32)
+    elements = {
+        "direct": {"schema": BooleanField,
+                   "description": "True = immediate re/im; False = indirect addr/stride"},
+        "re": IntField.specialize(data_bw, signed=True),    # immediate stored int (real part)
+        "im": IntField.specialize(data_bw, signed=True),    # immediate stored int (imag part)
+        "addr": IntField.specialize(mem_awidth, signed=False),
+        "stride": IntField.specialize(mem_awidth, signed=True),
+    }
 
 
 class VmacCmd(ParamSchema):
     """The VMAC fused instruction — the runtime tier (see module docstring).
 
     Region/scalar field widths track the accelerator's ``mem_awidth`` (addresses) and
-    ``data_bw`` (immediates); the cascade runs through ``Region`` / ``Scalar`` specialize.
+    ``data_bw`` (immediates); the cascade runs through ``Region`` / ``Scalar`` specialize
+    (both share ``mem_awidth`` with ``VmacCmd`` and resolve to the same cached classes).
     """
-    _param_defaults = {"mem_awidth": 32, "data_bw": 32}
 
-    @classmethod
-    def elements_for(cls, mem_awidth: int, data_bw: int) -> dict[str, Any]:
-        reg = Region.specialize(mem_awidth=mem_awidth)
-        scalar = Scalar.specialize(mem_awidth=mem_awidth, data_bw=data_bw)
-        return {
-            # global matrix shape (operands share it; dst is (1, n_cols) when reduced)
-            "n_rows": UInt16,
-            "n_cols": UInt16,
-            # strided operand / destination regions
-            "a": reg,
-            "b": reg,
-            "c": reg,
-            "d": reg,
-            # scaling scalars
-            "alpha": scalar,
-            "beta": scalar,
-            # op flags
-            "b_one": {"schema": BooleanField, "description": "op(B) = 1 (skip the A·B multiply)"},
-            "c_zero": {"schema": BooleanField, "description": "drop the beta·C term"},
-            "b_conj": {"schema": BooleanField, "description": "op(B) = conj(B) (complex; no-op for real)"},
-            "reduce_rows": {"schema": BooleanField, "description": "sum the rows (per-column reduction)"},
-            # datapath mode + runtime numeric format
-            "mode": ModeField,
-            "int_bits": UInt8,        # I of the operand format (F = data_bw - int_bits)
-            "shift": UInt8,           # output right-shift (the single lossy step)
-            "q_rnd": {"schema": BooleanField, "description": "output rounding: False = AP_TRN, True = AP_RND"},
-            "o_sat": {"schema": BooleanField, "description": "output overflow: False = AP_WRAP, True = AP_SAT"},
-        }
+    mem_awidth = Param(32)
+    data_bw = Param(32)
+    elements = {
+        # global matrix shape (operands share it; dst is (1, n_cols) when reduced)
+        "n_rows": UInt16,
+        "n_cols": UInt16,
+        # strided operand / destination regions (cascade: share mem_awidth)
+        "a": Region.specialize(mem_awidth=mem_awidth),
+        "b": Region.specialize(mem_awidth=mem_awidth),
+        "c": Region.specialize(mem_awidth=mem_awidth),
+        "d": Region.specialize(mem_awidth=mem_awidth),
+        # scaling scalars (cascade: share mem_awidth and data_bw)
+        "alpha": Scalar.specialize(mem_awidth=mem_awidth, data_bw=data_bw),
+        "beta": Scalar.specialize(mem_awidth=mem_awidth, data_bw=data_bw),
+        # op flags
+        "b_one": {"schema": BooleanField, "description": "op(B) = 1 (skip the A·B multiply)"},
+        "c_zero": {"schema": BooleanField, "description": "drop the beta·C term"},
+        "b_conj": {"schema": BooleanField, "description": "op(B) = conj(B) (complex; no-op for real)"},
+        "reduce_rows": {"schema": BooleanField, "description": "sum the rows (per-column reduction)"},
+        # datapath mode + runtime numeric format
+        "mode": ModeField,
+        "int_bits": UInt8,        # I of the operand format (F = data_bw - int_bits)
+        "shift": UInt8,           # output right-shift (the single lossy step)
+        "q_rnd": {"schema": BooleanField, "description": "output rounding: False = AP_TRN, True = AP_RND"},
+        "o_sat": {"schema": BooleanField, "description": "output overflow: False = AP_WRAP, True = AP_SAT"},
+    }
 
     @property
     def q_mode(self) -> QMode:

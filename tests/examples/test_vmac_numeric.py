@@ -173,7 +173,7 @@ _FLAG_COMBOS = [
 @pytest.mark.parametrize("flags", _FLAG_COMBOS)
 @pytest.mark.parametrize("data_bw,int_bits,n_rows", [(8, 4, 5), (12, 8, 8), (6, 3, 4)])
 def test_accumulator_format_matches_hand_derivation(mode, flags, data_bw, int_bits, n_rows):
-    accel = VmacAccel.specialize(mem_dwidth=512, mem_awidth=32, data_bw=data_bw,
+    accel = VmacAccel(mem_dwidth=512, mem_awidth=32, data_bw=data_bw,
                                  acc_bw=128, out_bw=data_bw)
     cmd = accel.Cmd()
     cmd.n_rows, cmd.n_cols = n_rows, 2
@@ -188,7 +188,7 @@ def test_accumulator_format_matches_hand_derivation(mode, flags, data_bw, int_bi
 
 
 def test_output_format_binary_point_and_codegen_target():
-    accel = VmacAccel.specialize(mem_dwidth=512, mem_awidth=32, data_bw=8, acc_bw=64, out_bw=12)
+    accel = VmacAccel(mem_dwidth=512, mem_awidth=32, data_bw=8, acc_bw=64, out_bw=12)
     cmd = accel.Cmd()
     cmd.n_rows, cmd.n_cols = 4, 2
     cmd.mode, cmd.int_bits, cmd.shift = REAL, 4, 8
@@ -252,7 +252,7 @@ def test_width_sweep_matches_oracle(data_bw, int_bits, out_bw, shift, acc_bw, q_
 def _accel(**kw):
     base = dict(mem_dwidth=512, mem_awidth=32, data_bw=8, acc_bw=64, out_bw=8)
     base.update(kw)
-    return VmacAccel.specialize(**base)
+    return VmacAccel(**base)
 
 
 def _cmd(accel, *, int_bits=4, shift=4, b_one=0, c_zero=1, reduce_rows=0, n_rows=4):

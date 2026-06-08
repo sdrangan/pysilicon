@@ -22,6 +22,17 @@ class HwParam(Generic[T]):
 
     C++ name convention: the Python field name verbatim — ``in_bw`` →
     ``in_bw``.
+
+    Relationship to :class:`~waveflow.hw.param.Param` — one parameter concept,
+    two binding sites.  ``HwParam`` is the **component-side, instance-based**
+    binding (``comp = MyComp(width=32)`` binds at instantiation; the value drives
+    the HLS template params).  The schema ``Param`` is the **type-based** binding
+    (``Schema.specialize(width=…)`` produces a type).  They meet at the
+    *instance → type bridge*: a component exposes a computed property
+    (e.g. ``VmacAccel.Cmd``) that feeds its ``HwParam`` values into a
+    ``ParamSchema``'s ``Param`` specialization.  Both build on the single symbolic
+    core in :mod:`waveflow.hw.param`; ``HwParam`` keeps this annotation surface so
+    existing components are unaffected.
     """
 
 

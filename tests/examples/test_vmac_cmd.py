@@ -3,9 +3,10 @@
 ``VmacCmd`` is a plain ``DataList`` (nested ``Region`` / ``Scalar`` sub-lists, an
 ``EnumField`` mode, ``BooleanField`` flags), so it must serialize / deserialize back to an
 identical value across word widths — the wire-format contract for the (Phase-3) HLS kernel.
-The structural widths live on ``VmacAccel``, which ``specialize``s the command schema so a
-command's field widths track the silicon (``addr`` = ``mem_awidth`` bits; immediate ``re`` /
-``im`` = ``data_bw`` bits); same params → same class object.
+The structural widths live on ``VmacAccel`` (an ``HwComponent`` with ``HwParam`` fields);
+its computed ``Cmd`` specializes the command schema so a command's field widths track the
+silicon (``addr`` = ``mem_awidth`` bits; immediate ``re`` / ``im`` = ``data_bw`` bits); same
+params → same schema class object.
 """
 import pytest
 
@@ -14,7 +15,7 @@ from examples.vmac.vmac_cmd import Region, Scalar, VmacCmd, VmacMode
 from waveflow.utils.fixputils import OMode, QMode
 
 # a concrete accelerator: 32-bit addresses, 16-bit operands/immediates
-ACCEL = VmacAccel.specialize(mem_dwidth=512, mem_awidth=32, data_bw=16, acc_bw=48, out_bw=12)
+ACCEL = VmacAccel(mem_dwidth=512, mem_awidth=32, data_bw=16, acc_bw=48, out_bw=12)
 Cmd = ACCEL.Cmd
 
 
@@ -92,18 +93,28 @@ def test_q_o_mode_properties():
     assert cmd.q_mode is QMode.AP_RND and cmd.o_mode is OMode.AP_SAT
 
 
-# --- the specialize cascade ---------------------------------------------------
-def test_accel_specialize_is_cached():
-    a = VmacAccel.specialize(mem_dwidth=512, mem_awidth=32, data_bw=16, acc_bw=48, out_bw=12)
-    b = VmacAccel.specialize(mem_dwidth=512, mem_awidth=32, data_bw=16, acc_bw=48, out_bw=12)
-    assert a is b is ACCEL                                       # same params -> same class
-    c = VmacAccel.specialize(mem_dwidth=512, mem_awidth=24, data_bw=12, acc_bw=48, out_bw=12)
-    assert c is not a
+# --- the instance -> type bridge + cascade ------------------------------------
+def test_accel_cmd_shared_and_distinct():
+    # instances are not cached, but the schema their HwParam widths specialize IS:
+    # same widths -> the same cached Cmd class; different widths -> a different one.
+    a = VmacAccel(mem_dwidth=512, mem_awidth=32, data_bw=16, acc_bw=48, out_bw=12)
+    b = VmacAccel(mem_dwidth=999, mem_awidth=32, data_bw=16, acc_bw=99, out_bw=7)
+    assert a.Cmd is ACCEL.Cmd                                    # Cmd depends only on (mem_awidth, data_bw)
+    assert b.Cmd is ACCEL.Cmd
+    c = VmacAccel(mem_awidth=24, data_bw=12)
+    assert c.Cmd is not ACCEL.Cmd
+
+
+def test_accel_is_hwcomponent_with_hwparams():
+    from waveflow.hw.hw_component import HwComponent, _hw_param_names
+    assert issubclass(VmacAccel, HwComponent)
+    # the extractor sees all five structural widths as HwParam template params
+    assert _hw_param_names(VmacAccel) >= {"mem_dwidth", "mem_awidth", "data_bw", "acc_bw", "out_bw"}
 
 
 def test_accel_carries_structural_params():
-    assert (ACCEL.mem_dwidth, ACCEL.mem_awidth, ACCEL.data_bw, ACCEL.acc_bw, ACCEL.out_bw) \
-        == (512, 32, 16, 48, 12)
+    assert (int(ACCEL.mem_dwidth), int(ACCEL.mem_awidth), int(ACCEL.data_bw),
+            int(ACCEL.acc_bw), int(ACCEL.out_bw)) == (512, 32, 16, 48, 12)
 
 
 def test_cmd_specialize_cached_and_matches_accel():
@@ -121,7 +132,7 @@ def test_cmd_field_widths_track_mem_awidth_and_data_bw():
     assert scalar.get_element_schema("re").get_bitwidth() == 16
     assert scalar.get_element_schema("im").get_bitwidth() == 16
 
-    wide = VmacAccel.specialize(mem_dwidth=256, mem_awidth=40, data_bw=24, acc_bw=64, out_bw=24)
+    wide = VmacAccel(mem_dwidth=256, mem_awidth=40, data_bw=24, acc_bw=64, out_bw=24)
     assert wide.Cmd.get_element_schema("a").get_element_schema("addr").get_bitwidth() == 40
     assert wide.Cmd.get_element_schema("alpha").get_element_schema("re").get_bitwidth() == 24
 
