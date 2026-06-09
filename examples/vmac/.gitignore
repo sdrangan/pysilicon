@@ -1,0 +1,8 @@
+gen/
+results/
+vmac_conf_proj/
+*.log
+in_a.txt
+in_b.txt
+out_bits.txt
+kernel.cpp
