@@ -94,6 +94,16 @@ class DataSchema(ABC):
         """
         return []
 
+    @classmethod
+    def get_codegen_includes(cls) -> list[str]:
+        """Return raw ``#include`` directive bodies the generated C++ for this element type
+        needs for its ``cpp_type`` (e.g. ``"<complex>"`` for a ``std::complex<…>`` element).
+
+        Each entry is emitted verbatim as ``#include <body>`` in the generated array-utils
+        header (the body carries its own ``<…>`` / ``"…"`` delimiters).  Default: empty
+        (scalar fields get their types from the always-included ``streamutils_hls.h``)."""
+        return []
+
     @staticmethod
     def _get_indent(level: int) -> str:
         """Return consistent indentation for generated C++ code."""

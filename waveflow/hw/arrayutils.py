@@ -1318,6 +1318,11 @@ def _gen_array_utils_content(
         f'#include "{_relative_streamutils_include(elem_type, root_dir, su_dir)}"',
     ]
 
+    # Raw type includes the element's cpp_type needs (e.g. <complex> / the wf_cint header
+    # for a ComplexField element); the body carries its own <…> / "…" delimiters.
+    for inc in elem_type.get_codegen_includes():
+        lines.append(f"#include {inc}")
+
     if elem_include is not None:
         lines.append(f'#include "{elem_include}"')
 

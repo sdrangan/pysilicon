@@ -160,6 +160,109 @@ class ComplexField(DataField):
             self.val = (int(re_field.val), int(im_field.val))
         return pos, word
 
+    # --- C++ codegen protocol (mirrors the interleaved Python serialization) -------
+    # Each method delegates to the *inner field's* C++ codegen for re then im, interleaved,
+    # ``im`` in the high ``inner_bw`` bits -- exactly as ``_serialize_recursive`` composes the
+    # inner's Python serialization.  ``array_utils`` consumes these to pack ``ComplexField``
+    # like any other element (``read_array_elem`` / ``write_array_elem`` / ``pf<>``).
+    @classmethod
+    def _cpp_re(cls, value_expr: str) -> str:
+        """C++ accessor for the real component of a ``cpp_type`` value expression."""
+        return f"({value_expr}).re" if cls.kind == "int" else f"({value_expr}).real()"
+
+    @classmethod
+    def _cpp_im(cls, value_expr: str) -> str:
+        """C++ accessor for the imag component of a ``cpp_type`` value expression."""
+        return f"({value_expr}).im" if cls.kind == "int" else f"({value_expr}).imag()"
+
+    @classmethod
+    def to_uint_expr(cls, value_expr: str) -> str:
+        """Pack a complex value into ``2*inner_bw`` bits: ``re | (im << inner_bw)`` (delegating
+        each component to the inner field's pack)."""
+        inner = cls.inner_type
+        bw = inner.get_bitwidth()
+        bw2 = 2 * bw
+        re = inner.to_uint_value_expr(cls._cpp_re(value_expr))
+        im = inner.to_uint_value_expr(cls._cpp_im(value_expr))
+        return f"((ap_uint<{bw2}>)({re}) | ((ap_uint<{bw2}>)({im}) << {bw}))"
+
+    @classmethod
+    def to_uint_value_expr(cls, value_expr: str) -> str:
+        return cls.to_uint_expr(value_expr)
+
+    @classmethod
+    def from_uint_expr(cls, uint_expr: str) -> str:
+        """Construct ``cpp_type(re, im)`` from the low / high ``inner_bw`` halves of the packed
+        bits (the ``std::complex<…>`` / ``wf_cint`` two-arg ``(re, im)`` constructor)."""
+        inner = cls.inner_type
+        bw = inner.get_bitwidth()
+        bw2 = 2 * bw
+        w = f"(ap_uint<{bw2}>)({uint_expr})"
+        re = inner.from_uint_expr(f"(ap_uint<{bw}>)({w})")
+        im = inner.from_uint_expr(f"(ap_uint<{bw}>)(({w}) >> {bw})")
+        return f"{cls.cpp_type}({re}, {im})"
+
+    @classmethod
+    def _gen_write_recursive(
+        cls,
+        word_bw: int,
+        dst_type: str = "array",
+        target: str = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        member_name: str | None = None,
+    ) -> tuple[list[str], int, int]:
+        """Multi-word write: emit re then im via the inner field's ``_gen_write_recursive``."""
+        if member_name is None:
+            raise ValueError(f"{cls.__name__} write generation requires a member_name.")
+        inner = cls.inner_type
+        value_expr = f"{prefix}{member_name}"
+        re_lines, ipos, iword = inner._gen_write_recursive(
+            word_bw=word_bw, dst_type=dst_type, target=target, ipos0=ipos0, iword0=iword0,
+            prefix="", member_name=cls._cpp_re(value_expr))
+        im_lines, ipos, iword = inner._gen_write_recursive(
+            word_bw=word_bw, dst_type=dst_type, target=target, ipos0=ipos, iword0=iword,
+            prefix="", member_name=cls._cpp_im(value_expr))
+        return re_lines + im_lines, ipos, iword
+
+    @classmethod
+    def _gen_read_recursive(
+        cls,
+        word_bw: int,
+        src_type: str = "array",
+        source: str = "x",
+        ipos0: int = 0,
+        iword0: int = 0,
+        prefix: str = "",
+        member_name: str | None = None,
+    ) -> tuple[list[str], int, int]:
+        """Multi-word read: read re then im into inner temps via the inner field's
+        ``_gen_read_recursive``, then assign ``cpp_type(re, im)``."""
+        if member_name is None:
+            raise ValueError(f"{cls.__name__} read generation requires a member_name.")
+        inner = cls.inner_type
+        inner_cpp = inner.cpp_class_name()
+        dst_expr = f"{prefix}{member_name}"
+        lines = [f"    {inner_cpp} __wf_re;", f"    {inner_cpp} __wf_im;"]
+        re_lines, ipos, iword = inner._gen_read_recursive(
+            word_bw=word_bw, src_type=src_type, source=source, ipos0=ipos0, iword0=iword0,
+            prefix="", member_name="__wf_re")
+        im_lines, ipos, iword = inner._gen_read_recursive(
+            word_bw=word_bw, src_type=src_type, source=source, ipos0=ipos, iword0=iword,
+            prefix="", member_name="__wf_im")
+        lines.extend(re_lines)
+        lines.extend(im_lines)
+        lines.append(f"    {dst_expr} = {cls.cpp_type}(__wf_re, __wf_im);")
+        return cls._scope_local_lines(lines), ipos, iword
+
+    @classmethod
+    def get_codegen_includes(cls) -> list[str]:
+        """Raw ``#include`` bodies the generated C++ needs for ``cpp_type``:
+        ``<complex>`` for the ``std::complex<…>`` (float / fixed) inner, the ``wf_cint``
+        header for the integer inner (``std::complex<ap_int>`` is non-standard)."""
+        return ['"wf_cint.h"'] if cls.kind == "int" else ["<complex>"]
+
 
 def _extract_re_im(value: Any) -> tuple[Any, Any]:
     """Pull (re, im) out of a structured scalar / complex / (re, im) pair / real number."""
