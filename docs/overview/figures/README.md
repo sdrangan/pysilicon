@@ -1,3 +1,9 @@
+---
+title: SALSA figure sources
+nav_exclude: true
+search_exclude: true
+---
+
 # Overview figures — TikZ source → committed SVG
 
 **Single source of truth, rendered artifact** — the Waveflow philosophy applied to diagrams. The TikZ
