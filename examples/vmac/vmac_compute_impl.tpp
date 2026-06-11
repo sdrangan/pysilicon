@@ -40,41 +40,22 @@
 // are word-aligned (addr / row_stride multiples of PF), so the PF contiguous columns of a row
 // live in one word and are reached by a running word pointer advanced a constant per step.
 
+#include <cassert>
+
 #include "complex_utils.hpp"
 
 namespace vmac_impl {
 
-// Build a complex operand element from its stored (re, im) integer codes — the generated
-// ComplexField (re, im) constructor: stored bits -> ap_fixed value, then std::complex.
-template <typename CXT, int W>
-static inline CXT cx_from_codes(ap_int<W> re, ap_int<W> im) {
+// Map an *element* index/stride to its *word* index for PF-packed memory (PF elements/word):
+// the divide is a shift (PF is a compile-time power of two), with a PF-alignment check — the
+// per-row operand regions (bases + strides) must be word-aligned.  (The per-column indirect
+// scalar is genuinely element-addressed — word = e/PF, lane = e&(PF-1) — so it is read inline,
+// not through this aligned helper.)
+template <int PF, typename T>
+static inline T elem_to_word(T elem) {
 #pragma HLS INLINE
-    typedef typename CXT::value_type FX;
-    return CXT(streamutils::bits_to_fixed<FX>((ap_uint<W>)re),
-               streamutils::bits_to_fixed<FX>((ap_uint<W>)im));
-}
-
-// Convert any complex value into the fixed accumulator element ACC (value-preserving: ACC is
-// wide enough that no rounding/overflow occurs) — the binary-point alignment for the wide
-// accumulator and the +beta*C add are just this lossless widening.
-template <typename ACC, typename C>
-static inline ACC to_acc(const C& z) {
-#pragma HLS INLINE
-    typedef typename ACC::value_type ACC_FX;
-    return ACC((ACC_FX)z.real(), (ACC_FX)z.imag());
-}
-
-// The single lossy step: requantize the wide-accumulator value to the output element.  An
-// ap_fixed assignment into REQ (output width/scale + the structural round/saturate modes) =
-// the golden's fixputils.quantize; the result bits are then stored in the generated OUT_FX
-// element (same width/scale, modes irrelevant to the stored bits).
-template <typename CXO, typename REQ, typename ACC>
-static inline CXO cx_requantize(const ACC& acc) {
-#pragma HLS INLINE
-    typedef typename CXO::value_type OUT_FX;
-    REQ yr = acc.real();
-    REQ yi = acc.imag();
-    return CXO((OUT_FX)yr, (OUT_FX)yi);
+    assert(elem % PF == 0 && "VMAC operand region must be PF-aligned (word-packed rows)");
+    return elem / PF;
 }
 
 // The datapath, taking the command as **typed scalars** (not the VmacCmd struct).  The
@@ -113,18 +94,18 @@ void vmac_compute_core(
     typedef ap_fixed<OUT_BW, OUT_INT, QMODE, OMODE> REQ_FX;     // requantize target (structural Q/O)
     typedef ap_fixed<ACC_BW, ACC_BW - 3 * F_IN> ACC_FX;        // accumulator component, frac = 3*F_in
     typedef std::complex<ACC_FX> ACC_CX;
-    static const int PF = MEM_BW / (2 * DATA_BW);             // complex columns / word (power of 2)
+    static constexpr int PF = vmac_in_au::pf<MEM_BW>();       // complex columns / word (power of 2)
 
     // loop-invariant immediate scalars (one complex value each, via the (re, im) constructor)
-    const CX alpha_imm = cx_from_codes<CX>(al_re, al_im);
-    const CX beta_imm = cx_from_codes<CX>(be_re, be_im);
+    const CX alpha_imm = complex_utils::cx_from_codes<CX>(al_re, al_im);
+    const CX beta_imm = complex_utils::cx_from_codes<CX>(be_re, be_im);
 
     // running word indices: row base = addr/PF, advanced by row_stride/PF per row (both exact —
-    // regions are PF-aligned); /PF is a shift (PF is a compile-time power of two).
-    const ap_uint<MEM_AWIDTH> a_w0 = a_addr / PF, b_w0 = b_addr / PF;
-    const ap_uint<MEM_AWIDTH> c_w0 = c_addr / PF, d_w0 = d_addr / PF;
-    const ap_int<MEM_AWIDTH> a_rsw = a_rs / PF, b_rsw = b_rs / PF;
-    const ap_int<MEM_AWIDTH> c_rsw = c_rs / PF, d_rsw = d_rs / PF;
+    // regions are PF-aligned; elem_to_word checks it).
+    const ap_uint<MEM_AWIDTH> a_w0 = elem_to_word<PF>(a_addr), b_w0 = elem_to_word<PF>(b_addr);
+    const ap_uint<MEM_AWIDTH> c_w0 = elem_to_word<PF>(c_addr), d_w0 = elem_to_word<PF>(d_addr);
+    const ap_int<MEM_AWIDTH> a_rsw = elem_to_word<PF>(a_rs), b_rsw = elem_to_word<PF>(b_rs);
+    const ap_int<MEM_AWIDTH> c_rsw = elem_to_word<PF>(c_rs), d_rsw = elem_to_word<PF>(d_rs);
 
     // per-column complex accumulators (reduce_rows): summed over rows.
     ACC_CX acc[MAX_COLS];
@@ -181,24 +162,24 @@ void vmac_compute_core(
                 // alpha * A * op(B):  op(B) = conj(B) or B; the F -> 2F -> 3F chain via cmult.
                 ACC_CX term;
                 if (b_one) {
-                    term = to_acc<ACC_CX>(complex_utils::cmult(alpha, a_lane[k]));
+                    term = complex_utils::cwiden<ACC_CX>(complex_utils::cmult(alpha, a_lane[k]));
                 } else {
                     OPB_CX opb = b_conj
                         ? complex_utils::conj(b_lane[k])
                         : OPB_CX((OPB_FX)b_lane[k].real(), (OPB_FX)b_lane[k].imag());
-                    term = to_acc<ACC_CX>(
+                    term = complex_utils::cwiden<ACC_CX>(
                         complex_utils::cmult(alpha, complex_utils::cmult(a_lane[k], opb)));
                 }
                 // + beta * C  (beta*C widened to the accumulator scale, then a complex add)
                 if (!c_zero) {
-                    ACC_CX bc = to_acc<ACC_CX>(complex_utils::cmult(beta, c_lane[k]));
-                    term = to_acc<ACC_CX>(complex_utils::cadd(term, bc));
+                    ACC_CX bc = complex_utils::cwiden<ACC_CX>(complex_utils::cmult(beta, c_lane[k]));
+                    term = complex_utils::cwiden<ACC_CX>(complex_utils::cadd(term, bc));
                 }
 
                 if (reduce_rows)
-                    acc[j] = to_acc<ACC_CX>(complex_utils::cadd(acc[j], term));
+                    acc[j] = complex_utils::cwiden<ACC_CX>(complex_utils::cadd(acc[j], term));
                 else
-                    y_lane[k] = cx_requantize<CXO, REQ_FX>(term);
+                    y_lane[k] = complex_utils::cx_requantize<CXO, REQ_FX>(term);
             }
             if (!reduce_rows)
                 vmac_out_au::write_array_elem<MEM_BW>(y_lane, mem + d_w, cols);
@@ -220,7 +201,7 @@ void vmac_compute_core(
 #pragma HLS UNROLL
                 const int j = col0 + k;
                 if (j >= (int)n_cols) continue;
-                y_lane[k] = cx_requantize<CXO, REQ_FX>(acc[j]);
+                y_lane[k] = complex_utils::cx_requantize<CXO, REQ_FX>(acc[j]);
             }
             vmac_out_au::write_array_elem<MEM_BW>(y_lane, mem + d_w, cols);
             d_w += 1;

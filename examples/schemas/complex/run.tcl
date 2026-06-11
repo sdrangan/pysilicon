@@ -4,7 +4,7 @@
 # Uniform argv: in_a in_b out_bits (round-trip / conj ignore in_b).
 open_project -reset complex_conf_proj
 set_top main
-add_files -tb kernel.cpp
+add_files -tb kernel.cpp -cflags "-I. -Iinclude"
 
 open_solution -reset "solution1"
 set_part {xc7z020clg484-1}

@@ -394,7 +394,7 @@ _RUN_TCL = """# Vitis HLS C-sim driver for one VMAC structural-config conformanc
 # argv = the manifest of per-case (cmd, mem_in, mem_out) vector files.
 open_project -reset vmac_conf_proj
 set_top main
-add_files -tb kernel.cpp
+add_files -tb kernel.cpp -cflags "-I. -Iinclude"
 
 open_solution -reset "solution1"
 set_part {xc7z020clg484-1}
