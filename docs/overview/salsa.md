@@ -103,5 +103,8 @@ and **firmware** must all be reasoned about *together* — and Waveflow keeps th
 bit-exact, executable model. VMAC is the first tile through that flow; the rest of SALSA follows the
 same path.
 
-
-[Tracer] French, Matthew, et al. "TRACER, the Next Generation Ultra-wideband Spectrum Processor." MILCOM 2025-2025 IEEE Military Communications Conference (MILCOM). IEEE, 2025.
+## References
+- French, Matthew, et al. "TRACER, the Next Generation Ultra-wideband Spectrum Processor." MILCOM 2025-2025 IEEE Military Communications Conference (MILCOM), 2025.
+- Rasteh, A., Hennessee, A., Shivhare, I., Garg, S., Rangan, S., & Reagen, B. "A Spatial Array for Spectrally Agile Wireless Processing", IEEE Asilomar, 2025
+- Rasteh, A., Kiani, A., Mezzavilla, M., & Rangan, S. "Scalable Long-Term Beamforming for Massive Multi-User MIMO," arXiv preprint arXiv:2511.09464, 2025
+- Kang, S., Mezzavilla, M., Rangan, S., Madanayake, A., Venkatakrishnan, S. B., Hellbourg, G., ... & Dhananjay, A.  "Cellular wireless networks in the upper mid-band", IEEE Open Journal of the Communications Society, 5, 2058-2075, 2024
